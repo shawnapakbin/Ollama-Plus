@@ -1,0 +1,152 @@
+.wiki-container {
+  display: flex;
+  height: 100%;
+  padding: 24px;
+  gap: 16px;
+}
+
+.wiki-sidebar {
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+}
+
+.wiki-sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.wiki-sidebar-header h3 {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  padding: 4px;
+  color: var(--text-muted);
+}
+
+.icon-btn:hover {
+  color: var(--accent-color);
+  background: rgba(255,255,255,0.1);
+}
+
+.wiki-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.wiki-item {
+  width: 100%;
+  background: transparent;
+  border: none;
+  justify-content: flex-start;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  padding: 8px 12px;
+}
+
+.wiki-item.active {
+  background: rgba(255,255,255,0.1);
+  color: var(--text-main);
+}
+
+.no-files {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 20px;
+}
+
+.wiki-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.wiki-editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.wiki-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(0,0,0,0.2);
+}
+
+.wiki-filename {
+  font-weight: 600;
+  color: var(--accent-color);
+}
+
+.wiki-content {
+  flex: 1;
+  position: relative;
+}
+
+.wiki-textarea {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  padding: 20px;
+  font-family: monospace;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  resize: none;
+}
+
+.wiki-preview {
+  padding: 20px;
+  height: 100%;
+  line-height: 1.6;
+  overflow-y: auto;
+}
+
+.wiki-preview h1, .wiki-preview h2, .wiki-preview h3 {
+  margin-top: 24px;
+  margin-bottom: 16px;
+  color: var(--accent-color);
+}
+
+.wiki-preview p {
+  margin-bottom: 16px;
+}
+
+.wiki-preview code {
+  background: rgba(0,0,0,0.5);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.wiki-preview pre {
+  background: rgba(0,0,0,0.5);
+  padding: 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+
+.wiki-preview pre code {
+  background: transparent;
+  padding: 0;
+}

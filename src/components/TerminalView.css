@@ -1,0 +1,70 @@
+.terminal-container {
+  display: flex;
+  height: 100%;
+  padding: 24px;
+  gap: 16px;
+}
+
+.terminal-sidebar {
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+}
+
+.term-sidebar-header h3 {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+
+.term-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.no-terms {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.term-tab {
+  width: 100%;
+  background: transparent;
+  border: none;
+  justify-content: flex-start;
+  color: var(--text-muted);
+}
+
+.term-tab.active {
+  background: rgba(255,255,255,0.1);
+  color: var(--text-main);
+}
+
+.term-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.terminal-main {
+  flex: 1;
+  padding: 16px;
+  background: #0b0c10;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.xterm-wrapper {
+  width: 100%;
+  height: 100%;
+}
+
+.xterm-wrapper .xterm {
+  padding: 8px;
+}

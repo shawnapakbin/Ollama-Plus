@@ -1,0 +1,169 @@
+:root, [data-theme='dark'] {
+  --bg-color: #0b0c10;
+  --bg-panel: rgba(20, 22, 28, 0.65);
+  --bg-panel-hover: rgba(30, 33, 40, 0.8);
+  --border-color: rgba(255, 255, 255, 0.08);
+  --text-main: #e2e8f0;
+  --text-muted: #94a3b8;
+  --accent-color: #38bdf8;
+  --accent-glow: rgba(56, 189, 248, 0.2);
+  --danger-color: #f87171;
+  --success-color: #4ade80;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+[data-theme='light'] {
+  --bg-color: #f8fafc;
+  --bg-panel: rgba(255, 255, 255, 0.65);
+  --bg-panel-hover: rgba(241, 245, 249, 0.8);
+  --border-color: rgba(0, 0, 0, 0.1);
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --accent-color: #0284c7;
+  --accent-glow: rgba(2, 132, 199, 0.2);
+}
+
+[data-theme='colorblind'] {
+  --bg-color: #1e1e1e;
+  --bg-panel: rgba(45, 45, 45, 0.65);
+  --bg-panel-hover: rgba(60, 60, 60, 0.8);
+  --border-color: rgba(255, 255, 255, 0.15);
+  --text-main: #ffffff;
+  --text-muted: #a0a0a0;
+  --accent-color: #ffb000; /* High contrast yellow/orange */
+  --accent-glow: rgba(255, 176, 0, 0.2);
+  --danger-color: #dc267f; /* High contrast magenta */
+  --success-color: #648fff; /* High contrast blue */
+}
+
+[data-theme='solarized'] {
+  --bg-color: #002b36;
+  --bg-panel: rgba(7, 54, 66, 0.65);
+  --bg-panel-hover: rgba(88, 110, 117, 0.5);
+  --border-color: rgba(131, 148, 150, 0.2);
+  --text-main: #839496;
+  --text-muted: #586e75;
+  --accent-color: #268bd2;
+  --accent-glow: rgba(38, 139, 210, 0.2);
+  --danger-color: #dc322f;
+  --success-color: #859900;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  height: 100vh;
+  overflow: hidden;
+  /* subtle background gradient */
+  background: radial-gradient(circle at top right, rgba(17, 24, 39, 1) 0%, var(--bg-color) 100%);
+}
+
+#root {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* Glassmorphism utilities */
+.glass-panel {
+  background: var(--bg-panel);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.scrollable::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollable::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollable::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.scrollable::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+button {
+  font-family: var(--font-body);
+  background: var(--bg-panel);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+button:hover:not(:disabled) {
+  background: var(--bg-panel-hover);
+  border-color: var(--accent-color);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent-color);
+  color: #0b0c10;
+  font-weight: 600;
+  border: none;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #7dd3fc;
+  box-shadow: 0 0 15px var(--accent-glow);
+}
+
+input, select, textarea {
+  font-family: var(--font-body);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  padding: 8px 12px;
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent-color);
+}
+
+/* Titlebar drag region for frameless window */
+.titlebar-drag {
+  -webkit-app-region: drag;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+/* Allow clicking on buttons inside titlebar region */
+.titlebar-drag * {
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+}
