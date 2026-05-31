@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { safeMarkdownUrl } from '../services/markdownSafety';
 import './MarkdownDecisionForm.css';
 
 type DecisionOption = {
@@ -32,7 +33,7 @@ export default function MarkdownDecisionForm({ request, onSelect }: Props) {
       </div>
 
       <div className="decision-markdown scrollable">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{request.markdown}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={safeMarkdownUrl}>{request.markdown}</ReactMarkdown>
       </div>
 
       <div className="decision-options">

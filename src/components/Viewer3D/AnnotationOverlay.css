@@ -1,0 +1,211 @@
+.annotation-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: transparent;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  color: var(--text-main);
+  max-height: calc(100% - 24px);
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.annotation-overlay__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.annotation-overlay__title {
+  font-weight: 600;
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+  margin-right: auto;
+  color: #e2e8f0;
+}
+
+.annotation-overlay__count {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 0.82rem;
+  margin-left: 6px;
+}
+
+.annotation-overlay__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 0.82rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(30, 41, 59, 0.55);
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.annotation-overlay__btn:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.55);
+}
+
+.annotation-overlay__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.annotation-overlay__btn--primary {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: rgba(56, 189, 248, 0.55);
+  color: #f0f9ff;
+}
+
+.annotation-overlay__btn--primary:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.4);
+}
+
+.annotation-overlay__btn--danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.55);
+}
+
+.annotation-overlay__grid {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.annotation-overlay__grid label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.annotation-overlay__grid input,
+.annotation-overlay__grid select {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 0.8rem;
+}
+
+.annotation-overlay__grid input {
+  width: 64px;
+}
+
+.annotation-overlay__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  max-height: 220px;
+  padding-right: 4px;
+}
+
+.annotation-overlay__empty {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  padding: 6px 2px;
+}
+
+.annotation-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.45);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.annotation-item:hover {
+  background: rgba(30, 41, 59, 0.7);
+}
+
+.annotation-item--selected {
+  border-color: rgba(56, 189, 248, 0.6);
+  background: rgba(14, 116, 144, 0.25);
+}
+
+.annotation-item__index {
+  flex: 0 0 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fbbf24;
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.annotation-item--selected .annotation-item__index {
+  background: #38bdf8;
+}
+
+.annotation-item__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.annotation-item__meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.annotation-item__note {
+  font-size: 0.85rem;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.annotation-item__edit {
+  width: 100%;
+  resize: vertical;
+  min-height: 48px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 5px 7px;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.annotation-item__edit-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.annotation-overlay__hint {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.annotation-item__placeholder {
+  opacity: 0.6;
+}

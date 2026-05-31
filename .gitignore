@@ -13,6 +13,9 @@ dist-ssr
 dist-electron
 *.local
 
+# Local-only planning notes, not shipped with the repo
+Implementation Plan/
+
 # Editor directories and files
 .vs/
 .vscode/*

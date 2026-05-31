@@ -59,6 +59,10 @@
   display: flex;
   gap: 8px;
   align-items: center;
+  justify-content: flex-end;
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-color);
 }
 
 .message-role {
@@ -373,18 +377,25 @@
 /* Message Metrics Grid */
 .message-metrics-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 10px 12px;
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--border-color);
   font-family: 'Fira Code', monospace;
+  min-width: 0;
 }
 
-@media (max-width: 600px) {
-  .message-metrics-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+.message-metrics-grid .metric-item {
+  min-width: 0;
+}
+
+.message-metrics-grid .metric-item .value,
+.message-metrics-grid .metric-item .label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .metric-item {

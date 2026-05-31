@@ -8,6 +8,13 @@ import { chromium } from 'playwright-core';
 import { parse as parseCSV } from 'csv-parse/sync';
 import { createRequire } from 'module';
 import { create, all } from 'mathjs';
+import {
+  isSafeHttpUrl,
+  isRiskyCommand,
+  assertValidSessionId,
+  resolveChatFile as resolveChatFileImpl,
+  resolveWikiPath as resolveWikiPathImpl
+} from './lib/validation.js';
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
 
@@ -37,15 +44,9 @@ const ALLOWED_BROWSER_ACTIONS = new Set([
   'screenshot',
   'content',
   'extract-text',
-  'evaluate'
+  'evaluate',
+  'reset'
 ]);
-
-const SHELL_RISKY_PATTERNS = [
-  /(^|\s)(rm|rmdir|del|erase|format|shutdown|reboot|Restart-Computer)(\s|$)/i,
-  /(^|\s)(Remove-Item|Set-ExecutionPolicy|reg\s+add|reg\s+delete|diskpart)(\s|$)/i,
-  /(^|\s)(curl|Invoke-WebRequest|Invoke-Expression|iex)(\s|$)/i,
-  /(^|\s)(Start-Process|Stop-Process|taskkill|sc\.exe)(\s|$)/i
-];
 
 function sanitizeError(err) {
   const fallback = 'Operation failed.';
@@ -68,40 +69,12 @@ function assertRateLimit(key, limit, windowMs) {
   rateWindows.set(key, fresh);
 }
 
-function sanitizeUserPath(inputPath) {
-  if (typeof inputPath !== 'string' || !inputPath.trim()) {
-    throw new Error('Path is required.');
-  }
-  if (inputPath.includes('\0')) {
-    throw new Error('Invalid path.');
-  }
-  return inputPath.replace(/\\/g, '/').replace(/^\/+/, '');
-}
-
 function resolveWikiPath(filePath) {
-  const wikiRoot = path.resolve(path.join(app.getPath('userData'), 'wiki'));
-  const relative = sanitizeUserPath(filePath);
-  const fullPath = path.resolve(path.join(wikiRoot, relative));
-  if (fullPath !== wikiRoot && !fullPath.startsWith(`${wikiRoot}${path.sep}`)) {
-    throw new Error('Access denied for path.');
-  }
-  return { wikiRoot, fullPath };
+  return resolveWikiPathImpl(path.join(app.getPath('userData'), 'wiki'), filePath);
 }
 
-function isSafeHttpUrl(urlValue) {
-  try {
-    const parsed = new URL(urlValue);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isRiskyCommand(command) {
-  const trimmed = command.trim();
-  if (!trimmed) return false;
-  return SHELL_RISKY_PATTERNS.some((pattern) => pattern.test(trimmed));
+function resolveChatFile(sessionId) {
+  return resolveChatFileImpl(app.getPath('userData'), sessionId);
 }
 
 function requestRendererDecision(payload) {
@@ -145,6 +118,7 @@ async function requestUserDecision(payload) {
 }
 
 ipcMain.handle('policy-decision-response', async (_event, requestId, selectionId) => {
+  if (typeof requestId !== 'string' || typeof selectionId !== 'string') return false;
   const pending = pendingPolicyDecisions.get(requestId);
   if (!pending) return false;
 
@@ -177,6 +151,29 @@ async function getPersistentPage() {
   return persistentPage;
 }
 
+async function resetPersistentBrowser() {
+  // Close just the context (and any pages inside it) so cookies, storage,
+  // and cache do not leak across unrelated browsing sessions. Keep the
+  // launched browser process alive to avoid the startup latency hit.
+  if (persistentContext) {
+    const ctx = persistentContext;
+    persistentContext = null;
+    persistentPage = null;
+    try {
+      await ctx.close();
+    } catch {
+      /* ignore */
+    }
+  }
+  if (persistentBrowser) {
+    persistentContext = await persistentBrowser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1280, height: 800 }
+    });
+    persistentPage = await persistentContext.newPage();
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -185,7 +182,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false, // For local files if needed
+      sandbox: false,
     },
     titleBarStyle: 'hidden',
     titleBarOverlay: {
@@ -221,30 +218,62 @@ app.on('window-all-closed', () => {
   }
 });
 
+app.on('before-quit', async () => {
+  try {
+    for (const id of Object.keys(terminals)) {
+      try { terminals[id]?.proc?.kill(); } catch { /* ignore */ }
+    }
+    if (persistentBrowser) {
+      const browser = persistentBrowser;
+      persistentBrowser = null;
+      persistentContext = null;
+      persistentPage = null;
+      await browser.close().catch(() => {});
+    }
+  } catch (err) {
+    console.error('Cleanup error on quit:', sanitizeError(err));
+  }
+});
+
+function buildOllamaUrl(hostUrl, endpoint) {
+  if (typeof hostUrl !== 'string' || !isSafeHttpUrl(hostUrl)) {
+    throw new Error('Invalid Ollama host URL.');
+  }
+  if (typeof endpoint !== 'string' || !endpoint.startsWith('/')) {
+    throw new Error('Invalid Ollama endpoint.');
+  }
+  const base = hostUrl.replace(/\/$/, '');
+  const url = `${base}${endpoint}`;
+  if (!isSafeHttpUrl(url)) {
+    throw new Error('Invalid Ollama URL.');
+  }
+  return url;
+}
+
 // Ollama API Proxy (Bypasses CORS)
 ipcMain.handle('ollama-request', async (event, hostUrl, endpoint, data) => {
   try {
-    const url = `${hostUrl.replace(/\/$/, '')}${endpoint}`;
+    const url = buildOllamaUrl(hostUrl, endpoint);
     const response = await fetch(url, {
       method: data ? 'POST' : 'GET',
       headers: { 'Content-Type': 'application/json' },
       body: data ? JSON.stringify(data) : undefined
     });
-    
+
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch (err) {
-    console.error('Ollama Error:', err);
-    throw err;
+    console.error('Ollama Error:', sanitizeError(err));
+    throw new Error(sanitizeError(err));
   }
 });
 
 ipcMain.on('ollama-stream', async (event, streamId, hostUrl, endpoint, data) => {
   const controller = new AbortController();
   activeStreams[streamId] = controller;
-  
+
   try {
-    const url = `${hostUrl.replace(/\/$/, '')}${endpoint}`;
+    const url = buildOllamaUrl(hostUrl, endpoint);
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -284,31 +313,45 @@ ipcMain.on('abort-stream', (event, streamId) => {
 });
 
 // Terminal Handlers
-const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
+const isWindows = os.platform() === 'win32';
+const shell = isWindows ? 'powershell.exe' : 'bash';
+const shellArgs = isWindows ? ['-NoLogo', '-NoProfile'] : ['-i'];
+
+function flushTerminalInputQueue(terminal) {
+  if (!terminal || terminal.policyPending) return;
+  while (terminal.inputQueue && terminal.inputQueue.length > 0) {
+    const next = terminal.inputQueue.shift();
+    if (terminal.proc?.stdin?.writable) {
+      try { terminal.proc.stdin.write(next); } catch { /* ignore */ }
+    }
+  }
+}
 
 ipcMain.handle('spawn-terminal', (event, type) => {
   const id = Math.random().toString(36).substring(7);
-  
+
   let command = shell;
-  let args = [];
-  
+  let args = shellArgs;
+
   if (type === 'python') {
-    command = os.platform() === 'win32' ? 'python' : 'python3';
+    command = isWindows ? 'python' : 'python3';
     args = ['-i']; // interactive
   } else if (type === 'java') {
     command = 'jshell'; // Java REPL
+    args = [];
   }
 
   const proc = spawn(command, args, {
     cwd: process.env.HOME || process.env.USERPROFILE,
-    env: process.env,
-    shell: true
+    env: process.env
   });
 
   terminals[id] = {
     proc,
     type,
-    lineBuffer: ''
+    lineBuffer: '',
+    inputQueue: [],
+    policyPending: false
   };
 
   proc.stdout.on('data', (data) => {
@@ -365,7 +408,7 @@ ipcMain.on('terminal-input', (event, id, data) => {
 
   requestUserDecision({
     title: 'Shell Command Approval',
-    markdown: `### Risky shell command detected\n\n\\`\\`\\`powershell\n${command}\n\\`\\`\\`\n\nChoose how to proceed.`,
+    markdown: `### Risky shell command detected\n\n\`\`\`powershell\n${command}\n\`\`\`\n\nChoose how to proceed.`,
     options: [
       { id: 'deny', label: 'Deny', description: 'Block this command.', recommended: true },
       { id: 'allow', label: 'Allow Once', description: 'Run this command one time.' }
@@ -400,7 +443,7 @@ ipcMain.handle('run-shell-command', async (_event, command) => {
     if (isRiskyCommand(normalizedCommand)) {
       decisionMeta = await requestUserDecision({
         title: 'Shell Command Approval',
-        markdown: `### Risky shell command detected\n\n\\`\\`\\`powershell\n${normalizedCommand}\n\\`\\`\\`\n\nChoose how to proceed.`,
+        markdown: `### Risky shell command detected\n\n\`\`\`powershell\n${normalizedCommand}\n\`\`\`\n\nChoose how to proceed.`,
         options: [
           { id: 'deny', label: 'Deny', description: 'Block this command.', recommended: true },
           { id: 'allow', label: 'Allow Once', description: 'Run this command one time.' }
@@ -422,16 +465,17 @@ ipcMain.handle('run-shell-command', async (_event, command) => {
     }
 
     const id = Math.random().toString(36).substring(7);
-    const proc = spawn(shell, [], {
+    const proc = spawn(shell, shellArgs, {
       cwd: process.env.HOME || process.env.USERPROFILE,
-      env: process.env,
-      shell: true
+      env: process.env
     });
 
     terminals[id] = {
       proc,
       type: 'shell',
-      lineBuffer: ''
+      lineBuffer: '',
+      inputQueue: [],
+      policyPending: false
     };
 
     proc.stdout.on('data', (data) => {
@@ -490,10 +534,20 @@ ipcMain.handle('browser-action', async (event, options) => {
 
     let policyMeta = null;
 
+    if (action === 'reset') {
+      await resetPersistentBrowser();
+      return {
+        result: 'Browser session reset (cookies, storage, and cache cleared).',
+        url: 'about:blank',
+        title: '',
+        policy: policyMeta
+      };
+    }
+
     if (action === 'evaluate') {
       const decision = await requestUserDecision({
         title: 'Browser Script Approval',
-        markdown: `### Browser evaluate request\n\nThe model wants to execute script code in the page context.\n\n\\`\\`\\`javascript\n${String(script || '').slice(0, 600)}\n\\`\\`\\``,
+        markdown: `### Browser evaluate request\n\nThe model wants to execute script code in the page context.\n\n\`\`\`javascript\n${String(script || '').slice(0, 600)}\n\`\`\``,
         options: [
           { id: 'deny', label: 'Deny', description: 'Do not run this script.', recommended: true },
           { id: 'allow', label: 'Allow Once', description: 'Run this script one time.' }
@@ -515,7 +569,7 @@ ipcMain.handle('browser-action', async (event, options) => {
       if (!isLocal) {
         const decision = await requestUserDecision({
           title: 'External Navigation Approval',
-          markdown: `### External website request\n\nTarget URL:\n\n\\`\\`\\`text\n${url}\n\\`\\`\\`\n\nAllow navigation?`,
+          markdown: `### External website request\n\nTarget URL:\n\n\`\`\`text\n${url}\n\`\`\`\n\nAllow navigation?`,
           options: [
             { id: 'deny', label: 'Deny', description: 'Block navigation.', recommended: true },
             { id: 'allow', label: 'Allow Once', description: 'Navigate to this URL now.' }
@@ -782,11 +836,13 @@ ipcMain.handle('list-wiki', async (event) => {
 // Chat Session Handlers
 ipcMain.handle('save-chat', async (event, sessionId, messages) => {
   try {
-    const chatsPath = path.join(app.getPath('userData'), 'chats');
-    if (!fs.existsSync(chatsPath)) fs.mkdirSync(chatsPath, { recursive: true });
-    const filePath = path.join(chatsPath, `${sessionId}.json`);
-    let title = messages.length > 0 ? (messages[0].content.substring(0, 40) + '...') : 'New Chat';
-    
+    const { chatsRoot, fullPath } = resolveChatFile(sessionId);
+    if (!Array.isArray(messages)) throw new Error('Invalid messages payload.');
+    if (!fs.existsSync(chatsRoot)) fs.mkdirSync(chatsRoot, { recursive: true });
+    const filePath = fullPath;
+    const firstContent = messages.length > 0 && typeof messages[0]?.content === 'string' ? messages[0].content : '';
+    let title = firstContent ? `${firstContent.substring(0, 40)}...` : 'New Chat';
+
     // Preserve existing title if it's not "New Chat"
     if (fs.existsSync(filePath)) {
       try {
@@ -795,7 +851,7 @@ ipcMain.handle('save-chat', async (event, sessionId, messages) => {
           title = existing.title;
         }
       } catch (e) {
-        console.error('Error reading existing chat for title preservation:', e);
+        console.error('Error reading existing chat for title preservation:', sanitizeError(e));
       }
     }
 
@@ -805,20 +861,23 @@ ipcMain.handle('save-chat', async (event, sessionId, messages) => {
       messages: messages,
       title: title
     };
-    
+
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
     return true;
   } catch (err) {
-    console.error('Save Chat Error:', err);
+    console.error('Save Chat Error:', sanitizeError(err));
     return false;
   }
 });
 
 ipcMain.handle('rename-chat', async (event, sessionId, newTitle) => {
   try {
-    const chatsPath = path.join(app.getPath('userData'), 'chats');
-    const filePath = path.join(chatsPath, `${sessionId}.json`);
-    
+    const { fullPath } = resolveChatFile(sessionId);
+    if (typeof newTitle !== 'string' || newTitle.length === 0 || newTitle.length > 200) {
+      throw new Error('Invalid title.');
+    }
+    const filePath = fullPath;
+
     if (fs.existsSync(filePath)) {
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       data.title = newTitle;
@@ -828,18 +887,18 @@ ipcMain.handle('rename-chat', async (event, sessionId, newTitle) => {
     }
     return false;
   } catch (err) {
-    console.error('Rename Chat Error:', err);
+    console.error('Rename Chat Error:', sanitizeError(err));
     return false;
   }
 });
 
 ipcMain.handle('load-chat', async (event, sessionId) => {
   try {
-    const filePath = path.join(app.getPath('userData'), 'chats', `${sessionId}.json`);
-    if (!fs.existsSync(filePath)) return null;
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    const { fullPath } = resolveChatFile(sessionId);
+    if (!fs.existsSync(fullPath)) return null;
+    return JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
   } catch (err) {
-    console.error('Load Chat Error:', err);
+    console.error('Load Chat Error:', sanitizeError(err));
     return null;
   }
 });
@@ -868,23 +927,32 @@ ipcMain.handle('list-chats', async (event) => {
 
 ipcMain.handle('delete-chat', async (event, sessionId) => {
   try {
-    const filePath = path.join(app.getPath('userData'), 'chats', `${sessionId}.json`);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    const { fullPath } = resolveChatFile(sessionId);
+    if (fs.existsSync(fullPath)) {
+      fs.unlinkSync(fullPath);
       return true;
     }
     return false;
   } catch (err) {
-    console.error('Delete Chat Error:', err);
+    console.error('Delete Chat Error:', sanitizeError(err));
     return false;
   }
 });
 
 ipcMain.handle('parse-file', async (event, filePath) => {
   try {
-    const ext = path.extname(filePath).toLowerCase();
-    const buffer = fs.readFileSync(filePath);
-    
+    if (typeof filePath !== 'string' || !filePath.trim() || filePath.includes('\0')) {
+      throw new Error('Invalid file path.');
+    }
+    assertRateLimit('parse-file', 60, 60_000);
+    const resolved = path.resolve(filePath);
+    const stat = fs.statSync(resolved);
+    if (!stat.isFile()) throw new Error('Not a regular file.');
+    if (stat.size > 50 * 1024 * 1024) throw new Error('File exceeds 50 MB limit.');
+
+    const ext = path.extname(resolved).toLowerCase();
+    const buffer = fs.readFileSync(resolved);
+
     if (ext === '.pdf') {
       const data = await pdfParse(buffer);
       return data.text;
@@ -897,15 +965,20 @@ ipcMain.handle('parse-file', async (event, filePath) => {
       return `Unsupported file format: ${ext}`;
     }
   } catch (err) {
-    console.error('File Parse Error:', err);
-    return `Error parsing file: ${err.message}`;
+    console.error('File Parse Error:', sanitizeError(err));
+    return `Error parsing file: ${sanitizeError(err)}`;
   }
 });
 
 // Parse file from raw buffer bytes (used by drag-and-drop in renderer)
 ipcMain.handle('parse-file-buffer', async (event, ext, byteArray) => {
   try {
+    if (typeof ext !== 'string' || !/^[a-z0-9]{1,8}$/i.test(ext)) {
+      throw new Error('Invalid file extension.');
+    }
+    assertRateLimit('parse-file-buffer', 60, 60_000);
     const buffer = Buffer.from(byteArray);
+    if (buffer.length > 50 * 1024 * 1024) throw new Error('File exceeds 50 MB limit.');
 
     if (ext === 'pdf') {
       const data = await pdfParse(buffer);
@@ -917,17 +990,20 @@ ipcMain.handle('parse-file-buffer', async (event, ext, byteArray) => {
       return buffer.toString('utf-8');
     }
   } catch (err) {
-    console.error('File Buffer Parse Error:', err);
-    return `Error parsing file: ${err.message}`;
+    console.error('File Buffer Parse Error:', sanitizeError(err));
+    return `Error parsing file: ${sanitizeError(err)}`;
   }
 });
 
 ipcMain.handle('unload-models', async (event, hostUrl) => {
   try {
+    if (typeof hostUrl !== 'string' || !isSafeHttpUrl(hostUrl)) {
+      throw new Error('Invalid Ollama host URL.');
+    }
     const url = hostUrl.replace(/\/$/, '');
     const psRes = await fetch(`${url}/api/ps`);
     const data = await psRes.json();
-    
+
     if (data.models) {
       for (const m of data.models) {
         await fetch(`${url}/api/chat`, {
@@ -939,7 +1015,7 @@ ipcMain.handle('unload-models', async (event, hostUrl) => {
     }
     return true;
   } catch (err) {
-    console.error('Unload Error:', err);
+    console.error('Unload Error:', sanitizeError(err));
     return false;
   }
 });

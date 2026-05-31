@@ -1,29 +1,55 @@
-import React from 'react';
-import { Box, Move3D, RotateCcw, Ruler } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import Chat from './Chat';
+import Scene3D from './Viewer3D/Scene3D';
+import AnnotationOverlay from './Viewer3D/AnnotationOverlay';
 import './Viewer3D.css';
 
-export default function Viewer3D() {
+interface Viewer3DProps {
+  selectedModel: string;
+  hostUrl: string;
+  keepAlive: boolean;
+  sessionId: string | null;
+  sessionTitle?: string;
+  onSessionUpdate: () => void;
+}
+
+export default function Viewer3D({
+  selectedModel,
+  hostUrl,
+  keepAlive,
+  sessionId,
+  sessionTitle,
+  onSessionUpdate
+}: Viewer3DProps) {
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+
+  const handleAnnotationCreated = useCallback((id: string) => {
+    setSelectedAnnotationId(id);
+  }, []);
+
   return (
     <div className="viewer3d-container">
-      <aside className="viewer3d-sidebar glass-panel">
-        <h3>3D Workspace</h3>
-        <div className="viewer3d-tools">
-          <button><Move3D size={14} /> Transform</button>
-          <button><RotateCcw size={14} /> Recenter</button>
-          <button><Ruler size={14} /> Measure</button>
-        </div>
-        <p className="viewer3d-note">
-          Hybrid mode baseline is enabled: this viewport is reserved for real-time interaction while OpenSCAD-backed modifiers will be connected in the next implementation steps.
-        </p>
-      </aside>
-
       <section className="viewer3d-stage glass-panel">
-        <div className="viewer3d-placeholder" role="img" aria-label="3D preview placeholder">
-          <Box size={56} />
-          <h4>Interactive 3D Preview</h4>
-          <p>STL/OBJ/3MF import and transform controls will mount here in the next increment.</p>
-        </div>
+        <Scene3D
+          selectedAnnotationId={selectedAnnotationId}
+          onAnnotationCreated={handleAnnotationCreated}
+        />
+        <AnnotationOverlay
+          selectedId={selectedAnnotationId}
+          onSelect={setSelectedAnnotationId}
+        />
       </section>
+
+      <aside className="viewer3d-chat glass-panel">
+        <Chat
+          selectedModel={selectedModel}
+          hostUrl={hostUrl}
+          keepAlive={keepAlive}
+          sessionId={sessionId}
+          sessionTitle={sessionTitle}
+          onSessionUpdate={onSessionUpdate}
+        />
+      </aside>
     </div>
   );
 }

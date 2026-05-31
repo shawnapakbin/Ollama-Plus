@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { safeMarkdownUrl } from '../services/markdownSafety';
 import './MarkdownInputForm.css';
 
 type Props = {
@@ -35,7 +36,7 @@ export default function MarkdownInputForm({
       </div>
 
       <div className="input-form-markdown scrollable">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={safeMarkdownUrl}>{markdown}</ReactMarkdown>
       </div>
 
       <div className="input-form-controls">

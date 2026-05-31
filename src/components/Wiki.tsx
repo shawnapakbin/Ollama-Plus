@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { FileText, Save, Edit3, Plus } from 'lucide-react';
+import { FileText, Save, Edit3, Plus, Loader2 } from 'lucide-react';
 import MarkdownInputForm from './MarkdownInputForm';
 import { ipcService } from '../services/ipcService';
+import { safeMarkdownUrl } from '../services/markdownSafety';
 import './Wiki.css';
+
+const WIKI_NAME_PATTERN = /^[A-Za-z0-9._\-/ ]+$/;
 
 export default function Wiki() {
   const [files, setFiles] = useState([]);
@@ -12,48 +15,76 @@ export default function Wiki() {
   const [content, setContent] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [showNewFileForm, setShowNewFileForm] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     void fetchWikiList();
   }, []);
 
   const fetchWikiList = async () => {
-    const list = await ipcService.listWiki();
-    setFiles(list);
-    if (list.length > 0 && !activeFile) {
-      void loadFile(list[0]);
+    try {
+      const list = await ipcService.listWiki();
+      setFiles(list);
+      if (list.length > 0 && !activeFile) {
+        void loadFile(list[0]);
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to list wiki files.');
     }
   };
 
   const loadFile = async (path) => {
-    const data = await ipcService.readWiki(path);
-    setContent(data || '');
-    setActiveFile(path);
-    setIsEditing(false);
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const data = await ipcService.readWiki(path);
+      setContent(data || '');
+      setActiveFile(path);
+      setIsEditing(false);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to read file.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const saveFile = async () => {
     if (!activeFile) return;
-    await ipcService.writeWiki(activeFile, content);
-    setIsEditing(false);
-    await fetchWikiList();
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      const ok = await ipcService.writeWiki(activeFile, content);
+      if (ok === false) throw new Error('Write rejected by main process.');
+      setIsEditing(false);
+      await fetchWikiList();
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to save file.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const createNewFile = () => {
+    setErrorMessage(null);
     setShowNewFileForm(true);
   };
 
   const commitNewFile = (rawName: string | null) => {
     setShowNewFileForm(false);
     const name = (rawName || '').trim();
-    if (name) {
-      const safeName = name.endsWith('.md') ? name : `${name}.md`;
-      setActiveFile(safeName);
-      setContent('# ' + safeName.replace('.md', ''));
-      setIsEditing(true);
-      if (!files.includes(safeName)) {
-        setFiles([...files, safeName]);
-      }
+    if (!name) return;
+    if (!WIKI_NAME_PATTERN.test(name) || name.includes('..')) {
+      setErrorMessage('Invalid file name. Use letters, numbers, dots, dashes, underscores, slashes or spaces only.');
+      return;
+    }
+    const safeName = name.endsWith('.md') ? name : `${name}.md`;
+    setActiveFile(safeName);
+    setContent('# ' + safeName.replace('.md', ''));
+    setIsEditing(true);
+    if (!files.includes(safeName)) {
+      setFiles([...files, safeName]);
     }
   };
 
@@ -87,15 +118,23 @@ export default function Wiki() {
               <span className="wiki-filename">{activeFile}</span>
               <div className="wiki-actions">
                 {isEditing ? (
-                  <button onClick={saveFile} className="primary"><Save size={14}/> Save</button>
+                  <button onClick={saveFile} className="primary" disabled={isSaving}>
+                    {isSaving ? <Loader2 size={14} className="spin" /> : <Save size={14} />} {isSaving ? 'Saving…' : 'Save'}
+                  </button>
                 ) : (
                   <button onClick={() => setIsEditing(true)}><Edit3 size={14}/> Edit</button>
                 )}
               </div>
             </div>
-            
+
+            {errorMessage && (
+              <div className="wiki-error" role="alert">{errorMessage}</div>
+            )}
+
             <div className="wiki-content">
-              {isEditing ? (
+              {isLoading ? (
+                <div className="empty-state"><Loader2 size={32} className="spin" /><p>Loading…</p></div>
+              ) : isEditing ? (
                 <textarea 
                   aria-label="Edit wiki markdown"
                   className="wiki-textarea" 
@@ -104,7 +143,7 @@ export default function Wiki() {
                 />
               ) : (
                 <div className="wiki-preview scrollable">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={safeMarkdownUrl}>{content}</ReactMarkdown>
                 </div>
               )}
             </div>
@@ -113,6 +152,7 @@ export default function Wiki() {
           <div className="empty-state">
             <FileText size={48} className="empty-icon" />
             <p>Select or create a markdown file.</p>
+            {errorMessage && <p className="wiki-error" role="alert">{errorMessage}</p>}
           </div>
         )}
       </div>

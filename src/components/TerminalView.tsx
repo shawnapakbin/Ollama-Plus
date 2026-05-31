@@ -23,6 +23,7 @@ export default function TerminalView() {
 
     if (xtermInstance.current) {
       xtermInstance.current.dispose();
+      xtermInstance.current = null;
     }
 
     const term = new Terminal({
@@ -38,19 +39,24 @@ export default function TerminalView() {
     term.open(terminalRef.current);
     xtermInstance.current = term;
 
-    term.onData(data => {
-      ipcService.terminalInput(activeTermId, data);
+    const termId = activeTermId;
+    const onDataDisposable = term.onData(data => {
+      ipcService.terminalInput(termId, data);
     });
 
     const removeListener = ipcService.onTerminalOutput((id, data) => {
-      if (id === activeTermId && xtermInstance.current) {
-        xtermInstance.current.write(data);
+      if (id === termId && xtermInstance.current === term) {
+        term.write(data);
       }
     });
 
     return () => {
-      term.dispose();
       removeListener();
+      onDataDisposable.dispose();
+      term.dispose();
+      if (xtermInstance.current === term) {
+        xtermInstance.current = null;
+      }
     };
   }, [activeTermId]);
 

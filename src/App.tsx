@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Settings, MessageSquare, Terminal as TerminalIcon, Book, RefreshCw, ListTodo, Box, LayoutPanelLeft, Columns2, X } from 'lucide-react';
+import { Settings, MessageSquare, Terminal as TerminalIcon, Book, RefreshCw, ListTodo, Box, LayoutPanelLeft, Columns2, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import Chat from './components/Chat';
 import TerminalView from './components/TerminalView';
 import Wiki from './components/Wiki';
@@ -116,6 +116,8 @@ export default function App() {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const [hostUrl, setHostUrl] = useState(localStorage.getItem('hostUrl') || 'http://127.0.0.1:11434');
   const [keepAlive, setKeepAlive] = useState(localStorage.getItem('keepAlive') === 'true');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(localStorage.getItem('sidebarCollapsed') === 'true');
+  const [autoCollapseSidebar, setAutoCollapseSidebar] = useState(localStorage.getItem('autoCollapseSidebar') === 'true');
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState(localStorage.getItem('currentSessionId') || '');
@@ -154,6 +156,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('activeLayoutId', activeLayoutId);
   }, [activeLayoutId]);
+
+  useEffect(() => {
+    localStorage.setItem('sidebarCollapsed', String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem('autoCollapseSidebar', String(autoCollapseSidebar));
+  }, [autoCollapseSidebar]);
 
   useEffect(() => {
     localStorage.setItem('hostUrl', hostUrl);
@@ -272,6 +282,7 @@ export default function App() {
       primary: panelId,
       secondary: layout.secondary === panelId ? undefined : layout.secondary
     }));
+    if (autoCollapseSidebar) setSidebarCollapsed(true);
   };
 
   const setSecondaryPanel = (panelId?: PanelId) => {
@@ -383,7 +394,16 @@ export default function App() {
       case 'tasks':
         return <TaskBoard />;
       case 'viewer3d':
-        return <Viewer3D />;
+        return (
+          <Viewer3D
+            selectedModel={selectedModel}
+            hostUrl={hostUrl}
+            keepAlive={keepAlive}
+            sessionId={currentSessionId}
+            sessionTitle={sessions.find((s) => s.id === currentSessionId)?.title}
+            onSessionUpdate={refreshSessions}
+          />
+        );
       default:
         return <Chat selectedModel={selectedModel} hostUrl={hostUrl} keepAlive={keepAlive} sessionId={currentSessionId} sessionTitle={sessions.find((s) => s.id === currentSessionId)?.title} onSessionUpdate={refreshSessions} />;
     }
@@ -393,7 +413,16 @@ export default function App() {
     <div className="app-container">
       <div className="titlebar-drag" />
       
-      <aside className="sidebar glass-panel">
+      <aside className={`sidebar glass-panel${sidebarCollapsed ? ' collapsed' : ''}`}>
+        <button
+          type="button"
+          className="sidebar-toggle"
+          onClick={() => setSidebarCollapsed((v) => !v)}
+          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+        </button>
         <div className="brand">
           <img src={logo} alt="Ollama +" className="app-logo" />
           <h2>Ollama +</h2>
@@ -547,6 +576,16 @@ export default function App() {
                   onChange={(e) => setKeepAlive(e.target.checked)} 
                 />
                 <label htmlFor="keepAliveToggle" className="checkbox-label">Keep Model Loaded in Memory (Faster responses)</label>
+              </div>
+
+              <div className="setting-group setting-group-inline">
+                <input
+                  type="checkbox"
+                  id="autoCollapseSidebarToggle"
+                  checked={autoCollapseSidebar}
+                  onChange={(e) => setAutoCollapseSidebar(e.target.checked)}
+                />
+                <label htmlFor="autoCollapseSidebarToggle" className="checkbox-label">Auto-collapse sidebar when switching panels</label>
               </div>
 
               <div className="setting-group setting-group-spaced">

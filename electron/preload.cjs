@@ -4,19 +4,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   invokeOllama: (hostUrl, endpoint, data) => ipcRenderer.invoke('ollama-request', hostUrl, endpoint, data),
   invokeOllamaStream: (hostUrl, endpoint, data, onData, onEnd, onError) => {
     const streamId = Math.random().toString(36).substring(7);
-    ipcRenderer.on(`ollama-data-${streamId}`, (_e, chunk) => onData(chunk));
-    ipcRenderer.on(`ollama-end-${streamId}`, () => {
-      onEnd();
-      ipcRenderer.removeAllListeners(`ollama-data-${streamId}`);
-      ipcRenderer.removeAllListeners(`ollama-end-${streamId}`);
-      ipcRenderer.removeAllListeners(`ollama-error-${streamId}`);
-    });
-    ipcRenderer.on(`ollama-error-${streamId}`, (_e, err) => {
-      onError(err);
-      ipcRenderer.removeAllListeners(`ollama-data-${streamId}`);
-      ipcRenderer.removeAllListeners(`ollama-end-${streamId}`);
-      ipcRenderer.removeAllListeners(`ollama-error-${streamId}`);
-    });
+    const dataChannel = `ollama-data-${streamId}`;
+    const endChannel = `ollama-end-${streamId}`;
+    const errChannel = `ollama-error-${streamId}`;
+
+    const dataHandler = (_e, chunk) => { try { onData(chunk); } catch { /* ignore */ } };
+    const cleanup = () => {
+      ipcRenderer.removeListener(dataChannel, dataHandler);
+      ipcRenderer.removeListener(endChannel, endHandler);
+      ipcRenderer.removeListener(errChannel, errHandler);
+    };
+    const endHandler = () => { cleanup(); try { onEnd(); } catch { /* ignore */ } };
+    const errHandler = (_e, err) => { cleanup(); try { onError(err); } catch { /* ignore */ } };
+
+    ipcRenderer.on(dataChannel, dataHandler);
+    ipcRenderer.once(endChannel, endHandler);
+    ipcRenderer.once(errChannel, errHandler);
     ipcRenderer.send('ollama-stream', streamId, hostUrl, endpoint, data);
     return streamId;
   },

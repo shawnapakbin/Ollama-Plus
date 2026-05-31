@@ -112,7 +112,12 @@ External Systems
 Core renderer modules:
 
 - Workspace shell and overlays: `src/App.tsx`
-- Chat orchestration and tool loop: `src/components/Chat.tsx`
+- Chat shell (layout, input, steer queue): `src/components/Chat.tsx`
+- Chat pipeline (recursive tool loop, streaming, router): `src/components/Chat/hooks/useChatPipeline.ts`
+- Chat hooks (session, stream, processor status, steer queue): `src/components/Chat/hooks/`
+- Pure pipeline helpers (payload builder, tool-call extraction, think-block parser, metrics): `src/components/Chat/pipeline/`
+- Tool registry (schemas + dispatch): `src/components/Chat/tools/registry.ts`
+- Message rendering (memoized rows + markdown): `src/components/Chat/MessageList.tsx`, `MessageRow.tsx`, `MessageRenderer.tsx`
 - Task runtime store: `src/services/taskRuntime.ts`
 - Task Board UI: `src/components/TaskBoard.tsx`
 - Decision/Input markdown forms: `src/components/MarkdownDecisionForm.tsx`, `src/components/MarkdownInputForm.tsx`
@@ -136,9 +141,20 @@ Tool request from model
 npm run dev
 npm run build
 npm run lint
+npm test
 npm run preview
 npm run electron:dev
 npm run electron:build
+```
+
+## Testing
+
+Unit tests run under Vitest and cover the pure modules behind the chat pipeline:
+`buildPayload`, `extractToolCalls`, `thinkBlockParser`, `formatMetrics`, `markdownSafety`,
+and the main-process `validation` helpers.
+
+```bash
+npm test
 ```
 
 ## Development
@@ -184,6 +200,7 @@ Implemented:
 - Runtime task tracking and Task Board updates.
 - In-app markdown decision and input forms.
 - Policy gating with decision-token propagation for core risky actions.
+- Modular chat surface: thin shell + dedicated hooks for session, streaming, processor status, steer queue, and the recursive tool pipeline; pure pipeline helpers and a tool registry covered by Vitest unit tests.
 
 In progress:
 
