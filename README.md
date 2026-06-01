@@ -144,8 +144,35 @@ npm run lint
 npm test
 npm run preview
 npm run electron:dev
+npm run electron:debug
 npm run electron:build
 ```
+
+## Debugging Inside VS Code (Edge Tools)
+
+Use the `electron:debug` script to launch the app with Chromium's remote
+debugging port exposed so the **Microsoft Edge Tools for VS Code** extension can
+attach and show the running renderer (Elements, Console, Network, screencast)
+as a docked tab inside VS Code.
+
+1. Install the *Microsoft Edge Tools for VS Code* extension.
+2. From the repo root run:
+   ```bash
+   npm run electron:debug
+   ```
+   This starts Vite on port 5173 and launches Electron with
+   `--remote-debugging-port=9222`. You should see
+   `DevTools listening on ws://127.0.0.1:9222/...` in the terminal.
+3. Open the **Edge Tools** view in the VS Code activity bar and click
+   **Attach to a target...** (or the plug icon). Pick the entry for
+   `http://localhost:5173/` — the Ollama + renderer.
+4. The DevTools panel and a live screencast of the app dock inside VS Code.
+   The actual Electron OS window still floats separately (VS Code cannot host
+   another Electron process as a panel); interact with the app through either
+   window.
+
+If the target picker is empty, open the Edge Tools settings gear and confirm
+the host is `localhost` and the port is `9222`.
 
 ## Testing
 

@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "electron:dev": "concurrently -k \"cross-env BROWSER=none vite\" \"wait-on tcp:5173 && electron .\"",
+    "electron:debug": "concurrently -k \"cross-env BROWSER=none vite\" \"wait-on tcp:5173 && electron . --remote-debugging-port=9222\"",
     "electron:build": "npm run build && electron-builder"
   },
   "build": {
