@@ -7,7 +7,7 @@ import TaskBoard from './components/TaskBoard';
 import Viewer3D from './components/Viewer3D';
 import MarkdownDecisionForm from './components/MarkdownDecisionForm';
 import MarkdownInputForm from './components/MarkdownInputForm';
-import { ipcService } from './services/ipcService';
+import { ipcService, isElectronAvailable } from './services/ipcService';
 import logo from './assets/logo.png';
 import './App.css';
 
@@ -536,6 +536,11 @@ export default function App() {
       </aside>
 
       <main className="main-content">
+        {!isElectronAvailable() && (
+          <div className="non-electron-banner" role="alert">
+            Running outside Electron — Ollama, terminals, wiki, and shell tools are disabled. Launch with <code>npm run electron:dev</code> (or <code>electron:debug</code>) for the full app.
+          </div>
+        )}
         <div className={`workspace-grid ${activeLayout.secondary ? 'split' : ''}`}>
           <section className="workspace-panel primary-panel">{renderPanel(activeLayout.primary)}</section>
           {activeLayout.secondary && (

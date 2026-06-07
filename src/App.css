@@ -330,6 +330,22 @@
   overflow: hidden;
 }
 
+.non-electron-banner {
+  padding: 8px 14px;
+  background: rgba(248, 113, 113, 0.12);
+  border-bottom: 1px solid rgba(248, 113, 113, 0.4);
+  color: #fecaca;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.non-electron-banner code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+}
+
 .workspace-grid {
   flex: 1;
   min-height: 0;
