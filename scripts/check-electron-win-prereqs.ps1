@@ -68,14 +68,20 @@ $fallbackSpectreComponent = 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64.S
 Write-Info "Detected MSVC toolset: $toolsetVersion"
 Write-Info "Required Spectre component: $expectedSpectreComponent"
 
-$statePath = "C:\ProgramData\Microsoft\VisualStudio\Packages\_Instances\$instanceId\state.json"
-if (-not (Test-Path $statePath)) {
-  Fail "Visual Studio state file not found at '$statePath'."
+function Test-ComponentInstalled([string]$componentId) {
+  $result = & $vswherePath -latest -products * -requires $componentId -format json
+  if (-not $result) {
+    return $false
+  }
+  $parsed = $result | ConvertFrom-Json
+  if ($parsed -is [System.Array]) {
+    return $parsed.Count -gt 0
+  }
+  return $null -ne $parsed
 }
 
-$stateText = Get-Content $statePath -Raw
-$hasExpected = $stateText -match [regex]::Escape($expectedSpectreComponent)
-$hasFallback = $stateText -match [regex]::Escape($fallbackSpectreComponent)
+$hasExpected = Test-ComponentInstalled $expectedSpectreComponent
+$hasFallback = Test-ComponentInstalled $fallbackSpectreComponent
 
 if ($hasExpected -or $hasFallback) {
   Write-Info 'Spectre-mitigated C++ libraries are installed.'
