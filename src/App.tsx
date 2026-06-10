@@ -12,7 +12,7 @@ import { onOpenViewer3D } from './services/workspaceEvents';
 import logo from './assets/logo.png';
 import './App.css';
 
-const PANEL_IDS = ['chat', 'wiki', 'tasks', 'viewer3d'] as const;
+const PANEL_IDS = ['chat', 'wiki', 'tasks', 'viewer3d', 'systemMessage'] as const;
 
 type PanelId = typeof PANEL_IDS[number];
 
@@ -79,6 +79,17 @@ type McpRuntimeStatus = {
   lastCheckedAt: string;
 };
 
+type SavedSystemMessage = {
+  id: string;
+  content: string;
+  updatedAt: string;
+};
+
+const SAVED_SYSTEM_MESSAGES_KEY = 'savedSystemMessages';
+const GLOBAL_SYSTEM_MESSAGE_KEY = 'globalSystemMessage';
+const CHAT_SYSTEM_MESSAGE_OVERRIDES_KEY = 'chatSystemMessageOverrides';
+const AUTO_INJECT_DATETIME_KEY = 'autoInjectDateTime';
+
 const DEFAULT_LAYOUTS: WorkspaceLayout[] = [
   { id: 'layout-chat', name: 'Chat Focus', primary: 'chat' },
   { id: 'layout-agent', name: 'Agent + Tasks', primary: 'chat', secondary: 'tasks' },
@@ -129,6 +140,40 @@ function shortHostLabel(url: string): string {
   }
 }
 
+function loadSavedSystemMessages(): SavedSystemMessage[] {
+  const raw = localStorage.getItem(SAVED_SYSTEM_MESSAGES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((entry) => entry && typeof entry.id === 'string' && typeof entry.content === 'string')
+      .map((entry) => ({
+        id: entry.id,
+        content: entry.content,
+        updatedAt: typeof entry.updatedAt === 'string' ? entry.updatedAt : new Date().toISOString()
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function loadChatSystemMessageOverrides(): Record<string, string> {
+  const raw = localStorage.getItem(CHAT_SYSTEM_MESSAGE_OVERRIDES_KEY);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        ([key, value]) => typeof key === 'string' && typeof value === 'string'
+      )
+    );
+  } catch {
+    return {};
+  }
+}
+
 export default function App() {
   const [models, setModels] = useState<ModelTag[]>([]);
   const [selectedModel, setSelectedModel] = useState(localStorage.getItem('selectedModel') || '');
@@ -142,6 +187,11 @@ export default function App() {
   const [keepAlive, setKeepAlive] = useState(localStorage.getItem('keepAlive') === 'true');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(localStorage.getItem('sidebarCollapsed') === 'true');
   const [autoCollapseSidebar, setAutoCollapseSidebar] = useState(localStorage.getItem('autoCollapseSidebar') === 'true');
+  const [savedSystemMessages, setSavedSystemMessages] = useState<SavedSystemMessage[]>(() => loadSavedSystemMessages());
+  const [globalSystemMessage, setGlobalSystemMessage] = useState(localStorage.getItem(GLOBAL_SYSTEM_MESSAGE_KEY) || '');
+  const [chatSystemMessageOverrides, setChatSystemMessageOverrides] = useState<Record<string, string>>(() => loadChatSystemMessageOverrides());
+  const [autoInjectDateTime, setAutoInjectDateTime] = useState(localStorage.getItem(AUTO_INJECT_DATETIME_KEY) !== 'false');
+  const [systemMessageDraft, setSystemMessageDraft] = useState('');
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState(localStorage.getItem('currentSessionId') || '');
@@ -169,6 +219,10 @@ export default function App() {
 
   const activeLayout = layouts.find((layout) => layout.id === activeLayoutId) || layouts[0] || DEFAULT_LAYOUTS[0];
   const activeChatLayout = activeLayout.primary === 'chat' || activeLayout.secondary === 'chat';
+  const activeHasSystemMessageOverride = Boolean(currentSessionId && Object.prototype.hasOwnProperty.call(chatSystemMessageOverrides, currentSessionId));
+  const effectiveSystemMessage = activeHasSystemMessageOverride
+    ? chatSystemMessageOverrides[currentSessionId] || ''
+    : globalSystemMessage;
 
   const refreshMcpStatus = async () => {
     const checkedAt = new Date().toLocaleTimeString();
@@ -365,6 +419,29 @@ export default function App() {
   }, [currentSessionId]);
 
   useEffect(() => {
+    localStorage.setItem(SAVED_SYSTEM_MESSAGES_KEY, JSON.stringify(savedSystemMessages));
+  }, [savedSystemMessages]);
+
+  useEffect(() => {
+    localStorage.setItem(GLOBAL_SYSTEM_MESSAGE_KEY, globalSystemMessage);
+  }, [globalSystemMessage]);
+
+  useEffect(() => {
+    localStorage.setItem(CHAT_SYSTEM_MESSAGE_OVERRIDES_KEY, JSON.stringify(chatSystemMessageOverrides));
+  }, [chatSystemMessageOverrides]);
+
+  useEffect(() => {
+    localStorage.setItem(AUTO_INJECT_DATETIME_KEY, String(autoInjectDateTime));
+  }, [autoInjectDateTime]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSystemMessageDraft(effectiveSystemMessage);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [effectiveSystemMessage, currentSessionId]);
+
+  useEffect(() => {
     const unsubscribe = ipcService.onPolicyDecisionRequest((request) => {
       setPendingDecisions((prev) => {
         if (prev.some((entry) => entry.requestId === request.requestId)) {
@@ -400,6 +477,12 @@ export default function App() {
       await ipcService.deleteChat(id);
       const updated = sessions.filter(s => s.id !== id);
       setSessions(updated);
+      setChatSystemMessageOverrides((prev) => {
+        if (!Object.prototype.hasOwnProperty.call(prev, id)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       if (currentSessionId === id) {
         if (updated.length > 0) setCurrentSessionId(updated[0].id);
         else createNewSession();
@@ -450,6 +533,58 @@ export default function App() {
     if (autoCollapseSidebar) setSidebarCollapsed(true);
   };
 
+  const handleSaveSystemMessage = () => {
+    const trimmed = systemMessageDraft.trim();
+    if (!trimmed) return;
+
+    const now = new Date().toISOString();
+    setSavedSystemMessages((prev) => {
+      const existing = prev.find((entry) => entry.content === trimmed);
+      if (existing) {
+        const withoutExisting = prev.filter((entry) => entry.id !== existing.id);
+        return [{ ...existing, updatedAt: now }, ...withoutExisting];
+      }
+      return [{ id: Math.random().toString(36).slice(2), content: trimmed, updatedAt: now }, ...prev];
+    });
+
+    setGlobalSystemMessage(trimmed);
+    if (currentSessionId) {
+      setChatSystemMessageOverrides((prev) => ({
+        ...prev,
+        [currentSessionId]: trimmed
+      }));
+    }
+    setSystemMessageDraft(trimmed);
+  };
+
+  const handleClearSystemMessage = () => {
+    setSystemMessageDraft('');
+    setGlobalSystemMessage('');
+    if (currentSessionId) {
+      setChatSystemMessageOverrides((prev) => {
+        if (!Object.prototype.hasOwnProperty.call(prev, currentSessionId)) return prev;
+        const next = { ...prev };
+        delete next[currentSessionId];
+        return next;
+      });
+    }
+  };
+
+  const handleSelectSavedSystemMessage = (content: string) => {
+    setSystemMessageDraft(content);
+    setGlobalSystemMessage(content);
+    if (currentSessionId) {
+      setChatSystemMessageOverrides((prev) => ({
+        ...prev,
+        [currentSessionId]: content
+      }));
+    }
+  };
+
+  const handleDeleteSavedSystemMessage = (id: string) => {
+    setSavedSystemMessages((prev) => prev.filter((entry) => entry.id !== id));
+  };
+
   const activeDecision = pendingDecisions[0];
   const activeInput = pendingInputs[0];
 
@@ -485,6 +620,8 @@ export default function App() {
             sessionId={currentSessionId}
             sessionTitle={sessions.find((s) => s.id === currentSessionId)?.title}
             onSessionUpdate={refreshSessions}
+            effectiveSystemMessage={effectiveSystemMessage}
+            autoInjectDateTime={autoInjectDateTime}
           />
         );
       case 'wiki':
@@ -502,8 +639,85 @@ export default function App() {
             onSessionUpdate={refreshSessions}
           />
         );
+      case 'systemMessage':
+        return (
+          <section className="system-message-page">
+            <div className="system-message-header">
+              <h2>System Message</h2>
+              <p>
+                Set behavior instructions for the assistant. The current chat can use its own override,
+                otherwise the global default is used.
+              </p>
+            </div>
+
+            <div className="system-message-status">
+              Active mode: {activeHasSystemMessageOverride ? 'Per-chat override' : 'Global default'}
+            </div>
+
+            <textarea
+              className="system-message-editor"
+              value={systemMessageDraft}
+              onChange={(e) => setSystemMessageDraft(e.target.value)}
+              placeholder="Write instructions for how the assistant should behave in this chat..."
+              rows={10}
+            />
+
+            <div className="system-message-actions">
+              <button className="primary" type="button" onClick={handleSaveSystemMessage}>Save</button>
+              <button className="secondary-button" type="button" onClick={handleClearSystemMessage}>Clear</button>
+              <button
+                className={`system-message-toggle-link ${autoInjectDateTime ? 'active' : ''}`}
+                type="button"
+                onClick={() => setAutoInjectDateTime((prev) => !prev)}
+              >
+                Auto inject current date/time: {autoInjectDateTime ? 'On' : 'Off'}
+              </button>
+            </div>
+
+            <div className="system-message-saved-list">
+              <h3>Saved System Messages</h3>
+              {savedSystemMessages.length === 0 ? (
+                <p className="system-message-empty">No saved system messages yet.</p>
+              ) : (
+                <ul>
+                  {savedSystemMessages.map((entry) => (
+                    <li key={entry.id} className="system-message-saved-item">
+                      <button
+                        type="button"
+                        className="system-message-select"
+                        onClick={() => handleSelectSavedSystemMessage(entry.content)}
+                        title={entry.content}
+                      >
+                        {entry.content.slice(0, 120)}
+                      </button>
+                      <button
+                        type="button"
+                        className="system-message-delete"
+                        onClick={() => handleDeleteSavedSystemMessage(entry.id)}
+                        aria-label="Delete saved system message"
+                      >
+                        Delete
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        );
       default:
-        return <Chat selectedModel={selectedModel} hostUrl={effectiveHost} keepAlive={keepAlive} sessionId={currentSessionId} sessionTitle={sessions.find((s) => s.id === currentSessionId)?.title} onSessionUpdate={refreshSessions} />;
+        return (
+          <Chat
+            selectedModel={selectedModel}
+            hostUrl={effectiveHost}
+            keepAlive={keepAlive}
+            sessionId={currentSessionId}
+            sessionTitle={sessions.find((s) => s.id === currentSessionId)?.title}
+            onSessionUpdate={refreshSessions}
+            effectiveSystemMessage={effectiveSystemMessage}
+            autoInjectDateTime={autoInjectDateTime}
+          />
+        );
     }
   };
 
@@ -643,21 +857,34 @@ export default function App() {
         
         <div className="spacer" />
 
-        <div className="lan-scan-launch">
-          <button
-            className="nav-item"
-            onClick={() => setLanPickerOpenSignal((v) => v + 1)}
-            title="Open LAN model scanner"
-            aria-label="Open LAN model scanner"
-          >
-            <Radar size={18} /> LAN Scan
-          </button>
-        </div>
-        
-        <div className="settings-btn">
-          <button className="nav-item" onClick={() => setShowSettings(true)}>
-            <Settings size={18} /> Settings
-          </button>
+        <div className="sidebar-lower-actions">
+          <div className="system-message-launch">
+            <button
+              className={`nav-item ${activeLayout.primary === 'systemMessage' ? 'active' : ''}`}
+              onClick={() => setPrimaryPanel('systemMessage')}
+              title="Open system message page"
+              aria-label="Open system message page"
+            >
+              <FileText size={18} /> Sys Message
+            </button>
+          </div>
+
+          <div className="lan-scan-launch">
+            <button
+              className="nav-item"
+              onClick={() => setLanPickerOpenSignal((v) => v + 1)}
+              title="Open LAN model scanner"
+              aria-label="Open LAN model scanner"
+            >
+              <Radar size={18} /> LAN Scan
+            </button>
+          </div>
+
+          <div className="settings-btn">
+            <button className="nav-item" onClick={() => setShowSettings(true)}>
+              <Settings size={18} /> Settings
+            </button>
+          </div>
         </div>
       </aside>
 

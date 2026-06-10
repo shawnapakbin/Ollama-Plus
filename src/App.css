@@ -520,17 +520,136 @@
   flex: 1;
 }
 
-.settings-btn {
+.sidebar-lower-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin-top: auto;
+}
+
+.settings-btn {
+  margin-top: 0;
+}
+
+.system-message-launch,
+.lan-scan-launch,
+.settings-btn {
+  margin-bottom: 0;
 }
 
 .lan-scan-launch {
-  margin-top: auto;
-  margin-bottom: 8px;
+  margin-top: 0;
 }
 
-.sidebar.collapsed .lan-scan-launch {
+.sidebar.collapsed .sidebar-lower-actions {
   display: none;
+}
+
+.system-message-page {
+  height: 100%;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+}
+
+.system-message-header h2 {
+  margin: 0;
+}
+
+.system-message-header p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.system-message-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.system-message-editor {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+}
+
+.system-message-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.system-message-toggle-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.system-message-toggle-link.active {
+  color: var(--accent-color);
+}
+
+.system-message-saved-list h3 {
+  margin: 0 0 8px;
+}
+
+.system-message-empty {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.system-message-saved-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.system-message-saved-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.system-message-select {
+  flex: 1;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.system-message-delete {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
+  font-size: 0.8rem;
 }
 
 .main-content {

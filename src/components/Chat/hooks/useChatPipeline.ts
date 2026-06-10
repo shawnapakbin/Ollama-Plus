@@ -26,6 +26,7 @@ type StreamRunner = (args: {
   content: string;
   toolCalls: ToolCall[] | null;
   finalRes: OllamaFinalResponse | null;
+  completed: boolean;
 }>;
 
 interface UseChatPipelineOptions {
@@ -33,6 +34,8 @@ interface UseChatPipelineOptions {
   selectedModel: string;
   keepAlive: boolean;
   chatMode: ChatMode;
+  customSystemMessage: string;
+  injectDateTime: boolean;
   sessionTitle: string;
   messagesRef: React.MutableRefObject<ChatMessage[]>;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -100,6 +103,8 @@ Title:`;
       hostUrl,
       keepAlive,
       chatMode,
+      customSystemMessage,
+      injectDateTime,
       sessionTitle,
       setMessages,
       saveSession,
@@ -159,9 +164,15 @@ Title:`;
       }
 
       if (useTools) payload.tools = TOOL_SCHEMAS;
-      payload.messages = buildSystemMessages(currentMessages, { useTools, memoryContext, repairContext });
+      payload.messages = buildSystemMessages(currentMessages, {
+        useTools,
+        memoryContext,
+        repairContext,
+        customSystemMessage,
+        injectDateTime
+      });
 
-      const { content: currentContent, toolCalls: streamedToolCalls, finalRes } = await runStream({
+      const { content: currentContent, toolCalls: streamedToolCalls, finalRes, completed } = await runStream({
         hostUrl,
         endpoint: '/api/chat',
         payload,
@@ -175,6 +186,21 @@ Title:`;
           });
         }
       });
+
+      if (!completed) {
+        const trimmed = currentContent.trim();
+        const interruptedContent = trimmed
+          ? `${trimmed}\n\n_Generation interrupted before completion._`
+          : '_Generation interrupted before completion._';
+        const interruptedMsgs: ChatMessage[] = [
+          ...currentMessages,
+          { role: 'assistant', model: selectedModel, content: interruptedContent, metrics: null }
+        ];
+        setMessages(interruptedMsgs);
+        await saveSession(interruptedMsgs);
+        if (taskId) taskRuntime.setState(taskId, 'failed', 'Generation interrupted before completion.');
+        return;
+      }
 
       let toolCalls = streamedToolCalls;
       if (!toolCalls || toolCalls.length === 0) {

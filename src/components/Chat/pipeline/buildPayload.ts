@@ -29,6 +29,25 @@ export const PLAIN_SYSTEM_PROMPT = 'You are a helpful AI assistant.';
 export const ROUTER_SYSTEM_PROMPT =
   'You are a routing agent. Your job is to decide if the user needs external tools. Tools available: run_shell_command (PowerShell), browser_action (Playwright), read_wiki (Markdown), web_search, get_current_time (clock), engineering_calculator (mathjs), scene_3d (manipulate the live 3D Workspace viewport: add/transform/remove primitives). Answer with exactly YES or NO.';
 
+function buildDateTimeContext(): string {
+  const now = new Date();
+  const resolved = Intl.DateTimeFormat().resolvedOptions();
+  const timezone = resolved.timeZone || 'UTC';
+  const locale = resolved.locale || 'en-US';
+  const localFormatted = new Intl.DateTimeFormat(locale, {
+    dateStyle: 'full',
+    timeStyle: 'long',
+    timeZone: timezone
+  }).format(now);
+  return `\n\n[CURRENT_DATE_TIME]\nLocal: ${localFormatted}\nTime zone: ${timezone}\nISO: ${now.toISOString()}`;
+}
+
+function buildCustomSystemMessageContext(customSystemMessage: string): string {
+  const trimmed = customSystemMessage.trim();
+  if (!trimmed) return '';
+  return `\n\n[CUSTOM_SYSTEM_MESSAGE]\n${trimmed}`;
+}
+
 export function hasToolResults(messages: ChatMessage[]): boolean {
   return messages.some((message) => message.role === 'tool');
 }
@@ -50,13 +69,21 @@ export function buildToolContinuationContext(currentMessages: ChatMessage[], rep
  */
 export function buildSystemMessages(
   currentMessages: ChatMessage[],
-  options: { useTools: boolean; memoryContext: string; repairContext?: string }
+  options: {
+    useTools: boolean;
+    memoryContext: string;
+    repairContext?: string;
+    customSystemMessage?: string;
+    injectDateTime?: boolean;
+  }
 ): ChatMessage[] {
   const base = options.useTools ? TOOL_SYSTEM_PROMPT : PLAIN_SYSTEM_PROMPT;
   const continuation = options.useTools
     ? buildToolContinuationContext(currentMessages, options.repairContext || '')
     : '';
-  const content = `${base}${continuation}${options.memoryContext}`;
+  const dateTimeContext = options.injectDateTime ? buildDateTimeContext() : '';
+  const customContext = buildCustomSystemMessageContext(options.customSystemMessage || '');
+  const content = `${base}${continuation}${dateTimeContext}${customContext}${options.memoryContext}`;
   return [{ role: 'system', content }, ...currentMessages];
 }
 

@@ -27,9 +27,20 @@ interface ChatProps {
   sessionId: string | null;
   sessionTitle?: string;
   onSessionUpdate: () => void;
+  effectiveSystemMessage: string;
+  autoInjectDateTime: boolean;
 }
 
-export default function Chat({ selectedModel, hostUrl, keepAlive, sessionId, sessionTitle, onSessionUpdate }: ChatProps) {
+export default function Chat({
+  selectedModel,
+  hostUrl,
+  keepAlive,
+  sessionId,
+  sessionTitle,
+  onSessionUpdate,
+  effectiveSystemMessage,
+  autoInjectDateTime
+}: ChatProps) {
   const { messages, setMessages, save: saveSession, rename: renameSession } = useChatSession({ sessionId, onSessionUpdate });
   const [input, setInput] = useState('');
   const [chatMode, setChatMode] = useState<ChatMode>('auto');
@@ -59,6 +70,8 @@ export default function Chat({ selectedModel, hostUrl, keepAlive, sessionId, ses
     selectedModel,
     keepAlive,
     chatMode,
+    customSystemMessage: effectiveSystemMessage,
+    injectDateTime: autoInjectDateTime,
     sessionTitle: sessionTitle ?? 'New Chat',
     messagesRef,
     setMessages,

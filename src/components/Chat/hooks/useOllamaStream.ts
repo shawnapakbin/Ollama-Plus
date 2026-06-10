@@ -6,6 +6,7 @@ interface StreamResult {
   content: string;
   toolCalls: ToolCall[] | null;
   finalRes: OllamaFinalResponse | null;
+  completed: boolean;
 }
 
 interface RunStreamOptions {
@@ -147,7 +148,8 @@ export function useOllamaStream() {
             resolve({
               content: streamState.content,
               toolCalls: streamState.toolCalls,
-              finalRes: streamState.finalRes
+              finalRes: streamState.finalRes,
+              completed: Boolean(streamState.finalRes?.done)
             });
           },
           onError: (err: string) => {

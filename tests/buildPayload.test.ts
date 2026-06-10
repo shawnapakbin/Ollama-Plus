@@ -66,6 +66,48 @@ describe('buildSystemMessages', () => {
     buildSystemMessages(history, { useTools: true, memoryContext: '' });
     expect(history).toEqual(original);
   });
+
+  it('includes datetime context when injection is enabled', () => {
+    const out = buildSystemMessages(history, { useTools: false, memoryContext: '', injectDateTime: true });
+    expect(out[0].content).toContain('[CURRENT_DATE_TIME]');
+    expect(out[0].content).toContain('ISO:');
+  });
+
+  it('does not include datetime context when injection is disabled', () => {
+    const out = buildSystemMessages(history, { useTools: false, memoryContext: '', injectDateTime: false });
+    expect(out[0].content).not.toContain('[CURRENT_DATE_TIME]');
+  });
+
+  it('includes custom system message when provided', () => {
+    const out = buildSystemMessages(history, {
+      useTools: false,
+      memoryContext: '',
+      customSystemMessage: 'Always ask clarifying questions before making assumptions.'
+    });
+    expect(out[0].content).toContain('[CUSTOM_SYSTEM_MESSAGE]');
+    expect(out[0].content).toContain('Always ask clarifying questions before making assumptions.');
+  });
+
+  it('orders composed sections in the expected sequence', () => {
+    const out = buildSystemMessages(history, {
+      useTools: true,
+      memoryContext: formatMemoryContext('remember this too'),
+      repairContext: 'repair hint',
+      customSystemMessage: 'custom guardrail',
+      injectDateTime: true
+    });
+    const content = out[0].content;
+    const baseIdx = content.indexOf(TOOL_SYSTEM_PROMPT);
+    const repairIdx = content.indexOf('[REPAIR]');
+    const timeIdx = content.indexOf('[CURRENT_DATE_TIME]');
+    const customIdx = content.indexOf('[CUSTOM_SYSTEM_MESSAGE]');
+    const memoryIdx = content.indexOf('[PERSISTENT MEMORY]');
+    expect(baseIdx).toBeGreaterThanOrEqual(0);
+    expect(repairIdx).toBeGreaterThan(baseIdx);
+    expect(timeIdx).toBeGreaterThan(repairIdx);
+    expect(customIdx).toBeGreaterThan(timeIdx);
+    expect(memoryIdx).toBeGreaterThan(customIdx);
+  });
 });
 
 describe('tool continuation helpers', () => {
