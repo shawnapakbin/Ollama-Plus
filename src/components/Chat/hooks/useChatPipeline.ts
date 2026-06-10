@@ -60,6 +60,7 @@ interface UseChatPipelineOptions {
  * recursion drives itself through a ref to avoid stale closures.
  */
 export function useChatPipeline(opts: UseChatPipelineOptions) {
+  const MAX_INCOMPLETE_STREAM_RETRIES = 1;
   const optsRef = useRef(opts);
   useEffect(() => {
     optsRef.current = opts;
@@ -99,7 +100,8 @@ Title:`;
     taskId: string | null = null,
     repairAttempt = 0,
     repairContext = '',
-    turnNumber = 1
+    turnNumber = 1,
+    incompleteStreamRetryCount = 0
   ): Promise<void> {
     const {
       selectedModel,
@@ -206,6 +208,18 @@ Title:`;
       });
 
       if (!completed) {
+        if (incompleteStreamRetryCount < MAX_INCOMPLETE_STREAM_RETRIES) {
+          if (taskId) taskRuntime.addLog(taskId, 'Stream ended without final done token; retrying once.');
+          await processOllamaRequestInner(
+            currentMessages,
+            taskId,
+            repairAttempt,
+            repairContext,
+            turnNumber,
+            incompleteStreamRetryCount + 1
+          );
+          return;
+        }
         const trimmed = currentContent.trim();
         const interruptedContent = trimmed
           ? `${trimmed}\n\n_Generation interrupted before completion._`
@@ -244,7 +258,7 @@ Title:`;
 
         setMessages([...toolResults, { role: 'assistant', content: '', model: selectedModel }]);
         await saveSession(toolResults);
-        await processOllamaRequestInner(toolResults, taskId, 0, '', turnNumber + 1);
+        await processOllamaRequestInner(toolResults, taskId, 0, '', turnNumber + 1, 0);
         return;
       }
 
@@ -253,7 +267,7 @@ Title:`;
         if (nextRepairContext) {
           if (taskId) taskRuntime.addLog(taskId, 'Retrying with stricter tool-call guidance after narrated tool intent.');
           setMessages([...currentMessages, { role: 'assistant', content: '', model: selectedModel }]);
-          await processOllamaRequestInner(currentMessages, taskId, repairAttempt + 1, nextRepairContext, turnNumber);
+          await processOllamaRequestInner(currentMessages, taskId, repairAttempt + 1, nextRepairContext, turnNumber, 0);
           return;
         }
       }
@@ -307,7 +321,7 @@ Title:`;
     const newMsgs = [...base, userMsg];
     const ollamaMsgs: ChatMessage[] = [...base, { role: 'user', content: ollamaContent }];
     setMessages([...newMsgs, { role: 'assistant', content: '', model: selectedModel }]);
-    await processOllamaRequest(ollamaMsgs, taskId, 0, '', 1);
+    await processOllamaRequest(ollamaMsgs, taskId, 0, '', 1, 0);
   }, [processOllamaRequest]);
 
   useEffect(() => {
@@ -318,7 +332,7 @@ Title:`;
     const { messagesRef, setMessages, selectedModel } = optsRef.current;
     const historyBefore = messagesRef.current.slice(0, index);
     setMessages([...historyBefore, { role: 'assistant', content: '', model: selectedModel }]);
-    await processOllamaRequest(historyBefore, null, 0, '', 1);
+    await processOllamaRequest(historyBefore, null, 0, '', 1, 0);
   }, [processOllamaRequest]);
 
   return { commitUserTurn, regenerate };

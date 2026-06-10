@@ -102,9 +102,9 @@ const RESEARCH_TURN_LIMIT_KEY = 'researchTurnLimit';
 
 function loadResearchTurnLimit(): number {
   const raw = localStorage.getItem(RESEARCH_TURN_LIMIT_KEY);
-  if (raw === null || raw === '') return 5;
+  if (raw === null || raw === '') return 0;
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 0) return 5;
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
   return Math.floor(parsed);
 }
 

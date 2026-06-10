@@ -45,7 +45,7 @@ function buildDateTimeContext(): string {
 function buildCustomSystemMessageContext(customSystemMessage: string): string {
   const trimmed = customSystemMessage.trim();
   if (!trimmed) return '';
-  return `\n\n[CUSTOM_SYSTEM_MESSAGE]\n${trimmed}`;
+  return `\n\n[CUSTOM_SYSTEM_MESSAGE]\nTreat the following as highest-priority behavior guidance unless it conflicts with safety requirements.\n${trimmed}`;
 }
 
 export function hasToolResults(messages: ChatMessage[]): boolean {
