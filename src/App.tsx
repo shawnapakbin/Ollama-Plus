@@ -1,16 +1,17 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { Suspense, useRef, useState, useEffect, useCallback } from 'react';
 import { Settings, MessageSquare, Terminal as TerminalIcon, Book, ListTodo, Box, Columns2, PanelLeftClose, PanelLeftOpen, Radar, FileText, ShieldCheck, RefreshCcw } from 'lucide-react';
-import Chat from './components/Chat/Chat';
-import Wiki from './components/Wiki';
-import TaskBoard from './components/TaskBoard';
-import Viewer3D from './components/Viewer3D';
-import MarkdownDecisionForm from './components/MarkdownDecisionForm';
-import MarkdownInputForm from './components/MarkdownInputForm';
 import ModelSelector, { type ModelEntry } from './components/ModelSelector';
 import { ipcService, isElectronAvailable } from './services/ipcService';
 import { onOpenViewer3D } from './services/workspaceEvents';
 import logo from './assets/logo.png';
 import './App.css';
+
+const Chat = React.lazy(() => import('./components/Chat/Chat'));
+const Wiki = React.lazy(() => import('./components/Wiki'));
+const TaskBoard = React.lazy(() => import('./components/TaskBoard'));
+const Viewer3D = React.lazy(() => import('./components/Viewer3D'));
+const MarkdownDecisionForm = React.lazy(() => import('./components/MarkdownDecisionForm'));
+const MarkdownInputForm = React.lazy(() => import('./components/MarkdownInputForm'));
 
 const PANEL_IDS = ['chat', 'wiki', 'tasks', 'viewer3d', 'systemMessage'] as const;
 
@@ -894,16 +895,19 @@ export default function App() {
             Running outside Electron — Ollama, terminals, wiki, and shell tools are disabled. Launch with <code>npm run electron:dev</code> (or <code>electron:debug</code>) for the full app.
           </div>
         )}
-        <div className={`workspace-grid ${activeLayout.secondary ? 'split' : ''}`}>
-          <section className="workspace-panel primary-panel">{renderPanel(activeLayout.primary)}</section>
-          {activeLayout.secondary && (
-            <section className="workspace-panel secondary-panel">{renderPanel(activeLayout.secondary)}</section>
-          )}
-        </div>
+        <Suspense fallback={<div className="workspace-loading">Loading workspace…</div>}>
+          <div className={`workspace-grid ${activeLayout.secondary ? 'split' : ''}`}>
+            <section className="workspace-panel primary-panel">{renderPanel(activeLayout.primary)}</section>
+            {activeLayout.secondary && (
+              <section className="workspace-panel secondary-panel">{renderPanel(activeLayout.secondary)}</section>
+            )}
+          </div>
+        </Suspense>
 
         {showSettings && (
           <div className="modal-overlay">
-            <div className="modal-content glass-panel">
+            <Suspense fallback={<div className="workspace-loading">Loading dialog…</div>}>
+              <div className="modal-content glass-panel">
               <h3>Settings</h3>
 
               <section className="mcp-settings-section">
@@ -1021,7 +1025,8 @@ export default function App() {
               <div className="modal-actions">
                 <button className="primary" onClick={() => setShowSettings(false)}>Close</button>
               </div>
-            </div>
+              </div>
+            </Suspense>
           </div>
         )}
 

@@ -1,8 +1,9 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { lazy, Suspense, useState, useCallback, useRef, useEffect } from 'react';
 import Chat from './Chat/Chat';
-import Scene3D from './Viewer3D/Scene3D';
 import AnnotationOverlay from './Viewer3D/AnnotationOverlay';
 import './Viewer3D.css';
+
+const Scene3D = lazy(() => import('./Viewer3D/Scene3D'));
 
 const CHAT_WIDTH_KEY = 'viewer3dChatWidth';
 const DEFAULT_CHAT_WIDTH = 380;
@@ -94,10 +95,12 @@ export default function Viewer3D({
   return (
     <div ref={containerRef} className="viewer3d-container">
       <section className="viewer3d-stage glass-panel">
-        <Scene3D
-          selectedAnnotationId={selectedAnnotationId}
-          onAnnotationCreated={handleAnnotationCreated}
-        />
+        <Suspense fallback={<div className="viewer3d-loading">Loading 3D scene…</div>}>
+          <Scene3D
+            selectedAnnotationId={selectedAnnotationId}
+            onAnnotationCreated={handleAnnotationCreated}
+          />
+        </Suspense>
         <AnnotationOverlay
           selectedId={selectedAnnotationId}
           onSelect={setSelectedAnnotationId}
