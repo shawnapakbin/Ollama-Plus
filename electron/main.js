@@ -1,13 +1,38 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell as electronShell, clipboard } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import os from 'os';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { chromium } from 'playwright-core';
 import { parse as parseCSV } from 'csv-parse/sync';
 import { createRequire } from 'module';
 import { create, all } from 'mathjs';
+import {
+  closeAllSessions as closeMcpTerminalSessions,
+  closeTerminalSession as closeMcpTerminalSession,
+  createTerminalSession as createMcpTerminalSession,
+  executeTerminalCommand as executeMcpTerminalCommand,
+  listTerminalSessions as listMcpTerminalSessions,
+  readTerminalOutput as readMcpTerminalOutput,
+  sweepIdleTerminalSessions as sweepMcpTerminalSessions,
+  writeTerminalInput as writeMcpTerminalInput
+} from '../mcp/lib/terminalSessions.mjs';
+import {
+  activateBrowserPage,
+  closeAllBrowserSessions,
+  closeBrowserPage,
+  closeBrowserSession,
+  createBrowserPage,
+  createBrowserSession,
+  executeBrowserSessionAction,
+  getBrowserRuntimeStatus,
+  listBrowserPages,
+  listBrowserSessions,
+  sweepIdleBrowserSessions
+} from '../mcp/lib/playwrightSessions.mjs';
+import { createGateway } from '../mcp/lib/gateway.mjs';
+import { checkOpenScadHealth, compileOpenScad } from '../mcp/lib/openscad.mjs';
 import {
   isSafeHttpUrl,
   isRiskyCommand,
@@ -33,6 +58,20 @@ const terminals = {};
 const activeStreams = {};
 const rateWindows = new Map();
 const pendingPolicyDecisions = new Map();
+const DISCOVERABLE_MODEL_EXTENSIONS = new Set(['.obj', '.stl', '.gltf', '.glb', '.scad']);
+const IMPORTABLE_MODEL_EXTENSIONS = new Set(['.obj', '.stl', '.gltf', '.glb']);
+let cachedMcpFolderRoot = null;
+let defaultBrowserSessionId = null;
+let mcpGateway = null;
+const OPENSCAD_FEATURE_ENABLED = process.env.MCP_OPENSCAD_ENABLED !== '0';
+
+process.on('uncaughtException', (err) => {
+  console.error('Main process uncaught exception:', sanitizeError(err));
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Main process unhandled rejection:', sanitizeError(reason));
+});
 
 const ALLOWED_BROWSER_ACTIONS = new Set([
   'goto',
@@ -45,8 +84,21 @@ const ALLOWED_BROWSER_ACTIONS = new Set([
   'content',
   'extract-text',
   'evaluate',
+  'back',
+  'forward',
+  'reload',
+  'set-headers',
+  'get-cookies',
+  'set-cookies',
   'reset'
 ]);
+
+setInterval(() => {
+  sweepMcpTerminalSessions();
+}, 60_000).unref();
+setInterval(() => {
+  void sweepIdleBrowserSessions();
+}, 60_000).unref();
 
 function sanitizeError(err) {
   const fallback = 'Operation failed.';
@@ -75,6 +127,144 @@ function resolveWikiPath(filePath) {
 
 function resolveChatFile(sessionId) {
   return resolveChatFileImpl(app.getPath('userData'), sessionId);
+}
+
+function runCommandCapture(command, args = []) {
+  return spawnSync(command, args, {
+    encoding: 'utf-8',
+    windowsHide: true,
+    env: process.env
+  });
+}
+
+function getPythonTerminalConfig() {
+  const candidates = [];
+  if (typeof process.env.PYTHON === 'string' && process.env.PYTHON.trim()) {
+    candidates.push({ shell: process.env.PYTHON.trim(), args: ['-i'], source: 'PYTHON env var' });
+  }
+  if (process.platform === 'win32') {
+    candidates.push(
+      { shell: 'python', args: ['-i'], source: 'PATH' },
+      { shell: 'py', args: ['-3', '-i'], source: 'Windows py launcher' },
+      { shell: 'python3', args: ['-i'], source: 'PATH' }
+    );
+  } else {
+    candidates.push(
+      { shell: 'python3', args: ['-i'], source: 'PATH' },
+      { shell: 'python', args: ['-i'], source: 'PATH' }
+    );
+  }
+
+  for (const candidate of candidates) {
+    const checkArgs = candidate.shell === 'py' ? ['-3', '--version'] : ['--version'];
+    const probe = runCommandCapture(candidate.shell, checkArgs);
+    if (probe.error || probe.status !== 0) continue;
+
+    const versionText = String(probe.stdout || probe.stderr || '').trim();
+    return {
+      ok: true,
+      interpreter: `${candidate.shell} ${candidate.args.join(' ')}`,
+      shell: candidate.shell,
+      args: candidate.args,
+      source: candidate.source,
+      version: versionText || 'Python available',
+      note: candidate.source === 'Windows py launcher'
+        ? 'Found Python through the Windows py launcher.'
+        : 'Found a local Python interpreter on PATH.'
+    };
+  }
+
+  const fallback = candidates[0] || { shell: process.platform === 'win32' ? 'python' : 'python3', args: ['-i'], source: 'PATH' };
+  let installHint = 'Install Python 3 from python.org or your OS package manager, then reopen the app.';
+  if (process.platform === 'win32') {
+    const pyCheck = runCommandCapture('py', ['-0p']);
+    if (!pyCheck.error && pyCheck.status === 0 && String(pyCheck.stdout || '').trim()) {
+      installHint = 'Python is installed, but no default interpreter was resolved. Set the PYTHON env var or repair PATH.';
+    }
+  }
+  return {
+    ok: false,
+    interpreter: `${fallback.shell} ${fallback.args.join(' ')}`,
+    shell: fallback.shell,
+    args: fallback.args,
+    source: fallback.source,
+    version: '',
+    note: installHint
+  };
+}
+
+function getMcpFolderRootStatePath() {
+  return path.join(app.getPath('userData'), 'mcp-folder-root.json');
+}
+
+function loadMcpFolderRootFromDisk() {
+  if (cachedMcpFolderRoot !== null) return cachedMcpFolderRoot;
+  try {
+    const statePath = getMcpFolderRootStatePath();
+    if (!fs.existsSync(statePath)) {
+      cachedMcpFolderRoot = '';
+      return cachedMcpFolderRoot;
+    }
+    const raw = fs.readFileSync(statePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    cachedMcpFolderRoot = typeof parsed?.root === 'string' ? parsed.root : '';
+  } catch {
+    cachedMcpFolderRoot = '';
+  }
+  return cachedMcpFolderRoot;
+}
+
+function persistMcpFolderRoot(root) {
+  cachedMcpFolderRoot = root || '';
+  const statePath = getMcpFolderRootStatePath();
+  fs.writeFileSync(statePath, JSON.stringify({ root: cachedMcpFolderRoot }, null, 2), 'utf-8');
+}
+
+function getConfiguredMcpFolderRoot() {
+  const selected = loadMcpFolderRootFromDisk();
+  const fallback = path.resolve(process.cwd());
+  if (!selected) return { root: fallback, isCustom: false };
+
+  const resolved = path.resolve(selected);
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    persistMcpFolderRoot('');
+    return { root: fallback, isCustom: false };
+  }
+
+  return { root: resolved, isCustom: true };
+}
+
+function resolveWithinMcpFolder(relativePath = '.') {
+  const { root } = getConfiguredMcpFolderRoot();
+  const target = path.resolve(root, relativePath || '.');
+  const rel = path.relative(root, target);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`Path escapes selected MCP folder: ${relativePath}`);
+  }
+  return { root, target, relPath: rel.replace(/\\/g, '/') || '.' };
+}
+
+function walkModelFiles(dir, baseRoot, output, maxEntries = 500) {
+  if (output.length >= maxEntries) return;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (output.length >= maxEntries) break;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkModelFiles(full, baseRoot, output, maxEntries);
+      continue;
+    }
+    const ext = path.extname(entry.name).toLowerCase();
+    if (!DISCOVERABLE_MODEL_EXTENSIONS.has(ext)) continue;
+    const stat = fs.statSync(full);
+    output.push({
+      path: path.relative(baseRoot, full).replace(/\\/g, '/'),
+      name: entry.name,
+      ext,
+      bytes: stat.size,
+      modifiedAt: stat.mtime.toISOString()
+    });
+  }
 }
 
 function requestRendererDecision(payload) {
@@ -130,51 +320,185 @@ ipcMain.handle('policy-decision-response', async (_event, requestId, selectionId
   return true;
 });
 
-// Persistent Playwright Browser
-let persistentBrowser = null;
-let persistentContext = null;
-let persistentPage = null;
-
-async function getPersistentPage() {
-  const executablePath = os.platform() === 'win32' 
-    ? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
-    : '/usr/bin/google-chrome';
-
-  if (!persistentBrowser) {
-    persistentBrowser = await chromium.launch({ executablePath, headless: true });
-    persistentContext = await persistentBrowser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      viewport: { width: 1280, height: 800 }
-    });
-    persistentPage = await persistentContext.newPage();
+async function ensureDefaultBrowserSession() {
+  const sessions = listBrowserSessions();
+  if (defaultBrowserSessionId && sessions.some((session) => session.sessionId === defaultBrowserSessionId)) {
+    return defaultBrowserSessionId;
   }
-  return persistentPage;
+
+  const created = await createBrowserSession({ headless: true });
+  defaultBrowserSessionId = created.session.sessionId;
+  return defaultBrowserSessionId;
 }
 
-async function resetPersistentBrowser() {
-  // Close just the context (and any pages inside it) so cookies, storage,
-  // and cache do not leak across unrelated browsing sessions. Keep the
-  // launched browser process alive to avoid the startup latency hit.
-  if (persistentContext) {
-    const ctx = persistentContext;
-    persistentContext = null;
-    persistentPage = null;
-    try {
-      await ctx.close();
-    } catch {
-      /* ignore */
-    }
-  }
-  if (persistentBrowser) {
-    persistentContext = await persistentBrowser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      viewport: { width: 1280, height: 800 }
+function browserPolicyActionName(action) {
+  if (action === 'evaluate') return 'evaluate';
+  if (action === 'goto') return 'goto';
+  return '';
+}
+
+async function requestBrowserPolicyIfNeeded(action, options = {}) {
+  const policyAction = browserPolicyActionName(action);
+  if (!policyAction) return null;
+
+  if (policyAction === 'evaluate') {
+    const script = String(options.script || '');
+    const decision = await requestUserDecision({
+      title: 'Browser Script Approval',
+      markdown: `### Browser evaluate request\n\nThe model wants to execute script code in the page context.\n\n\`\`\`javascript\n${script.slice(0, 600)}\n\`\`\``,
+      options: [
+        { id: 'deny', label: 'Deny', description: 'Do not run this script.', recommended: true },
+        { id: 'allow', label: 'Allow Once', description: 'Run this script one time.' }
+      ],
+      defaultOptionId: 'deny'
     });
-    persistentPage = await persistentContext.newPage();
+    if (decision.selectionId !== 'allow') {
+      return {
+        denied: true,
+        policy: {
+          decisionToken: decision.decisionToken,
+          selectionId: decision.selectionId
+        }
+      };
+    }
+    return {
+      denied: false,
+      policy: {
+        decisionToken: decision.decisionToken,
+        selectionId: decision.selectionId
+      }
+    };
+  }
+
+  const url = String(options.url || '');
+  if (!url) return null;
+
+  const parsed = new URL(url);
+  const isLocal = ['localhost', '127.0.0.1'].includes(parsed.hostname);
+  if (isLocal) return null;
+
+  const decision = await requestUserDecision({
+    title: 'External Navigation Approval',
+    markdown: `### External website request\n\nTarget URL:\n\n\`\`\`text\n${url}\n\`\`\`\n\nAllow navigation?`,
+    options: [
+      { id: 'deny', label: 'Deny', description: 'Block navigation.', recommended: true },
+      { id: 'allow', label: 'Allow Once', description: 'Navigate to this URL now.' }
+    ],
+    defaultOptionId: 'deny'
+  });
+  if (decision.selectionId !== 'allow') {
+    return {
+      denied: true,
+      policy: {
+        decisionToken: decision.decisionToken,
+        selectionId: decision.selectionId
+      }
+    };
+  }
+  return {
+    denied: false,
+    policy: {
+      decisionToken: decision.decisionToken,
+      selectionId: decision.selectionId
+    }
+  };
+}
+
+async function executeBrowserAction(options) {
+  try {
+    assertRateLimit('browser-action', 80, 60_000);
+
+    const {
+      action,
+      sessionId,
+      pageId,
+      url,
+      selector,
+      text,
+      key,
+      wait_for,
+      script,
+      timeoutMs,
+      headers,
+      cookies,
+      fullPage
+    } = options || {};
+
+    if (!ALLOWED_BROWSER_ACTIONS.has(action)) {
+      throw new Error('Unsupported browser action.');
+    }
+
+    if (url && !isSafeHttpUrl(url)) {
+      throw new Error('Only http/https URLs are allowed.');
+    }
+
+    if (wait_for && wait_for.startsWith('http') && !isSafeHttpUrl(wait_for)) {
+      throw new Error('Invalid wait URL.');
+    }
+
+    if (selector && selector.length > 300) {
+      throw new Error('Selector is too long.');
+    }
+
+    if (typeof script === 'string' && script.length > 2000) {
+      throw new Error('Evaluate script is too long.');
+    }
+
+    if (action === 'reset') {
+      if (sessionId) {
+        await closeBrowserSession(String(sessionId));
+      } else {
+        const ids = listBrowserSessions().map((item) => item.sessionId);
+        for (const id of ids) {
+          await closeBrowserSession(id);
+        }
+        defaultBrowserSessionId = null;
+      }
+      return {
+        result: 'Browser session reset (cookies, storage, and cache cleared).',
+        url: 'about:blank',
+        title: '',
+        sessionId: sessionId || defaultBrowserSessionId,
+        policy: null
+      };
+    }
+
+    const policyMeta = await requestBrowserPolicyIfNeeded(action, { url, script });
+    if (policyMeta?.denied) {
+      return { error: 'Action denied by user.', policy: policyMeta.policy };
+    }
+
+    const activeSessionId = sessionId ? String(sessionId) : await ensureDefaultBrowserSession();
+    const result = await executeBrowserSessionAction(activeSessionId, {
+      action,
+      pageId,
+      url,
+      selector,
+      text,
+      key,
+      wait_for,
+      script,
+      timeoutMs,
+      headers,
+      cookies,
+      fullPage
+    });
+
+    return {
+      ...result,
+      sessionId: activeSessionId,
+      url: result.page?.url || '',
+      title: result.page?.title || '',
+      policy: policyMeta?.policy || null
+    };
+  } catch (err) {
+    console.error('Browser Action Error:', err);
+    return { error: sanitizeError(err), url: '' };
   }
 }
 
 function createWindow() {
+  console.log('Creating main window');
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -200,6 +524,92 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  mainWindow.on('close', (event) => {
+    console.log('Main window close requested');
+    if (process.env.DEBUG_KEEP_WINDOW_OPEN === '1') {
+      console.log('Preventing close because DEBUG_KEEP_WINDOW_OPEN=1');
+      event.preventDefault();
+    }
+  });
+
+  mainWindow.on('closed', () => {
+    console.log('Main window closed');
+    mainWindow = null;
+  });
+
+  mainWindow.on('show', () => {
+    console.log('Main window shown');
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('Main window finished loading');
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error('Main window failed to load:', errorCode, errorDescription, validatedURL);
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('Renderer process gone:', details.reason, details.exitCode);
+  });
+
+  mainWindow.webContents.on('unresponsive', () => {
+    console.error('Main window became unresponsive');
+  });
+
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const hasSelection = Boolean(params.selectionText && params.selectionText.trim().length > 0);
+    const isEditable = Boolean(params.isEditable);
+    const hasLink = Boolean(params.linkURL);
+
+    const template = [];
+
+    if (isEditable) {
+      template.push(
+        { label: 'Undo', role: 'undo', enabled: Boolean(params.editFlags?.canUndo) },
+        { label: 'Redo', role: 'redo', enabled: Boolean(params.editFlags?.canRedo) },
+        { type: 'separator' },
+        { label: 'Cut', role: 'cut', enabled: Boolean(params.editFlags?.canCut) },
+        { label: 'Copy', role: 'copy', enabled: Boolean(params.editFlags?.canCopy) },
+        { label: 'Paste', role: 'paste', enabled: Boolean(params.editFlags?.canPaste) },
+        { label: 'Select All', role: 'selectAll' }
+      );
+    } else if (hasSelection) {
+      template.push({ label: 'Copy', role: 'copy' });
+      template.push({ type: 'separator' });
+      template.push({ label: 'Select All', role: 'selectAll' });
+    }
+
+    if (hasLink) {
+      if (template.length > 0) template.push({ type: 'separator' });
+      template.push(
+        {
+          label: 'Open Link',
+          click: () => {
+            if (isSafeHttpUrl(params.linkURL)) {
+              void electronShell.openExternal(params.linkURL);
+            }
+          }
+        },
+        {
+          label: 'Copy Link Address',
+          click: () => clipboard.writeText(params.linkURL)
+        }
+      );
+    }
+
+    if (template.length === 0) {
+      template.push({ label: 'Reload', role: 'reload' });
+    }
+
+    if (isDev) {
+      template.push({ type: 'separator' });
+      template.push({ label: 'Inspect Element', role: 'inspect' });
+    }
+
+    Menu.buildFromTemplate(template).popup({ window: mainWindow });
+  });
 }
 
 app.whenReady().then(() => {
@@ -223,13 +633,8 @@ app.on('before-quit', async () => {
     for (const id of Object.keys(terminals)) {
       try { terminals[id]?.proc?.kill(); } catch { /* ignore */ }
     }
-    if (persistentBrowser) {
-      const browser = persistentBrowser;
-      persistentBrowser = null;
-      persistentContext = null;
-      persistentPage = null;
-      await browser.close().catch(() => {});
-    }
+    closeMcpTerminalSessions();
+    await closeAllBrowserSessions();
   } catch (err) {
     console.error('Cleanup error on quit:', sanitizeError(err));
   }
@@ -312,6 +717,93 @@ ipcMain.on('abort-stream', (event, streamId) => {
   }
 });
 
+function isPrivateIPv4(ip) {
+  if (typeof ip !== 'string') return false;
+  if (ip.startsWith('10.')) return true;
+  if (ip.startsWith('192.168.')) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true;
+  return false;
+}
+
+function collectScanTargets() {
+  const interfaces = os.networkInterfaces();
+  const targets = new Set();
+  const localIps = new Set();
+  for (const addrs of Object.values(interfaces)) {
+    for (const addr of addrs || []) {
+      if (addr.family !== 'IPv4' || addr.internal) continue;
+      if (!isPrivateIPv4(addr.address)) continue;
+      localIps.add(addr.address);
+      const parts = addr.address.split('.');
+      if (parts.length !== 4) continue;
+      const prefix = `${parts[0]}.${parts[1]}.${parts[2]}.`;
+      for (let i = 1; i <= 254; i++) targets.add(prefix + i);
+    }
+  }
+  return [...targets].filter((ip) => !localIps.has(ip));
+}
+
+async function probeOllamaHost(ip, port, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`http://${ip}:${port}/api/tags`, { signal: controller.signal });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json || !Array.isArray(json.models)) return null;
+    return {
+      host: `http://${ip}:${port}`,
+      address: ip,
+      models: json.models
+        .filter((m) => m && typeof m.name === 'string')
+        .map((m) => ({ name: m.name }))
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function runPool(items, limit, worker) {
+  const results = [];
+  let index = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const current = index++;
+      if (current >= items.length) return;
+      const value = await worker(items[current]);
+      if (value !== null && value !== undefined) results.push(value);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
+ipcMain.handle('scan-lan-ollama', async () => {
+  try {
+    assertRateLimit('scan-lan-ollama', 3, 30_000);
+    const port = 11434;
+    const timeoutMs = 700;
+    const concurrency = 64;
+    const targets = collectScanTargets();
+    if (targets.length === 0) return [];
+    const results = await runPool(targets, concurrency, (ip) => probeOllamaHost(ip, port, timeoutMs));
+    const localIps = new Set();
+    for (const addrs of Object.values(os.networkInterfaces())) {
+      for (const addr of addrs || []) {
+        if (addr.family === 'IPv4') localIps.add(addr.address);
+      }
+    }
+    const filtered = results.filter((entry) => !localIps.has(entry.address));
+    filtered.sort((a, b) => a.address.localeCompare(b.address, undefined, { numeric: true }));
+    return filtered;
+  } catch (err) {
+    console.error('LAN scan error:', sanitizeError(err));
+    throw new Error(sanitizeError(err));
+  }
+});
+
 // Terminal Handlers
 const isWindows = os.platform() === 'win32';
 const shell = isWindows ? 'powershell.exe' : 'bash';
@@ -325,6 +817,296 @@ function flushTerminalInputQueue(terminal) {
       try { terminal.proc.stdin.write(next); } catch { /* ignore */ }
     }
   }
+}
+
+function initMcpGateway() {
+  const gateway = createGateway({ sanitizeError });
+
+  gateway.register('terminal', 'create', async (payload) => createMcpTerminalSession(payload || {}));
+  gateway.register('terminal', 'list', async () => listMcpTerminalSessions());
+  gateway.register('terminal', 'read', async (payload) =>
+    readMcpTerminalOutput(String(payload.sessionId || ''), payload.maxChars, payload.clear !== false)
+  );
+  gateway.register('terminal', 'write', async (payload) =>
+    writeMcpTerminalInput(String(payload.sessionId || ''), String(payload.input || ''))
+  );
+  gateway.register('terminal', 'execute', async (payload) =>
+    executeMcpTerminalCommand(String(payload.sessionId || ''), String(payload.command || ''), payload.options || {})
+  );
+  gateway.register('terminal', 'close', async (payload) => closeMcpTerminalSession(String(payload.sessionId || '')));
+
+  gateway.register('python', 'health', async () => getPythonTerminalConfig());
+  gateway.register('python', 'create', async (payload) => {
+    const python = getPythonTerminalConfig();
+    if (!python.ok) return { blocked: true, reason: python.note, session: null };
+    return createMcpTerminalSession({
+      shell: payload.shell || python.shell,
+      args: Array.isArray(payload.args) ? payload.args : python.args,
+      cwd: payload.cwd
+    });
+  });
+  gateway.register('python', 'list', async () => {
+    const sessions = listMcpTerminalSessions();
+    return sessions.filter((session) => {
+      const shell = String(session.shell || '').toLowerCase();
+      return shell.includes('python') || shell === 'py';
+    });
+  });
+  gateway.register('python', 'read', async (payload) =>
+    readMcpTerminalOutput(String(payload.sessionId || ''), payload.maxChars, payload.clear !== false)
+  );
+  gateway.register('python', 'write', async (payload) =>
+    writeMcpTerminalInput(String(payload.sessionId || ''), String(payload.input || ''))
+  );
+  gateway.register('python', 'execute', async (payload) =>
+    executeMcpTerminalCommand(String(payload.sessionId || ''), String(payload.command || ''), {
+      ...(payload.options || {}),
+      approveRisky: true
+    })
+  );
+  gateway.register('python', 'run', async (payload) => {
+    const python = getPythonTerminalConfig();
+    if (!python.ok) {
+      return { blocked: true, reason: python.note, session: null };
+    }
+    const session = createMcpTerminalSession({
+      shell: payload.shell || python.shell,
+      args: Array.isArray(payload.args) ? payload.args : python.args,
+      cwd: payload.cwd
+    });
+    return executeMcpTerminalCommand(session.id, String(payload.code || payload.command || ''), {
+      timeoutMs: typeof payload.timeoutSec === 'number' ? payload.timeoutSec * 1000 : undefined,
+      settleMs: typeof payload.settleMs === 'number' ? payload.settleMs : 400,
+      approveRisky: true
+    });
+  });
+  gateway.register('python', 'list_runs', async () => {
+    const sessions = listMcpTerminalSessions();
+    return sessions.filter((session) => {
+      const shell = String(session.shell || '').toLowerCase();
+      return shell.includes('python') || shell === 'py';
+    });
+  });
+  gateway.register('python', 'read_artifact', async (payload) => {
+    const sessionId = String(payload.sessionId || payload.runId || '');
+    const result = readMcpTerminalOutput(sessionId, 64_000, false);
+    return {
+      runId: sessionId,
+      fileName: 'stdout',
+      bytes: result.output.length,
+      mimeType: 'text/plain',
+      encoding: 'utf8',
+      content: result.output
+    };
+  });
+  gateway.register('python', 'close', async (payload) => closeMcpTerminalSession(String(payload.sessionId || '')));
+
+  gateway.register('folder', 'root', async () => getConfiguredMcpFolderRoot());
+  gateway.register('folder', 'clear_root', async () => {
+    persistMcpFolderRoot('');
+    return getConfiguredMcpFolderRoot();
+  });
+  gateway.register('folder', 'select_root', async () => {
+    const { root } = getConfiguredMcpFolderRoot();
+    const res = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select MCP Folder Root',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: root
+    });
+    if (res.canceled || !res.filePaths?.[0]) {
+      return { ...getConfiguredMcpFolderRoot(), canceled: true };
+    }
+    const selected = path.resolve(res.filePaths[0]);
+    persistMcpFolderRoot(selected);
+    return { ...getConfiguredMcpFolderRoot(), canceled: false };
+  });
+  gateway.register('folder', 'list', async (payload) => {
+    assertRateLimit('mcp-folder-list', 240, 60_000);
+    const relativePath = payload.path ?? payload.relativePath ?? '.';
+    const { root, target, relPath } = resolveWithinMcpFolder(relativePath);
+    const stat = fs.statSync(target);
+    if (!stat.isDirectory()) throw new Error('Target is not a directory.');
+    const entries = fs.readdirSync(target, { withFileTypes: true }).map((entry) => {
+      const full = path.join(target, entry.name);
+      const fullStat = fs.statSync(full);
+      return {
+        name: entry.name,
+        path: path.relative(root, full).replace(/\\/g, '/'),
+        type: entry.isDirectory() ? 'directory' : 'file',
+        bytes: entry.isDirectory() ? 0 : fullStat.size,
+        modifiedAt: fullStat.mtime.toISOString()
+      };
+    });
+    return { root, path: relPath, entries };
+  });
+  gateway.register('folder', 'read', async (payload) => {
+    assertRateLimit('mcp-folder-read-text', 180, 60_000);
+    const relativePath = payload.path ?? payload.relativePath ?? '';
+    const { root, target } = resolveWithinMcpFolder(relativePath);
+    const stat = fs.statSync(target);
+    if (!stat.isFile()) throw new Error('Target is not a file.');
+    if (stat.size > 4 * 1024 * 1024) throw new Error('File exceeds 4 MB text limit.');
+    const content = fs.readFileSync(target, 'utf-8');
+    return {
+      root,
+      path: path.relative(root, target).replace(/\\/g, '/'),
+      bytes: stat.size,
+      content
+    };
+  });
+  gateway.register('folder', 'write', async (payload) => {
+    assertRateLimit('mcp-folder-write-text', 120, 60_000);
+    const relativePath = payload.path ?? payload.relativePath ?? '';
+    const content = payload.content;
+    if (typeof content !== 'string') throw new Error('Content must be a string.');
+    const { root, target } = resolveWithinMcpFolder(relativePath);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content, 'utf-8');
+    const stat = fs.statSync(target);
+    return {
+      root,
+      path: path.relative(root, target).replace(/\\/g, '/'),
+      bytes: stat.size
+    };
+  });
+  gateway.register('folder', 'delete', async (payload) => {
+    assertRateLimit('mcp-folder-delete-path', 120, 60_000);
+    const relativePath = payload.path ?? payload.relativePath ?? '';
+    const { target } = resolveWithinMcpFolder(relativePath);
+    if (!fs.existsSync(target)) return { deleted: false, missing: true };
+    fs.rmSync(target, { recursive: true, force: true });
+    return { deleted: true };
+  });
+  gateway.register('folder', 'rename', async (payload) => {
+    assertRateLimit('mcp-folder-rename-path', 120, 60_000);
+    const from = resolveWithinMcpFolder(payload.fromPath || '');
+    const to = resolveWithinMcpFolder(payload.toPath || '');
+    fs.mkdirSync(path.dirname(to.target), { recursive: true });
+    fs.renameSync(from.target, to.target);
+    return {
+      from: from.relPath,
+      to: to.relPath
+    };
+  });
+  gateway.register('folder', 'mkdir', async (payload) => {
+    assertRateLimit('mcp-folder-mkdir', 120, 60_000);
+    const relativePath = payload.path ?? payload.relativePath ?? '';
+    const { root, target } = resolveWithinMcpFolder(relativePath);
+    fs.mkdirSync(target, { recursive: true });
+    return { root, path: path.relative(root, target).replace(/\\/g, '/') };
+  });
+  gateway.register('folder', 'list_models', async (payload) => {
+    assertRateLimit('mcp-folder-list-models', 80, 60_000);
+    const relativePath = payload.path ?? payload.relativePath ?? '.';
+    const { root, target } = resolveWithinMcpFolder(relativePath);
+    const stat = fs.statSync(target);
+    if (!stat.isDirectory()) throw new Error('Target is not a directory.');
+    const models = [];
+    walkModelFiles(target, root, models, 500);
+    return { root, models };
+  });
+  gateway.register('folder', 'read_model', async (payload) => {
+    assertRateLimit('mcp-folder-read-model', 60, 60_000);
+    const relativePath = payload.path ?? payload.relativePath ?? '';
+    const { root, target } = resolveWithinMcpFolder(relativePath);
+    const stat = fs.statSync(target);
+    if (!stat.isFile()) throw new Error('Target is not a file.');
+    const ext = path.extname(target).toLowerCase();
+    if (!IMPORTABLE_MODEL_EXTENSIONS.has(ext)) {
+      throw new Error(`Unsupported model format: ${ext}`);
+    }
+    if (stat.size > 120 * 1024 * 1024) {
+      throw new Error('Model exceeds 120 MB limit.');
+    }
+    const raw = fs.readFileSync(target);
+    return {
+      root,
+      path: path.relative(root, target).replace(/\\/g, '/'),
+      name: path.basename(target),
+      ext,
+      bytes: stat.size,
+      base64: raw.toString('base64')
+    };
+  });
+
+  gateway.register('browser', 'create_session', async (payload) => {
+    const created = await createBrowserSession(payload || {});
+    defaultBrowserSessionId = created.session.sessionId;
+    return created;
+  });
+  gateway.register('browser', 'list_sessions', async () => ({ sessions: listBrowserSessions() }));
+  gateway.register('browser', 'close_session', async (payload) => {
+    const closed = await closeBrowserSession(String(payload.sessionId || ''));
+    if (closed.sessionId === defaultBrowserSessionId) {
+      defaultBrowserSessionId = null;
+    }
+    return closed;
+  });
+  gateway.register('browser', 'create_page', async (payload) => createBrowserPage(String(payload.sessionId || ''), payload || {}));
+  gateway.register('browser', 'list_pages', async (payload) => listBrowserPages(String(payload.sessionId || '')));
+  gateway.register('browser', 'close_page', async (payload) => closeBrowserPage(String(payload.sessionId || ''), String(payload.pageId || '')));
+  gateway.register('browser', 'activate_page', async (payload) => activateBrowserPage(String(payload.sessionId || ''), String(payload.pageId || '')));
+  gateway.register('browser', 'action', async (payload) => executeBrowserAction(payload || {}));
+  gateway.register('browser', 'status', async () => getBrowserRuntimeStatus());
+  gateway.register('browser', 'reset', async () => executeBrowserAction({ action: 'reset' }));
+
+  gateway.register('openscad', 'health', async () => {
+    if (!OPENSCAD_FEATURE_ENABLED) {
+      return {
+        ok: false,
+        executable: '',
+        version: '',
+        checkedAt: new Date().toISOString(),
+        note: 'OpenSCAD feature is disabled by MCP_OPENSCAD_ENABLED=0.'
+      };
+    }
+    return checkOpenScadHealth();
+  });
+  gateway.register('openscad', 'compile', async (payload) => {
+    assertRateLimit('mcp-openscad-compile', 40, 60_000);
+    if (!OPENSCAD_FEATURE_ENABLED) {
+      return {
+        ok: false,
+        errorCategory: 'FEATURE_DISABLED',
+        error: 'OpenSCAD feature is disabled by MCP_OPENSCAD_ENABLED=0.'
+      };
+    }
+    return compileOpenScad(payload || {}, {
+      resolveSourcePath: (relativePath) => resolveWithinMcpFolder(String(relativePath || '')),
+      tempRoot: path.join(app.getPath('temp'), 'ollama-plus-openscad')
+    });
+  });
+
+  gateway.setStatusProvider(async () => {
+    const terminalSessions = listMcpTerminalSessions();
+    const python = getPythonTerminalConfig();
+    const folder = getConfiguredMcpFolderRoot();
+    const browser = getBrowserRuntimeStatus();
+    const openscad = checkOpenScadHealth();
+    return {
+      terminalSessionCount: terminalSessions.length,
+      pythonReady: python.ok,
+      pythonInterpreter: python.interpreter,
+      pythonVersion: python.version,
+      pythonSource: python.source,
+      pythonNote: python.note,
+      folderRoot: folder.root,
+      folderCustom: folder.isCustom,
+      browserSessionCount: browser.activeSessionCount,
+      openscadEnabled: OPENSCAD_FEATURE_ENABLED,
+      openscadReady: openscad.ok,
+      openscadExecutable: openscad.executable,
+      openscadVersion: openscad.version,
+      openscadNote: openscad.note || '',
+      checkedAt: new Date().toISOString()
+    };
+  });
+
+  return gateway;
+}
+
+function dispatchMcpGateway(request) {
+  return mcpGateway.dispatch(request || {});
 }
 
 ipcMain.handle('spawn-terminal', (event, type) => {
@@ -364,6 +1146,90 @@ ipcMain.handle('spawn-terminal', (event, type) => {
 
   return id;
 });
+
+mcpGateway = initMcpGateway();
+
+ipcMain.handle('mcp-gateway-call', async (_event, request) => {
+  return mcpGateway.dispatchSafe(request || {});
+});
+
+ipcMain.handle('mcp-gateway-status', async () => {
+  return mcpGateway.statusSafe();
+});
+
+ipcMain.handle('mcp-terminal-create-session', async (_event, options) =>
+  dispatchMcpGateway({ server: 'terminal', action: 'create', payload: options || {} })
+);
+ipcMain.handle('mcp-terminal-list-sessions', async () =>
+  dispatchMcpGateway({ server: 'terminal', action: 'list', payload: {} })
+);
+ipcMain.handle('mcp-terminal-read-output', async (_event, sessionId, maxChars, clear) =>
+  dispatchMcpGateway({ server: 'terminal', action: 'read', payload: { sessionId, maxChars, clear } })
+);
+ipcMain.handle('mcp-terminal-write-input', async (_event, sessionId, input) =>
+  dispatchMcpGateway({ server: 'terminal', action: 'write', payload: { sessionId, input } })
+);
+ipcMain.handle('mcp-terminal-execute', async (_event, sessionId, command, options) =>
+  dispatchMcpGateway({ server: 'terminal', action: 'execute', payload: { sessionId, command, options: options || {} } })
+);
+ipcMain.handle('mcp-terminal-close-session', async (_event, sessionId) =>
+  dispatchMcpGateway({ server: 'terminal', action: 'close', payload: { sessionId } })
+);
+
+ipcMain.handle('mcp-python-health', async () => dispatchMcpGateway({ server: 'python', action: 'health', payload: {} }));
+ipcMain.handle('mcp-python-run', async (_event, payload) => {
+  const result = await dispatchMcpGateway({ server: 'python', action: 'run', payload: payload || {} });
+  if (result?.session && typeof result.session.id === 'string') {
+    return {
+      blocked: Boolean(result.blocked),
+      reason: result.reason,
+      session: result.session,
+      output: result.output || '',
+      sessionId: result.session.id
+    };
+  }
+  return {
+    blocked: Boolean(result?.blocked),
+    reason: result?.reason,
+    session: result?.session || null,
+    output: result?.output || '',
+    sessionId: result?.session?.id
+  };
+});
+ipcMain.handle('mcp-python-list-runs', async () => {
+  return dispatchMcpGateway({ server: 'python', action: 'list_runs', payload: {} });
+});
+ipcMain.handle('mcp-python-read-artifact', async (_event, sessionId) => {
+  return dispatchMcpGateway({ server: 'python', action: 'read_artifact', payload: { sessionId } });
+});
+
+ipcMain.handle('mcp-folder-get-root', async () => dispatchMcpGateway({ server: 'folder', action: 'root', payload: {} }));
+ipcMain.handle('mcp-folder-clear-root', async () => dispatchMcpGateway({ server: 'folder', action: 'clear_root', payload: {} }));
+ipcMain.handle('mcp-folder-select-root', async () => dispatchMcpGateway({ server: 'folder', action: 'select_root', payload: {} }));
+ipcMain.handle('mcp-folder-list', async (_event, relativePath = '.') =>
+  dispatchMcpGateway({ server: 'folder', action: 'list', payload: { relativePath } })
+);
+ipcMain.handle('mcp-folder-read-text', async (_event, relativePath) =>
+  dispatchMcpGateway({ server: 'folder', action: 'read', payload: { relativePath } })
+);
+ipcMain.handle('mcp-folder-write-text', async (_event, relativePath, content) =>
+  dispatchMcpGateway({ server: 'folder', action: 'write', payload: { relativePath, content } })
+);
+ipcMain.handle('mcp-folder-delete-path', async (_event, relativePath) =>
+  dispatchMcpGateway({ server: 'folder', action: 'delete', payload: { relativePath } })
+);
+ipcMain.handle('mcp-folder-rename-path', async (_event, fromPath, toPath) =>
+  dispatchMcpGateway({ server: 'folder', action: 'rename', payload: { fromPath, toPath } })
+);
+ipcMain.handle('mcp-folder-mkdir', async (_event, relativePath) =>
+  dispatchMcpGateway({ server: 'folder', action: 'mkdir', payload: { relativePath } })
+);
+ipcMain.handle('mcp-folder-list-models', async (_event, relativePath = '.') =>
+  dispatchMcpGateway({ server: 'folder', action: 'list_models', payload: { relativePath } })
+);
+ipcMain.handle('mcp-folder-read-model', async (_event, relativePath) =>
+  dispatchMcpGateway({ server: 'folder', action: 'read_model', payload: { relativePath } })
+);
 
 ipcMain.on('terminal-input', (event, id, data) => {
   const terminal = terminals[id];
@@ -507,156 +1373,7 @@ ipcMain.handle('run-shell-command', async (_event, command) => {
 });
 
 // Playwright Web Access
-ipcMain.handle('browser-action', async (event, options) => {
-  try {
-    assertRateLimit('browser-action', 80, 60_000);
-
-    const { action, url, selector, text, key, wait_for, script } = options || {};
-    if (!ALLOWED_BROWSER_ACTIONS.has(action)) {
-      throw new Error('Unsupported browser action.');
-    }
-
-    if (url && !isSafeHttpUrl(url)) {
-      throw new Error('Only http/https URLs are allowed.');
-    }
-
-    if (wait_for && wait_for.startsWith('http') && !isSafeHttpUrl(wait_for)) {
-      throw new Error('Invalid wait URL.');
-    }
-
-    if (selector && selector.length > 300) {
-      throw new Error('Selector is too long.');
-    }
-
-    if (typeof script === 'string' && script.length > 2000) {
-      throw new Error('Evaluate script is too long.');
-    }
-
-    let policyMeta = null;
-
-    if (action === 'reset') {
-      await resetPersistentBrowser();
-      return {
-        result: 'Browser session reset (cookies, storage, and cache cleared).',
-        url: 'about:blank',
-        title: '',
-        policy: policyMeta
-      };
-    }
-
-    if (action === 'evaluate') {
-      const decision = await requestUserDecision({
-        title: 'Browser Script Approval',
-        markdown: `### Browser evaluate request\n\nThe model wants to execute script code in the page context.\n\n\`\`\`javascript\n${String(script || '').slice(0, 600)}\n\`\`\``,
-        options: [
-          { id: 'deny', label: 'Deny', description: 'Do not run this script.', recommended: true },
-          { id: 'allow', label: 'Allow Once', description: 'Run this script one time.' }
-        ],
-        defaultOptionId: 'deny'
-      });
-      policyMeta = {
-        decisionToken: decision.decisionToken,
-        selectionId: decision.selectionId
-      };
-      if (decision.selectionId !== 'allow') {
-        return { error: 'Action denied by user.', policy: policyMeta };
-      }
-    }
-
-    if (action === 'goto' && url) {
-      const parsed = new URL(url);
-      const isLocal = ['localhost', '127.0.0.1'].includes(parsed.hostname);
-      if (!isLocal) {
-        const decision = await requestUserDecision({
-          title: 'External Navigation Approval',
-          markdown: `### External website request\n\nTarget URL:\n\n\`\`\`text\n${url}\n\`\`\`\n\nAllow navigation?`,
-          options: [
-            { id: 'deny', label: 'Deny', description: 'Block navigation.', recommended: true },
-            { id: 'allow', label: 'Allow Once', description: 'Navigate to this URL now.' }
-          ],
-          defaultOptionId: 'deny'
-        });
-        policyMeta = {
-          decisionToken: decision.decisionToken,
-          selectionId: decision.selectionId
-        };
-        if (decision.selectionId !== 'allow') {
-          return { error: 'Navigation denied by user.', policy: policyMeta };
-        }
-      }
-    }
-
-    const page = await getPersistentPage();
-    
-    let result = "";
-
-    switch (action) {
-      case 'goto':
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        result = `Navigated to ${url}`;
-        break;
-      case 'click':
-        await page.click(selector, { timeout: 10000 });
-        result = `Clicked ${selector}`;
-        break;
-      case 'type':
-        await page.fill(selector, text, { timeout: 10000 });
-        result = `Typed "${text}" into ${selector}`;
-        break;
-      case 'press':
-        await page.press(selector || 'body', key, { timeout: 10000 });
-        result = `Pressed ${key}`;
-        break;
-      case 'scroll':
-        if (selector) {
-          await page.locator(selector).scrollIntoViewIfNeeded();
-          result = `Scrolled to ${selector}`;
-        } else {
-          await page.evaluate((dir) => window.scrollBy(0, dir === 'down' ? 500 : -500), text || 'down');
-          result = `Scrolled ${text || 'down'}`;
-        }
-        break;
-      case 'wait':
-        if (wait_for?.startsWith('http')) {
-          await page.waitForURL(wait_for, { timeout: 15000 });
-        } else if (wait_for) {
-          await page.waitForSelector(wait_for, { timeout: 15000 });
-        } else {
-          await page.waitForTimeout(parseInt(text) || 2000);
-        }
-        result = "Wait completed";
-        break;
-      case 'evaluate':
-        const evalRes = await page.evaluate(script);
-        result = `Evaluation result: ${JSON.stringify(evalRes)}`;
-        break;
-      case 'screenshot':
-        const screenshot = await page.screenshot({ encoding: 'base64' });
-        return {
-          screenshot: `data:image/png;base64,${screenshot}`,
-          url: page.url(),
-          title: await page.title(),
-          policy: policyMeta
-        };
-      case 'content':
-      case 'extract-text':
-      default:
-        const innerText = await page.evaluate(() => document.body.innerText);
-        result = innerText.substring(0, 10000);
-        break;
-    }
-
-    return {
-      result,
-      url: page.url(),
-      title: await page.title(),
-      policy: policyMeta
-    };
-  } catch (err) {
-    console.error('Browser Action Error:', err);
-    return { error: sanitizeError(err), url: persistentPage ? persistentPage.url() : '' };
-  }
-});
+ipcMain.handle('browser-action', async (_event, options) => executeBrowserAction(options));
 
 ipcMain.handle('run-playwright', async (event, url, action) => {
   try {

@@ -1,11 +1,13 @@
 import { ipcService } from '../../../services/ipcService';
 import {
+  addModel,
   addPrimitive,
   clearScene,
   getSceneObjects,
   removeObject,
   transformObject,
-  type PrimitiveKind
+  type PrimitiveKind,
+  type ModelFormat
 } from '../../../services/sceneStore';
 import {
   clearAnnotations,
@@ -13,6 +15,7 @@ import {
   getGrid,
   removeAnnotation
 } from '../../../services/annotationStore';
+import { requestOpenViewer3D } from '../../../services/workspaceEvents';
 
 export interface ToolSchema {
   type: 'function';
@@ -35,7 +38,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
         properties: {
           action: {
             type: 'string',
-            enum: ['list', 'add', 'transform', 'remove', 'clear'],
+            enum: ['list', 'add', 'transform', 'remove', 'clear', 'import_model', 'list_models'],
             description: 'Which scene operation to perform.'
           },
           kind: {
@@ -61,7 +64,10 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
             type: 'object',
             properties: { x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' } },
             description: 'Per-axis scale factor.'
-          }
+          },
+          sourcePath: { type: 'string', description: 'Relative model path inside the selected Folder MCP root (for action=import_model).' },
+          modelName: { type: 'string', description: 'Optional custom display name for an imported model.' },
+          scanPath: { type: 'string', description: 'Optional subfolder path for action=list_models.' }
         },
         required: ['action']
       }
@@ -69,7 +75,33 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   },
   {
     type: 'function',
-    function: {      name: 'scene_annotations',
+    function: {
+      name: 'openscad_generate',
+      description:
+        'Compile OpenSCAD source into an STL model through the guarded MCP OpenSCAD runtime, then import it into the 3D workspace. Supports health checks and compile from inline source or a .scad file path under Folder MCP root.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['health', 'compile'],
+            description: 'health checks OpenSCAD runtime availability; compile generates and imports STL.'
+          },
+          source: { type: 'string', description: 'Inline OpenSCAD source text (use with action=compile).' },
+          sourcePath: { type: 'string', description: 'Relative .scad path under Folder MCP root (use with action=compile).' },
+          parameters: { type: 'object', description: 'Optional parameter overrides map passed to OpenSCAD -D flags.' },
+          modelName: { type: 'string', description: 'Optional display name for the imported model.' },
+          createNew: { type: 'boolean', description: 'When true, keep prior models from the same source instead of replacing them.' },
+          timeoutMs: { type: 'number', description: 'Optional compile timeout in milliseconds.' }
+        },
+        required: ['action']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'scene_annotations',
       description:
         'Inspect or clean up the user-placed annotations on the 3D stage. Each annotation has a world position (in scene units shown with the user-selected measurement unit), an optional target object id, and a note describing the user\'s intent. Use action=list before planning scene_3d changes when annotations are present.',
       parameters: {
@@ -88,15 +120,87 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   },
   {
     type: 'function',
-    function: {      name: 'run_shell_command',
+    function: {
+      name: 'terminal_session',
       description:
-        "Execute a shell command (PowerShell) on the user's local machine. Use this to list files, read directories, or execute tools.",
+        'Manage a persistent punchout terminal session backed by the local MCP terminal server. Use this when the model needs to inspect the OS, run commands interactively, keep process state across turns, or work inside the user-approved workspace file system. Prefer create/list/execute/read over one-shot shell execution when the task needs a real terminal session.',
       parameters: {
         type: 'object',
         properties: {
-          command: { type: 'string', description: 'The shell command to run' }
+          action: {
+            type: 'string',
+            enum: ['create', 'list', 'read', 'write', 'execute', 'close'],
+            description: 'Which terminal-session action to perform.'
+          },
+          sessionId: { type: 'string', description: 'Existing terminal session id.' },
+          shell: { type: 'string', description: 'Optional shell override for create.' },
+          args: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Optional shell args override for create.'
+          },
+          cwd: { type: 'string', description: 'Optional working directory relative to the configured terminal root.' },
+          command: { type: 'string', description: 'Command to run in execute mode.' },
+          input: { type: 'string', description: 'Raw input to send to a session.' },
+          maxChars: { type: 'number', description: 'Maximum output size to read.' },
+          clear: { type: 'boolean', description: 'Clear unread output after reading.' },
+          timeoutMs: { type: 'number', description: 'Execution timeout in milliseconds.' },
+          settleMs: { type: 'number', description: 'Idle settle window in milliseconds.' },
+          approveRisky: { type: 'boolean', description: 'Explicitly approve a risky command.' }
         },
-        required: ['command']
+        required: ['action']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'python_terminal',
+      description:
+        'Use a local Python terminal session for 3D modeling, geometry generation, and offline rendering workflows. This runs directly on the user machine without Docker. Prefer this for Python-based modeling tasks that need a persistent interpreter session.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['health', 'create', 'list', 'read', 'write', 'execute', 'run', 'close'],
+            description: 'Which Python terminal-session action to perform.'
+          },
+          sessionId: { type: 'string', description: 'Existing Python terminal session id.' },
+          shell: { type: 'string', description: 'Optional shell override for create; defaults to the first available Python interpreter.' },
+          args: { type: 'array', items: { type: 'string' }, description: 'Optional shell args override for create.' },
+          cwd: { type: 'string', description: 'Optional working directory for the terminal session.' },
+          command: { type: 'string', description: 'Python code or input to send in execute mode.' },
+          input: { type: 'string', description: 'Raw input to send to an existing session.' },
+          maxChars: { type: 'number', description: 'Maximum output size to read.' },
+          clear: { type: 'boolean', description: 'Clear unread output after reading.' },
+          timeoutMs: { type: 'number', description: 'Execution timeout in milliseconds.' },
+          settleMs: { type: 'number', description: 'Idle settle window in milliseconds.' }
+        },
+        required: ['action']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'folder_mcp',
+      description:
+        'Operate on the user-selected Folder MCP root. This tool has unrestricted read/write access only inside that root and all subfolders. Use it for file workflows, project scaffolding, and model asset management without shell commands.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['root', 'select_root', 'clear_root', 'list', 'read', 'write', 'delete', 'rename', 'mkdir', 'list_models'],
+            description: 'Which Folder MCP action to perform.'
+          },
+          path: { type: 'string', description: 'Relative path under the selected folder root.' },
+          fromPath: { type: 'string', description: 'Source path for rename.' },
+          toPath: { type: 'string', description: 'Destination path for rename.' },
+          content: { type: 'string', description: 'Text content for write.' }
+        },
+        required: ['action']
       }
     }
   },
@@ -105,22 +209,52 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: 'browser_action',
       description:
-        'Perform an action in a persistent web browser (Playwright). Useful for navigation, interaction, and data extraction.',
+        'Perform browser automation actions through the central MCP browser gateway. Supports multi-session and multi-page workflows for web browsing, interaction, extraction, and diagnostics.',
       parameters: {
         type: 'object',
         properties: {
           action: {
             type: 'string',
-            enum: ['goto', 'click', 'type', 'press', 'scroll', 'wait', 'screenshot', 'extract-text', 'evaluate', 'reset'],
-            description:
-              'The action to perform. Use "reset" to clear cookies/storage/cache and start a fresh browsing session.'
+            enum: [
+              'create_session',
+              'list_sessions',
+              'close_session',
+              'create_page',
+              'list_pages',
+              'close_page',
+              'activate_page',
+              'goto',
+              'click',
+              'type',
+              'press',
+              'scroll',
+              'wait',
+              'screenshot',
+              'content',
+              'extract-text',
+              'evaluate',
+              'back',
+              'forward',
+              'reload',
+              'set-headers',
+              'get-cookies',
+              'set-cookies',
+              'reset'
+            ],
+            description: 'Browser gateway action to perform.'
           },
+          sessionId: { type: 'string', description: 'Browser session id for multi-session operations.' },
+          pageId: { type: 'string', description: 'Page id inside a browser session.' },
           url: { type: 'string', description: 'URL for navigation' },
           selector: { type: 'string', description: 'CSS selector for interaction' },
           text: { type: 'string', description: 'Text to type, scroll direction (up/down), or wait ms' },
           key: { type: 'string', description: 'Key to press (e.g. Enter)' },
           wait_for: { type: 'string', description: 'URL or selector to wait for' },
-          script: { type: 'string', description: 'JS code for evaluate' }
+          script: { type: 'string', description: 'JS code for evaluate' },
+          timeoutMs: { type: 'number', description: 'Optional per-action timeout in milliseconds.' },
+          fullPage: { type: 'boolean', description: 'When true for screenshot, capture full page.' },
+          headers: { type: 'object', description: 'Headers map for set-headers action.' },
+          cookies: { type: 'array', items: { type: 'object' }, description: 'Cookie objects for set-cookies action.' }
         },
         required: ['action']
       }
@@ -216,27 +350,19 @@ function formatPolicy(policy: { decisionToken?: string; selectionId?: string } |
   return `\nPolicy decision token: ${policy.decisionToken}\nSelection: ${policy.selectionId || fallback}`;
 }
 
-async function runShellCommand(args: ToolArgs): Promise<string> {
-  const command = String(args.command || args.cmd || '').trim();
-  const res = await ipcService.runShellCommand(command);
-  if (!res.ok) {
-    if (res.denied) {
-      return `Shell command denied by user.\nPolicy decision token: ${res.policy?.decisionToken || 'n/a'}\nSelection: ${res.policy?.selectionId || 'deny'}`;
-    }
-    return `Shell command failed: ${res.message}`;
-  }
-  return `Started shell command in terminal (ID: ${res.terminalId}). The user can view it in the Terminals tab.\nPolicy decision token: ${res.policy?.decisionToken || 'auto-allow'}\nSelection: ${res.policy?.selectionId || 'auto-allow'}`;
-}
-
 async function runBrowserAction(args: ToolArgs): Promise<string> {
   const res = await ipcService.browserAction(args);
   if (res.error) {
     return `Error: ${res.error}${formatPolicy(res.policy, 'deny')}`;
   }
   if (res.screenshot) {
-    return `Action completed. Current URL: ${res.url}\n[Screenshot captured]${formatPolicy(res.policy, 'allow')}`;
+    return `Action completed. Session: ${res.sessionId || 'default'}\nCurrent URL: ${res.url}\n[Screenshot captured]${formatPolicy(res.policy, 'allow')}`;
   }
-  return `Action: ${args.action} completed.\nURL: ${res.url}\nTitle: ${res.title}\n\nOutput: ${res.result}${formatPolicy(res.policy, 'allow')}`;
+  if (res.sessions || res.pages) {
+    return JSON.stringify(res, null, 2);
+  }
+  const output = typeof res.result === 'string' ? res.result : JSON.stringify(res.result ?? res, null, 2);
+  return `Action: ${args.action} completed.\nSession: ${res.sessionId || res.session?.sessionId || 'default'}\nURL: ${res.url || res.page?.url || ''}\nTitle: ${res.title || res.page?.title || ''}\n\nOutput: ${output}${formatPolicy(res.policy, 'allow')}`;
 }
 
 async function runReadWiki(args: ToolArgs): Promise<string> {
@@ -264,6 +390,169 @@ async function runGetCurrentTime(args: ToolArgs): Promise<string> {
   return typeof res === 'string' ? res : JSON.stringify(res);
 }
 
+async function runTerminalSession(args: ToolArgs): Promise<string> {
+  const action = String(args.action || '').toLowerCase();
+  switch (action) {
+    case 'create': {
+      const session = await ipcService.createMcpTerminalSession({
+        shell: args.shell as string | undefined,
+        args: Array.isArray(args.args) ? (args.args as string[]) : undefined,
+        cwd: args.cwd as string | undefined
+      });
+      return `Created terminal session ${session.id} (${session.shell}). CWD: ${session.cwd}`;
+    }
+    case 'list': {
+      const sessions = await ipcService.listMcpTerminalSessions();
+      return sessions.length ? JSON.stringify(sessions, null, 2) : 'No MCP terminal sessions are active.';
+    }
+    case 'read': {
+      const res = await ipcService.readMcpTerminalOutput(String(args.sessionId || ''), args.maxChars as number | undefined, args.clear as boolean | undefined);
+      return res.output ? res.output : `No unread output for session ${res.session.id}.`;
+    }
+    case 'write': {
+      const res = await ipcService.writeMcpTerminalInput(String(args.sessionId || ''), String(args.input || ''));
+      return `Wrote ${res.acceptedChars} character(s) to session ${res.session.id}${res.truncated ? ' (truncated).' : '.'}`;
+    }
+    case 'execute': {
+      const res = await ipcService.executeMcpTerminalCommand(String(args.sessionId || ''), String(args.command || ''), {
+        timeoutMs: args.timeoutMs as number | undefined,
+        settleMs: args.settleMs as number | undefined,
+        approveRisky: args.approveRisky as boolean | undefined
+      });
+      if (res.blocked) {
+        return `Terminal command blocked: ${res.reason}`;
+      }
+      return `Session ${res.session.id} executed command. Output:\n${res.output || ''}`;
+    }
+    case 'close': {
+      const res = await ipcService.closeMcpTerminalSession(String(args.sessionId || ''));
+      return res.closed ? `Closed terminal session ${res.id}.` : `Failed to close terminal session ${res.id}.`;
+    }
+    default:
+      return `Unknown terminal_session action: ${action}. Use create, list, read, write, execute, or close.`;
+  }
+}
+
+async function runPythonTerminal(args: ToolArgs): Promise<string> {
+  const action = String(args.action || '').toLowerCase();
+  switch (action) {
+    case 'health': {
+      const res = await ipcService.checkMcpPythonSandbox();
+      return res.ok
+        ? `Python terminal ready: ${res.interpreter} (${res.note})`
+        : `Python terminal unavailable: ${res.note}`;
+    }
+    case 'create': {
+      const python = await ipcService.checkMcpPythonSandbox();
+      if (!python.ok) return `Python terminal unavailable: ${python.note}`;
+      const session = await ipcService.createMcpTerminalSession({
+        shell: args.shell as string | undefined || python.shell,
+        args: Array.isArray(args.args) ? (args.args as string[]) : python.args,
+        cwd: args.cwd as string | undefined
+      });
+      return `Created Python terminal session ${session.id} (${session.shell}). CWD: ${session.cwd}`;
+    }
+    case 'list': {
+      const sessions = await ipcService.listMcpTerminalSessions();
+      const pythonSessions = sessions.filter((session) => String(session.shell || '').toLowerCase().includes('python') || String(session.shell || '').toLowerCase() === 'py');
+      return pythonSessions.length ? JSON.stringify(pythonSessions, null, 2) : 'No Python terminal sessions are active.';
+    }
+    case 'read': {
+      const res = await ipcService.readMcpTerminalOutput(String(args.sessionId || ''), args.maxChars as number | undefined, args.clear as boolean | undefined);
+      return res.output ? res.output : `No unread output for session ${res.session.id}.`;
+    }
+    case 'write': {
+      const res = await ipcService.writeMcpTerminalInput(String(args.sessionId || ''), String(args.input || ''));
+      return `Wrote ${res.acceptedChars} character(s) to session ${res.session.id}${res.truncated ? ' (truncated).' : '.'}`;
+    }
+    case 'execute': {
+      const res = await ipcService.executeMcpTerminalCommand(String(args.sessionId || ''), String(args.command || ''), {
+        timeoutMs: args.timeoutMs as number | undefined,
+        settleMs: args.settleMs as number | undefined,
+        approveRisky: true
+      });
+      if (res.blocked) {
+        return `Python terminal command blocked: ${res.reason}`;
+      }
+      return `Session ${res.session.id} executed command. Output:\n${res.output || ''}`;
+    }
+    case 'run': {
+      const python = await ipcService.checkMcpPythonSandbox();
+      if (!python.ok) return `Python terminal unavailable: ${python.note}`;
+      const session = await ipcService.createMcpTerminalSession({
+        shell: args.shell as string | undefined || python.shell,
+        args: Array.isArray(args.args) ? (args.args as string[]) : python.args,
+        cwd: args.cwd as string | undefined
+      });
+      const res = await ipcService.executeMcpTerminalCommand(session.id, String(args.command || ''), {
+        timeoutMs: args.timeoutMs as number | undefined,
+        settleMs: args.settleMs as number | undefined,
+        approveRisky: true
+      });
+      if (res.blocked) {
+        return `Python terminal command blocked: ${res.reason}`;
+      }
+      return JSON.stringify({ session: res.session, output: res.output }, null, 2);
+    }
+    case 'close': {
+      const res = await ipcService.closeMcpTerminalSession(String(args.sessionId || ''));
+      return res.closed ? `Closed Python terminal session ${res.id}.` : `Failed to close Python terminal session ${res.id}.`;
+    }
+    default:
+      return `Unknown python_terminal action: ${action}. Use health, create, list, read, write, execute, run, or close.`;
+  }
+}
+
+async function runFolderMcp(args: ToolArgs): Promise<string> {
+  const action = String(args.action || '').toLowerCase();
+  switch (action) {
+    case 'root': {
+      const root = await ipcService.getMcpFolderRoot();
+      return JSON.stringify(root, null, 2);
+    }
+    case 'select_root': {
+      const selected = await ipcService.selectMcpFolderRoot();
+      return selected.canceled
+        ? `Folder selection canceled. Active root: ${selected.root}`
+        : `Folder root set to: ${selected.root}`;
+    }
+    case 'clear_root': {
+      const cleared = await ipcService.clearMcpFolderRoot();
+      return `Folder root reset to workspace default: ${cleared.root}`;
+    }
+    case 'list': {
+      const res = await ipcService.listMcpFolder((args.path as string) || '.');
+      return JSON.stringify(res, null, 2);
+    }
+    case 'read': {
+      const res = await ipcService.readMcpFolderText(String(args.path || ''));
+      return res.content;
+    }
+    case 'write': {
+      const res = await ipcService.writeMcpFolderText(String(args.path || ''), String(args.content || ''));
+      return `Wrote ${res.bytes} byte(s) to ${res.path}`;
+    }
+    case 'delete': {
+      const res = await ipcService.deleteMcpFolderPath(String(args.path || ''));
+      return res.deleted ? 'Deleted path.' : 'Path not found.';
+    }
+    case 'rename': {
+      const res = await ipcService.renameMcpFolderPath(String(args.fromPath || ''), String(args.toPath || ''));
+      return `Renamed ${res.from} -> ${res.to}`;
+    }
+    case 'mkdir': {
+      const res = await ipcService.createMcpFolderDir(String(args.path || ''));
+      return `Created directory: ${res.path}`;
+    }
+    case 'list_models': {
+      const res = await ipcService.listMcpFolderModels((args.path as string) || '.');
+      return JSON.stringify(res, null, 2);
+    }
+    default:
+      return 'Unknown folder_mcp action. Use root, select_root, clear_root, list, read, write, delete, rename, mkdir, or list_models.';
+  }
+}
+
 async function runEngineeringCalculator(args: ToolArgs): Promise<string> {
   const res = await ipcService.engineeringCalculator({
     expression: (args.expression ?? args.expr) as string,
@@ -272,7 +561,111 @@ async function runEngineeringCalculator(args: ToolArgs): Promise<string> {
   return typeof res === 'string' ? res : JSON.stringify(res);
 }
 
+async function runOpenScadGenerate(args: ToolArgs): Promise<string> {
+  requestOpenViewer3D();
+  const action = String(args.action || '').toLowerCase();
+
+  if (action === 'health') {
+    const res = await ipcService.mcpGatewayCall({
+      server: 'openscad',
+      action: 'health',
+      payload: {}
+    });
+    if (!res.ok) return `OpenSCAD health check failed: ${res.error || 'Unknown error.'}`;
+    return JSON.stringify(res.data, null, 2);
+  }
+
+  if (action !== 'compile') {
+    return 'Unknown openscad_generate action. Use health or compile.';
+  }
+
+  const health = await ipcService.mcpGatewayCall({
+    server: 'openscad',
+    action: 'health',
+    payload: {}
+  });
+  if (!health.ok) {
+    return `OpenSCAD health check failed: ${health.error || 'Unknown error.'}`;
+  }
+  const healthData = (health.data || {}) as Record<string, unknown>;
+  if (!healthData.ok) {
+    return `OpenSCAD runtime unavailable: ${String(healthData.note || 'OpenSCAD is not ready.')}`;
+  }
+
+  const source = typeof args.source === 'string' ? args.source : undefined;
+  const sourcePath = typeof args.sourcePath === 'string' ? args.sourcePath : undefined;
+  const timeoutMs = typeof args.timeoutMs === 'number' ? args.timeoutMs : undefined;
+  const parameters = args.parameters as Record<string, unknown> | undefined;
+
+  const compile = await ipcService.mcpGatewayCall({
+    server: 'openscad',
+    action: 'compile',
+    payload: {
+      source,
+      sourcePath,
+      parameters,
+      timeoutMs,
+      returnPayloadBase64: true
+    }
+  });
+
+  if (!compile.ok) {
+    return `OpenSCAD compile request failed: ${compile.error || 'Unknown error.'}`;
+  }
+
+  const result = (compile.data || {}) as Record<string, unknown>;
+  if (!result.ok) {
+    const category = String(result.errorCategory || 'ERROR');
+    const error = String(result.error || 'OpenSCAD compile failed.');
+    const stderr = typeof result.stderr === 'string' && result.stderr.trim()
+      ? `\n\nCompiler stderr:\n${result.stderr}`
+      : '';
+    return `OpenSCAD ${category}: ${error}${stderr}`;
+  }
+
+  const payloadBase64 = String(result.payloadBase64 || '');
+  if (!payloadBase64) {
+    return 'OpenSCAD compile succeeded but no STL payload was returned.';
+  }
+
+  const modelSourcePath = String(result.modelSourcePath || sourcePath || `generated/openscad/${Date.now()}.stl`);
+  const sourceInfo = (result.source && typeof result.source === 'object') ? (result.source as Record<string, unknown>) : {};
+  const sourceHash = String(sourceInfo.sourceHash || '').trim();
+  const paramsHash = String(sourceInfo.paramsHash || '').trim();
+  const sourceKey = sourceHash && paramsHash ? `openscad:${sourceHash}:${paramsHash}` : modelSourcePath;
+  const createNew = args.createNew === true;
+
+  if (!createNew) {
+    const existing = getSceneObjects().filter((obj) => {
+      if (obj.kind !== 'model') return false;
+      if (obj.sourceKey) return obj.sourceKey === sourceKey;
+      return obj.sourcePath === modelSourcePath;
+    });
+    for (const obj of existing) {
+      removeObject(obj.id);
+    }
+  }
+
+  const artifact = (result.artifact && typeof result.artifact === 'object') ? (result.artifact as Record<string, unknown>) : {};
+
+  const model = addModel({
+    sourcePath: modelSourcePath,
+    sourceKey,
+    modelFormat: 'stl',
+    payloadBase64,
+    name: (args.modelName as string) || String(artifact.name || 'OpenSCAD Model'),
+    position: args.position as Partial<{ x: number; y: number; z: number }> | undefined,
+    rotation: args.rotation as Partial<{ x: number; y: number; z: number }> | undefined,
+    scale: args.scale as Partial<{ x: number; y: number; z: number }> | undefined
+  });
+
+  const durationMs = typeof result.durationMs === 'number' ? result.durationMs : undefined;
+  const replacedMsg = createNew ? 'Created a new model entry.' : 'Replaced prior model(s) from the same source path.';
+  return `Compiled OpenSCAD to STL and imported as id "${model.id}" (${model.name}). ${replacedMsg}${durationMs ? ` Compile time: ${durationMs} ms.` : ''}`;
+}
+
 async function runScene3d(args: ToolArgs): Promise<string> {
+  requestOpenViewer3D();
   const action = String(args.action || '').toLowerCase();
   switch (action) {
     case 'list': {
@@ -280,7 +673,14 @@ async function runScene3d(args: ToolArgs): Promise<string> {
       if (list.length === 0) return 'Scene is empty.';
       return JSON.stringify(list, null, 2);
     }
+    case 'list_models': {
+      const listed = await ipcService.listMcpFolderModels((args.scanPath as string) || '.');
+      return JSON.stringify(listed, null, 2);
+    }
     case 'add': {
+      if (Array.isArray(args.kind)) {
+        return 'scene_3d add expects a single kind string such as "sphere". To add multiple objects, emit separate scene_3d JSON calls, one per object.';
+      }
       const kind = String(args.kind || 'box').toLowerCase() as PrimitiveKind;
       const allowed: PrimitiveKind[] = ['box', 'sphere', 'cylinder', 'cone', 'plane', 'torus'];
       if (!allowed.includes(kind)) return `Unsupported kind: ${kind}. Use one of ${allowed.join(', ')}.`;
@@ -317,8 +717,27 @@ async function runScene3d(args: ToolArgs): Promise<string> {
       const n = clearScene();
       return `Cleared ${n} object(s) from the scene.`;
     }
+    case 'import_model': {
+      const sourcePath = String(args.sourcePath || args.path || '').trim();
+      if (!sourcePath) return 'import_model requires sourcePath (relative to Folder MCP root).';
+      if (/\.scad$/i.test(sourcePath)) {
+        return 'SCAD source files must be compiled before import. Use openscad_generate with action="compile" and sourcePath.';
+      }
+      const payload = await ipcService.readMcpFolderModel(sourcePath);
+      const format = payload.ext.replace('.', '').toLowerCase() as ModelFormat;
+      const model = addModel({
+        sourcePath: payload.path,
+        modelFormat: format,
+        payloadBase64: payload.base64,
+        name: (args.modelName as string) || payload.name,
+        position: args.position as Partial<{ x: number; y: number; z: number }> | undefined,
+        rotation: args.rotation as Partial<{ x: number; y: number; z: number }> | undefined,
+        scale: args.scale as Partial<{ x: number; y: number; z: number }> | undefined
+      });
+      return `Imported model ${payload.name} as id "${model.id}" from ${payload.path}.`;
+    }
     default:
-      return `Unknown scene_3d action: ${action}. Use list, add, transform, remove, or clear.`;
+      return `Unknown scene_3d action: ${action}. Use list, add, transform, remove, clear, import_model, or list_models.`;
   }
 }
 
@@ -345,7 +764,6 @@ async function runSceneAnnotations(args: ToolArgs): Promise<string> {
 }
 
 const TOOL_HANDLERS: Record<string, (args: ToolArgs) => Promise<string>> = {
-  run_shell_command: runShellCommand,
   browser_action: runBrowserAction,
   read_wiki: runReadWiki,
   web_search: runWebSearch,
@@ -360,8 +778,17 @@ const TOOL_HANDLERS: Record<string, (args: ToolArgs) => Promise<string>> = {
   scene_3d: runScene3d,
   scene3d: runScene3d,
   three_d_scene: runScene3d,
+  openscad_generate: runOpenScadGenerate,
+  openscad: runOpenScadGenerate,
   scene_annotations: runSceneAnnotations,
-  annotations: runSceneAnnotations
+  annotations: runSceneAnnotations,
+  terminal_session: runTerminalSession,
+  mcp_terminal: runTerminalSession,
+  python_terminal: runPythonTerminal,
+  python_sandbox: runPythonTerminal,
+  mcp_python_sandbox: runPythonTerminal,
+  folder_mcp: runFolderMcp,
+  mcp_folder: runFolderMcp
 };
 
 /**

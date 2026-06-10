@@ -1,17 +1,18 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Settings, MessageSquare, Terminal as TerminalIcon, Book, RefreshCw, ListTodo, Box, LayoutPanelLeft, Columns2, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import Chat from './components/Chat';
-import TerminalView from './components/TerminalView';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { Settings, MessageSquare, Terminal as TerminalIcon, Book, ListTodo, Box, Columns2, PanelLeftClose, PanelLeftOpen, Radar, FileText, ShieldCheck, RefreshCcw } from 'lucide-react';
+import Chat from './components/Chat/Chat';
 import Wiki from './components/Wiki';
 import TaskBoard from './components/TaskBoard';
 import Viewer3D from './components/Viewer3D';
 import MarkdownDecisionForm from './components/MarkdownDecisionForm';
 import MarkdownInputForm from './components/MarkdownInputForm';
+import ModelSelector, { type ModelEntry } from './components/ModelSelector';
 import { ipcService, isElectronAvailable } from './services/ipcService';
+import { onOpenViewer3D } from './services/workspaceEvents';
 import logo from './assets/logo.png';
 import './App.css';
 
-const PANEL_IDS = ['chat', 'terminal', 'wiki', 'tasks', 'viewer3d'] as const;
+const PANEL_IDS = ['chat', 'wiki', 'tasks', 'viewer3d'] as const;
 
 type PanelId = typeof PANEL_IDS[number];
 
@@ -65,16 +66,28 @@ type PendingInput = {
   createdAt: string;
 };
 
+type McpRuntimeStatus = {
+  terminalSessionCount: number | null;
+  pythonReady: boolean | null;
+  pythonInterpreter: string;
+  pythonVersion: string;
+  pythonSource: string;
+  pythonNote: string;
+  folderRoot: string;
+  folderCustom: boolean;
+  browserSessionCount: number | null;
+  lastCheckedAt: string;
+};
+
 const DEFAULT_LAYOUTS: WorkspaceLayout[] = [
   { id: 'layout-chat', name: 'Chat Focus', primary: 'chat' },
   { id: 'layout-agent', name: 'Agent + Tasks', primary: 'chat', secondary: 'tasks' },
-  { id: 'layout-research', name: 'Research', primary: 'wiki', secondary: 'terminal' },
+  { id: 'layout-research', name: 'Research', primary: 'wiki', secondary: 'tasks' },
   { id: 'layout-3d', name: '3D Studio', primary: 'viewer3d', secondary: 'chat' }
 ];
 
 const PANEL_CONFIG: PanelConfig[] = [
   { id: 'chat', label: 'Chat', Icon: MessageSquare },
-  { id: 'terminal', label: 'Terminals', Icon: TerminalIcon },
   { id: 'wiki', label: 'Knowledge Wiki', Icon: Book },
   { id: 'tasks', label: 'Task Board', Icon: ListTodo },
   { id: 'viewer3d', label: '3D Workspace', Icon: Box }
@@ -107,12 +120,23 @@ function loadLayouts(): WorkspaceLayout[] {
   }
 }
 
+function shortHostLabel(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return parsed.host || url;
+  } catch {
+    return url;
+  }
+}
+
 export default function App() {
   const [models, setModels] = useState<ModelTag[]>([]);
-  const [selectedModel, setSelectedModel] = useState('');
+  const [selectedModel, setSelectedModel] = useState(localStorage.getItem('selectedModel') || '');
+  const [selectedHost, setSelectedHost] = useState(localStorage.getItem('selectedHost') || localStorage.getItem('hostUrl') || 'http://127.0.0.1:11434');
   const [status, setStatus] = useState('Checking Ollama...');
 
   const [showSettings, setShowSettings] = useState(false);
+  const [lanPickerOpenSignal, setLanPickerOpenSignal] = useState(0);
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const [hostUrl, setHostUrl] = useState(localStorage.getItem('hostUrl') || 'http://127.0.0.1:11434');
   const [keepAlive, setKeepAlive] = useState(localStorage.getItem('keepAlive') === 'true');
@@ -124,14 +148,165 @@ export default function App() {
   const [editingSessionId, setEditingSessionId] = useState('');
   const [editingTitle, setEditingTitle] = useState('');
   const [layouts, setLayouts] = useState<WorkspaceLayout[]>(() => loadLayouts());
-  const [activeLayoutId, setActiveLayoutId] = useState(localStorage.getItem('activeLayoutId') || 'layout-chat');
+  const [activeLayoutId] = useState(localStorage.getItem('activeLayoutId') || 'layout-chat');
   const [pendingDecisions, setPendingDecisions] = useState<PendingDecision[]>([]);
   const [pendingInputs, setPendingInputs] = useState<PendingInput[]>([]);
+  const [mcpStatus, setMcpStatus] = useState<McpRuntimeStatus>({
+    terminalSessionCount: null,
+    pythonReady: null,
+    pythonInterpreter: 'Unknown',
+    pythonVersion: '',
+    pythonSource: '',
+    pythonNote: '',
+    folderRoot: '',
+    folderCustom: false,
+    browserSessionCount: null,
+    lastCheckedAt: ''
+  });
+  const [mcpActionError, setMcpActionError] = useState('');
   const localDecisionHandlers = useRef(new Map<string, (selectionId: string) => void>());
   const localInputHandlers = useRef(new Map<string, (value: string | null) => void>());
 
   const activeLayout = layouts.find((layout) => layout.id === activeLayoutId) || layouts[0] || DEFAULT_LAYOUTS[0];
   const activeChatLayout = activeLayout.primary === 'chat' || activeLayout.secondary === 'chat';
+
+  const refreshMcpStatus = async () => {
+    const checkedAt = new Date().toLocaleTimeString();
+
+    if (!isElectronAvailable()) {
+      setMcpStatus({
+        terminalSessionCount: 0,
+        pythonReady: false,
+        pythonInterpreter: 'Electron required',
+        pythonVersion: '',
+        pythonSource: '',
+        pythonNote: 'Open the app in Electron to use terminal-backed Python sessions.',
+        folderRoot: '',
+        folderCustom: false,
+        browserSessionCount: 0,
+        lastCheckedAt: checkedAt
+      });
+      return;
+    }
+
+    try {
+      const gateway = await ipcService.mcpGatewayStatus();
+      if (!gateway.ok || !gateway.data) {
+        throw new Error(gateway.error || 'Failed to read MCP gateway status.');
+      }
+
+      const data = gateway.data as {
+        terminalSessionCount?: number;
+        pythonReady?: boolean;
+        pythonInterpreter?: string;
+        pythonVersion?: string;
+        pythonSource?: string;
+        pythonNote?: string;
+        folderRoot?: string;
+        folderCustom?: boolean;
+        browserSessionCount?: number;
+      };
+
+      setMcpStatus({
+        terminalSessionCount: typeof data.terminalSessionCount === 'number' ? data.terminalSessionCount : null,
+        pythonReady: Boolean(data.pythonReady),
+        pythonInterpreter: data.pythonInterpreter || 'Unavailable',
+        pythonVersion: data.pythonVersion || '',
+        pythonSource: data.pythonSource || '',
+        pythonNote: data.pythonNote || '',
+        folderRoot: data.folderRoot || '',
+        folderCustom: Boolean(data.folderCustom),
+        browserSessionCount: typeof data.browserSessionCount === 'number' ? data.browserSessionCount : null,
+        lastCheckedAt: checkedAt
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to read MCP status.';
+      setMcpActionError(message);
+      setMcpStatus((prev) => ({ ...prev, lastCheckedAt: checkedAt }));
+    }
+  };
+
+  const handleSelectMcpFolderRoot = async () => {
+    if (!isElectronAvailable()) {
+      setMcpActionError('Folder selection is only available in the Electron app.');
+      return;
+    }
+
+    try {
+      setMcpActionError('');
+      await ipcService.selectMcpFolderRoot();
+      await refreshMcpStatus();
+    } catch (err) {
+      console.error('Failed to select MCP folder root:', err);
+      const message = err instanceof Error ? err.message : 'Unknown error selecting folder root.';
+      setMcpActionError(message);
+    }
+  };
+
+  const handleClearMcpFolderRoot = async () => {
+    if (!isElectronAvailable()) {
+      setMcpActionError('Folder selection is only available in the Electron app.');
+      return;
+    }
+
+    try {
+      setMcpActionError('');
+      await ipcService.clearMcpFolderRoot();
+      await refreshMcpStatus();
+    } catch (err) {
+      console.error('Failed to clear MCP folder root:', err);
+      const message = err instanceof Error ? err.message : 'Unknown error clearing folder root.';
+      setMcpActionError(message);
+    }
+  };
+
+  const createNewSession = useCallback(() => {
+    const newId = Math.random().toString(36).substring(7);
+    setCurrentSessionId(newId);
+    setSessions((prev) => [{ id: newId, title: 'New Chat', updatedAt: new Date().toISOString() }, ...prev]);
+  }, []);
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      const chatList = await ipcService.listChats();
+      setSessions(chatList);
+      if (chatList.length > 0) {
+        setCurrentSessionId((prev) => prev || chatList[0].id);
+      } else {
+        createNewSession();
+      }
+    } catch (error) {
+      console.error('Failed to refresh sessions:', error);
+    }
+  }, [createNewSession]);
+
+  const fetchModels = useCallback(async () => {
+    setStatus('Loading models...');
+    try {
+      const res = await ipcService.invokeOllama(hostUrl, '/api/tags');
+      const m = res.models || [];
+      setModels(m);
+
+      if (m.length > 0) {
+        const firstNamed = m.find((model: ModelTag) => model.name);
+        if (!firstNamed) {
+          setStatus('Ready (0 models)');
+          return;
+        }
+        setSelectedModel((prev) => prev || firstNamed.name);
+        setSelectedHost((prev) => prev || hostUrl);
+      }
+
+      setStatus(`Ready (${m.length} models)`);
+    } catch (err) {
+      console.error(err);
+      if (err instanceof Error && err.message.includes('Electron API')) {
+        setStatus('Error: Open via Electron, not Browser');
+      } else {
+        setStatus('Ollama offline (Check Host URL or start Ollama)');
+      }
+    }
+  }, [hostUrl]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -139,19 +314,24 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem('workspaceLayouts', JSON.stringify(layouts));
-  }, [layouts]);
+    const timer = window.setTimeout(() => {
+      void refreshMcpStatus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
-    if (!activeLayoutId && layouts.length > 0) {
-      setActiveLayoutId(layouts[0].id);
-      return;
+    if (showSettings) {
+      const timer = window.setTimeout(() => {
+        void refreshMcpStatus();
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
+  }, [showSettings]);
 
-    if (!layouts.find((layout) => layout.id === activeLayoutId)) {
-      setActiveLayoutId(layouts[0]?.id || DEFAULT_LAYOUTS[0].id);
-    }
-  }, [layouts, activeLayoutId]);
+  useEffect(() => {
+    localStorage.setItem('workspaceLayouts', JSON.stringify(layouts));
+  }, [layouts]);
 
   useEffect(() => {
     localStorage.setItem('activeLayoutId', activeLayoutId);
@@ -168,9 +348,17 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('hostUrl', hostUrl);
     localStorage.setItem('keepAlive', keepAlive.toString());
-    fetchModels();
-    refreshSessions();
-  }, [hostUrl, keepAlive]);
+    const timer = window.setTimeout(() => {
+      void fetchModels();
+      void refreshSessions();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [hostUrl, keepAlive, fetchModels, refreshSessions]);
+
+  useEffect(() => {
+    localStorage.setItem('selectedModel', selectedModel);
+    localStorage.setItem('selectedHost', selectedHost);
+  }, [selectedHost, selectedModel]);
 
   useEffect(() => {
     localStorage.setItem('currentSessionId', currentSessionId);
@@ -189,25 +377,22 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  const refreshSessions = async () => {
-    try {
-      const chatList = await ipcService.listChats();
-      setSessions(chatList);
-      if (chatList.length > 0 && !currentSessionId) {
-        setCurrentSessionId(chatList[0].id);
-      } else if (chatList.length === 0 && !currentSessionId) {
-        createNewSession();
-      }
-    } catch (error) {
-      console.error('Failed to refresh sessions:', error);
-    }
-  };
-
-  const createNewSession = () => {
-    const newId = Math.random().toString(36).substring(7);
-    setCurrentSessionId(newId);
-    setSessions(prev => [{ id: newId, title: 'New Chat', updatedAt: new Date().toISOString() }, ...prev]);
-  };
+  useEffect(() => {
+    return onOpenViewer3D(() => {
+      setLayouts((prev) =>
+        prev.map((layout) =>
+          layout.id === activeLayout.id
+            ? {
+                ...layout,
+                primary: 'viewer3d',
+                secondary: layout.secondary === 'viewer3d' ? undefined : layout.secondary
+              }
+            : layout
+        )
+      );
+      if (autoCollapseSidebar) setSidebarCollapsed(true);
+    });
+  }, [activeLayout.id, autoCollapseSidebar]);
 
   const deleteSession = async (e, id) => {
     e.stopPropagation();
@@ -240,29 +425,9 @@ export default function App() {
     setEditingTitle(session.title);
   };
 
-  const fetchModels = async () => {
-    setStatus('Loading models...');
-    try {
-      const res = await ipcService.invokeOllama(hostUrl, '/api/tags');
-      const m = res.models || [];
-      setModels(m);
-      
-      if (m.length > 0) {
-        // If no model is selected, or the currently selected model is no longer in the list, select the first one
-        if (!selectedModel || !m.find((model: ModelTag) => model.name === selectedModel)) {
-          setSelectedModel(m[0].name);
-        }
-      }
-      
-      setStatus(`Ready (${m.length} models)`);
-    } catch (err) {
-      console.error(err);
-      if (err instanceof Error && err.message.includes('Electron API')) {
-        setStatus('Error: Open via Electron, not Browser');
-      } else {
-        setStatus('Ollama offline (Check Host URL or start Ollama)');
-      }
-    }
+  const handleModelSelect = (entry: ModelEntry) => {
+    setSelectedModel(entry.name);
+    setSelectedHost(entry.host);
   };
 
   const handleUnloadModels = async () => {
@@ -283,72 +448,6 @@ export default function App() {
       secondary: layout.secondary === panelId ? undefined : layout.secondary
     }));
     if (autoCollapseSidebar) setSidebarCollapsed(true);
-  };
-
-  const setSecondaryPanel = (panelId?: PanelId) => {
-    updateActiveLayout((layout) => ({
-      ...layout,
-      secondary: panelId && panelId !== layout.primary ? panelId : undefined
-    }));
-  };
-
-  const saveCurrentLayout = () => {
-    const requestId = `local-layout-name-${Math.random().toString(36).slice(2, 10)}`;
-    localInputHandlers.current.set(requestId, (value) => {
-      const name = (value || '').trim();
-      if (!name) return;
-
-      const id = `layout-${Math.random().toString(36).slice(2, 10)}`;
-      const layout: WorkspaceLayout = {
-        id,
-        name,
-        primary: activeLayout.primary,
-        secondary: activeLayout.secondary
-      };
-
-      setLayouts((prev) => [layout, ...prev]);
-      setActiveLayoutId(id);
-    });
-
-    setPendingInputs((prev) => [
-      ...prev,
-      {
-        requestId,
-        title: 'Save Workspace Preset',
-        markdown: '### Name your layout preset\n\nProvide a clear, short name so it is easy to reuse later.',
-        defaultValue: `Preset ${layouts.length + 1}`,
-        placeholder: 'Enter preset name',
-        confirmLabel: 'Save Preset',
-        cancelLabel: 'Cancel',
-        createdAt: new Date().toISOString()
-      }
-    ]);
-  };
-
-  const deleteCurrentLayout = () => {
-    if (layouts.length <= 1) return;
-    const requestId = `local-delete-layout-${Math.random().toString(36).slice(2, 10)}`;
-    localDecisionHandlers.current.set(requestId, (selectionId) => {
-      if (selectionId !== 'delete') return;
-      const updated = layouts.filter((layout) => layout.id !== activeLayout.id);
-      setLayouts(updated);
-      setActiveLayoutId(updated[0].id);
-    });
-
-    setPendingDecisions((prev) => [
-      ...prev,
-      {
-        requestId,
-        source: 'local',
-        title: 'Delete Workspace Preset',
-        markdown: `### Confirm preset deletion\n\nYou are about to delete this preset:\n\n- **${activeLayout.name}**\n\nThis action cannot be undone.`,
-        options: [
-          { id: 'cancel', label: 'Cancel', description: 'Keep this preset.', recommended: true },
-          { id: 'delete', label: 'Delete Preset', description: 'Remove this preset permanently.' }
-        ],
-        createdAt: new Date().toISOString()
-      }
-    ]);
   };
 
   const activeDecision = pendingDecisions[0];
@@ -375,20 +474,19 @@ export default function App() {
   };
 
   const renderPanel = (panelId: PanelId) => {
+    const effectiveHost = selectedHost || hostUrl;
     switch (panelId) {
       case 'chat':
         return (
           <Chat
             selectedModel={selectedModel}
-            hostUrl={hostUrl}
+            hostUrl={effectiveHost}
             keepAlive={keepAlive}
             sessionId={currentSessionId}
             sessionTitle={sessions.find((s) => s.id === currentSessionId)?.title}
             onSessionUpdate={refreshSessions}
           />
         );
-      case 'terminal':
-        return <TerminalView />;
       case 'wiki':
         return <Wiki />;
       case 'tasks':
@@ -397,7 +495,7 @@ export default function App() {
         return (
           <Viewer3D
             selectedModel={selectedModel}
-            hostUrl={hostUrl}
+            hostUrl={effectiveHost}
             keepAlive={keepAlive}
             sessionId={currentSessionId}
             sessionTitle={sessions.find((s) => s.id === currentSessionId)?.title}
@@ -405,7 +503,7 @@ export default function App() {
           />
         );
       default:
-        return <Chat selectedModel={selectedModel} hostUrl={hostUrl} keepAlive={keepAlive} sessionId={currentSessionId} sessionTitle={sessions.find((s) => s.id === currentSessionId)?.title} onSessionUpdate={refreshSessions} />;
+        return <Chat selectedModel={selectedModel} hostUrl={effectiveHost} keepAlive={keepAlive} sessionId={currentSessionId} sessionTitle={sessions.find((s) => s.id === currentSessionId)?.title} onSessionUpdate={refreshSessions} />;
     }
   };
 
@@ -431,21 +529,6 @@ export default function App() {
           </span>
         </div>
 
-        <div className="model-selector">
-          <label>Model</label>
-          <div className="model-select-row">
-            <select aria-label="Select model" value={selectedModel} onChange={e => setSelectedModel(e.target.value)}>
-              {models.map((m) => (
-                <option key={m.name} value={m.name}>{m.name}</option>
-              ))}
-              {models.length === 0 && <option value="">No models</option>}
-            </select>
-            <button className="icon-only-btn" onClick={fetchModels} title="Refresh Models" aria-label="Refresh models">
-              <RefreshCw size={16} />
-            </button>
-          </div>
-        </div>
-
         <nav className="nav-menu">
           {PANEL_CONFIG.map(({ id, label, Icon }) => (
             <button
@@ -460,33 +543,65 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="workspace-controls">
+        <ModelSelector
+          localHostUrl={hostUrl}
+          localModels={models}
+          selectedModel={selectedModel}
+          selectedHost={selectedHost}
+          status={status}
+          onSelect={handleModelSelect}
+          onRefreshLocal={fetchModels}
+          lanPickerOpenSignal={lanPickerOpenSignal}
+        />
+
+        <section className="workspace-controls model-summary">
           <div className="workspace-controls-header">
-            <LayoutPanelLeft size={14} />
-            <span>Workspace</span>
+            <span className="mcp-summary-title">
+              <TerminalIcon size={14} />
+              <span>Last Used LLM</span>
+            </span>
           </div>
-          <select aria-label="Select workspace preset" value={activeLayout.id} onChange={(e) => setActiveLayoutId(e.target.value)}>
-            {layouts.map((layout) => (
-              <option key={layout.id} value={layout.id}>{layout.name}</option>
-            ))}
-          </select>
-          <select
-            aria-label="Select secondary panel"
-            value={activeLayout.secondary || ''}
-            onChange={(e) => setSecondaryPanel((e.target.value || undefined) as PanelId | undefined)}
-          >
-            <option value="">No secondary panel</option>
-            {PANEL_CONFIG.filter((panel) => panel.id !== activeLayout.primary).map((panel) => (
-              <option key={panel.id} value={panel.id}>{panel.label}</option>
-            ))}
-          </select>
-          <div className="workspace-controls-actions">
-            <button onClick={saveCurrentLayout}>Save Preset</button>
-            <button onClick={deleteCurrentLayout} disabled={layouts.length <= 1} aria-label="Delete current workspace preset" title="Delete preset">
-              <X size={14} />
+          <div className="mcp-summary-root">
+            <MessageSquare size={14} />
+            <span>{selectedModel || 'No model selected'}</span>
+          </div>
+          <div className="model-summary-host">
+            <span className={`mcp-status-chip ${selectedModel ? 'ready' : 'unknown'}`}>
+              {selectedModel ? (selectedHost === hostUrl ? 'Local' : 'Remote') : 'Unset'}
+            </span>
+            <span>{selectedModel ? shortHostLabel(selectedHost || hostUrl) : 'Choose a model from the dropdown'}</span>
+          </div>
+        </section>
+
+        <section className="workspace-controls mcp-summary">
+          <div className="workspace-controls-header">
+            <span className="mcp-summary-title">
+              <ShieldCheck size={14} />
+              <span>MCP Servers</span>
+            </span>
+            <button type="button" className="mcp-summary-refresh" onClick={() => void refreshMcpStatus()}>
+              <RefreshCcw size={14} /> Refresh
             </button>
           </div>
-        </div>
+          <div className="mcp-summary-quick">
+            <span className={`mcp-status-chip ${mcpStatus.folderCustom ? 'ready' : 'error'}`}>
+              {mcpStatus.folderCustom ? 'Folder Set' : 'Set Folder'}
+            </span>
+            <span className={`mcp-status-chip ${mcpStatus.terminalSessionCount === null ? 'unknown' : 'ready'}`}>
+              Terminal {mcpStatus.terminalSessionCount === null ? 'Unknown' : `${mcpStatus.terminalSessionCount} Active`}
+            </span>
+            <span className={`mcp-status-chip ${mcpStatus.pythonReady ? 'ready' : mcpStatus.pythonReady === false ? 'warn' : 'unknown'}`}>
+              Python {mcpStatus.pythonReady ? 'Ready' : mcpStatus.pythonReady === false ? 'Unavailable' : 'Unknown'}
+            </span>
+            <span className={`mcp-status-chip ${mcpStatus.browserSessionCount === null ? 'unknown' : 'ready'}`}>
+              Browser {mcpStatus.browserSessionCount === null ? 'Unknown' : `${mcpStatus.browserSessionCount} Active`}
+            </span>
+          </div>
+          <div className="mcp-summary-root">
+            <FileText size={14} />
+            <span>{mcpStatus.folderRoot || 'No folder selected'}</span>
+          </div>
+        </section>
 
         {activeChatLayout && (
           <div className="sessions-list">
@@ -527,6 +642,17 @@ export default function App() {
         )}
         
         <div className="spacer" />
+
+        <div className="lan-scan-launch">
+          <button
+            className="nav-item"
+            onClick={() => setLanPickerOpenSignal((v) => v + 1)}
+            title="Open LAN model scanner"
+            aria-label="Open LAN model scanner"
+          >
+            <Radar size={18} /> LAN Scan
+          </button>
+        </div>
         
         <div className="settings-btn">
           <button className="nav-item" onClick={() => setShowSettings(true)}>
@@ -552,6 +678,68 @@ export default function App() {
           <div className="modal-overlay">
             <div className="modal-content glass-panel">
               <h3>Settings</h3>
+
+              <section className="mcp-settings-section">
+                <div className="mcp-settings-header">
+                  <div>
+                    <div className="mcp-settings-title">
+                      <ShieldCheck size={16} />
+                      <span>MCP Servers</span>
+                    </div>
+                    <p className="mcp-settings-subtitle">
+                      Runtime status and controls for local MCP servers.
+                    </p>
+                  </div>
+                  <button type="button" className="mcp-refresh-btn" onClick={() => void refreshMcpStatus()}>
+                    <RefreshCcw size={14} /> Refresh
+                  </button>
+                </div>
+
+                <div className="mcp-settings-grid">
+                  <article className="mcp-card">
+                    <div className="mcp-card-head">
+                      <FileText size={16} />
+                      <strong>Folder MCP</strong>
+                      <span className={`mcp-status-chip ${mcpStatus.folderCustom ? 'ready' : 'error'}`}>{mcpStatus.folderCustom ? 'Folder Set' : 'Set Folder'}</span>
+                    </div>
+                    <p>Read/write access inside the selected root and its subfolders.</p>
+                    <ul>
+                      <li>list, read, write, create, delete, rename</li>
+                      <li>traversal protection enabled</li>
+                      <li>current root: {mcpStatus.folderRoot || 'not set'}</li>
+                    </ul>
+                    <div className="mcp-card-actions">
+                      <button type="button" className="secondary-button" onClick={handleSelectMcpFolderRoot} disabled={!isElectronAvailable()}>Select Folder</button>
+                      <button type="button" className="secondary-button" onClick={handleClearMcpFolderRoot} disabled={!isElectronAvailable()}>Clear</button>
+                    </div>
+                    {mcpActionError && <p className="mcp-action-error" role="alert">{mcpActionError}</p>}
+                  </article>
+
+                  <article className="mcp-card">
+                    <div className="mcp-card-head">
+                      <TerminalIcon size={16} />
+                      <strong>Terminal MCP</strong>
+                      <span className={`mcp-status-chip ${mcpStatus.terminalSessionCount === null ? 'unknown' : 'ready'}`}>{mcpStatus.terminalSessionCount === null ? 'Unknown' : 'Ready'}</span>
+                    </div>
+                    <p>Persistent shell sessions with policy checks.</p>
+                    <p>session count: {mcpStatus.terminalSessionCount === null ? '...' : mcpStatus.terminalSessionCount}</p>
+                  </article>
+
+                  <article className="mcp-card">
+                    <div className="mcp-card-head">
+                      <TerminalIcon size={16} />
+                      <strong>Python Terminal Session</strong>
+                      <span className={`mcp-status-chip ${mcpStatus.pythonReady ? 'ready' : mcpStatus.pythonReady === false ? 'warn' : 'unknown'}`}>{mcpStatus.pythonReady ? 'Ready' : mcpStatus.pythonReady === false ? 'Unavailable' : 'Unknown'}</span>
+                    </div>
+                    <p>Persistent local Python session for scripts, modeling, and rendering.</p>
+                    <p>{mcpStatus.pythonInterpreter}</p>
+                    {mcpStatus.pythonVersion && <p>{mcpStatus.pythonVersion}</p>}
+                    {mcpStatus.pythonSource && <p>Source: {mcpStatus.pythonSource}</p>}
+                    {mcpStatus.pythonNote && <p>{mcpStatus.pythonNote}</p>}
+                  </article>
+                </div>
+                <p className="mcp-settings-footnote">Last checked: {mcpStatus.lastCheckedAt || 'not yet checked'}</p>
+              </section>
               
               <div className="setting-group">
                 <label>Theme</label>
@@ -599,7 +787,7 @@ export default function App() {
                   onClick={handleUnloadModels}
                   id="flush-vram-btn"
                 >
-                  🧹 Flush VRAM (Unload All Models)
+                  Flush VRAM (Unload All Models)
                 </button>
               </div>
 

@@ -9,6 +9,78 @@ export interface SteerPayload {
   preview: string;
 }
 
+interface EnterGenerationTransition {
+  nextGenerationDepth: number;
+  firstEntry: boolean;
+}
+
+interface ExitGenerationTransition {
+  nextGenerationDepth: number;
+  nextIntent: SteerAbortIntent;
+  nextPending: SteerPayload | null;
+  flush: SteerPayload | null;
+  intent: SteerAbortIntent;
+  completed: boolean;
+}
+
+export function enterGenerationTransition(generationDepth: number): EnterGenerationTransition {
+  const nextGenerationDepth = generationDepth + 1;
+  return {
+    nextGenerationDepth,
+    firstEntry: nextGenerationDepth === 1
+  };
+}
+
+export function exitGenerationTransition(
+  generationDepth: number,
+  intent: SteerAbortIntent,
+  pending: SteerPayload | null
+): ExitGenerationTransition {
+  const nextGenerationDepth = generationDepth - 1;
+
+  if (nextGenerationDepth > 0) {
+    return {
+      nextGenerationDepth,
+      nextIntent: intent,
+      nextPending: pending,
+      flush: null,
+      intent: null,
+      completed: false
+    };
+  }
+
+  if (intent === 'stop-only') {
+    return {
+      nextGenerationDepth,
+      nextIntent: null,
+      nextPending: pending,
+      flush: null,
+      intent,
+      completed: true
+    };
+  }
+
+  if (pending) {
+    return {
+      nextGenerationDepth,
+      nextIntent: null,
+      nextPending: null,
+      flush: pending,
+      intent,
+      completed: true
+    };
+  }
+
+  return {
+    nextGenerationDepth,
+    nextIntent: null,
+    nextPending: pending,
+    flush: null,
+    intent,
+    completed: true
+  };
+}
+
 /**
  * Encapsulates the "steer queue" semantics: while a generation is in flight,
  * a new user send is buffered and either flushed when the generation completes
@@ -28,8 +100,9 @@ export function useSteerQueue() {
   }, []);
 
   const enterGeneration = useCallback(() => {
-    generationDepthRef.current += 1;
-    if (generationDepthRef.current === 1) {
+    const transition = enterGenerationTransition(generationDepthRef.current);
+    generationDepthRef.current = transition.nextGenerationDepth;
+    if (transition.firstEntry) {
       setIsGenerating(true);
       return true; // first entry
     }
@@ -43,22 +116,23 @@ export function useSteerQueue() {
    * user pressed Stop and any queue should be honored on the next send only.
    */
   const exitGeneration = useCallback((): { flush: SteerPayload | null; intent: SteerAbortIntent } => {
-    generationDepthRef.current -= 1;
-    if (generationDepthRef.current > 0) return { flush: null, intent: null };
-    const intent = steerAbortIntentRef.current;
-    steerAbortIntentRef.current = null;
-    if (intent === 'stop-only') {
-      setIsGenerating(false);
-      return { flush: null, intent };
+    const transition = exitGenerationTransition(
+      generationDepthRef.current,
+      steerAbortIntentRef.current,
+      steerQueueRef.current
+    );
+
+    generationDepthRef.current = transition.nextGenerationDepth;
+    steerAbortIntentRef.current = transition.nextIntent;
+    if (transition.nextPending !== steerQueueRef.current) {
+      steerQueueRef.current = transition.nextPending;
+      setSteerQueueState(transition.nextPending);
     }
-    const pending = steerQueueRef.current;
-    if (pending) {
-      steerQueueRef.current = null;
-      setSteerQueueState(null);
-      return { flush: pending, intent };
-    }
+
+    if (!transition.completed) return { flush: null, intent: null };
+
     setIsGenerating(false);
-    return { flush: null, intent };
+    return { flush: transition.flush, intent: transition.intent };
   }, []);
 
   const clear = useCallback(() => {

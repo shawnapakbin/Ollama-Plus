@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { subscribeScene, type SceneObject } from '../../services/sceneStore';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import {
   addAnnotation,
   getAnnotations,
@@ -129,7 +132,7 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
       ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(ndc, camera);
-      const hits = raycaster.intersectObjects(meshGroup.children, false);
+      const hits = raycaster.intersectObjects(meshGroup.children, true);
       if (hits.length > 0) {
         const hit = hits[0];
         const ud = hit.object.userData as Record<string, unknown>;
@@ -212,44 +215,158 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
     renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
     renderer.domElement.addEventListener('contextmenu', onContextMenu);
 
-    const meshes = new Map<string, THREE.Mesh>();
+    const sceneNodes = new Map<string, THREE.Object3D>();
+    const modelLoadEpoch = new Map<string, number>();
+    const stlLoader = new STLLoader();
+    const objLoader = new OBJLoader();
+    const gltfLoader = new GLTFLoader();
+
+    const decodeBase64ToBytes = (base64: string): Uint8Array => {
+      const raw = atob(base64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i += 1) {
+        bytes[i] = raw.charCodeAt(i);
+      }
+      return bytes;
+    };
+
+    const setTransform = (obj: SceneObject, node: THREE.Object3D) => {
+      node.position.set(obj.position.x, obj.position.y, obj.position.z);
+      node.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
+      node.scale.set(obj.scale.x, obj.scale.y, obj.scale.z);
+    };
+
+    const disposeNode = (node: THREE.Object3D) => {
+      node.traverse((child) => {
+        const maybeMesh = child as THREE.Mesh;
+        if (maybeMesh.geometry) {
+          maybeMesh.geometry.dispose();
+        }
+        if (maybeMesh.material) {
+          const mat = maybeMesh.material as THREE.Material | THREE.Material[];
+          if (Array.isArray(mat)) {
+            mat.forEach((m) => m.dispose());
+          } else {
+            mat.dispose();
+          }
+        }
+      });
+    };
+
+    const parseModelObject = async (obj: SceneObject): Promise<THREE.Object3D> => {
+      const payload = obj.payloadBase64 || '';
+      const format = obj.modelFormat || 'obj';
+      const bytes = decodeBase64ToBytes(payload);
+
+      if (format === 'stl') {
+        const geometry = stlLoader.parse(bytes.buffer);
+        const material = new THREE.MeshStandardMaterial({ color: obj.color || '#94a3b8', roughness: 0.6, metalness: 0.08 });
+        return new THREE.Mesh(geometry, material);
+      }
+
+      if (format === 'obj') {
+        const text = new TextDecoder().decode(bytes);
+        const group = objLoader.parse(text);
+        group.traverse((child) => {
+          const mesh = child as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          mesh.material = new THREE.MeshStandardMaterial({ color: obj.color || '#94a3b8', roughness: 0.6, metalness: 0.08 });
+        });
+        return group;
+      }
+
+      return await new Promise<THREE.Object3D>((resolve, reject) => {
+        gltfLoader.parse(bytes.buffer, '', (gltf) => resolve(gltf.scene), (err) => reject(err));
+      });
+    };
+
+    const createModelPlaceholder = () => {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.8, 0.8, 0.8),
+        new THREE.MeshStandardMaterial({ color: 0x64748b, wireframe: true })
+      );
+      return mesh;
+    };
 
     const syncScene = (objs: SceneObject[]) => {
       const seen = new Set<string>();
       for (const obj of objs) {
         seen.add(obj.id);
-        let mesh = meshes.get(obj.id);
-        if (!mesh) {
+        const existing = sceneNodes.get(obj.id);
+
+        if (obj.kind === 'model') {
+          const container = existing || new THREE.Group();
+          if (!existing) {
+            const placeholder = createModelPlaceholder();
+            container.add(placeholder);
+            const ud = container.userData as Record<string, unknown>;
+            ud.objectId = obj.id;
+            ud.kind = obj.kind;
+            meshGroup.add(container);
+            sceneNodes.set(obj.id, container);
+
+            const nextEpoch = (modelLoadEpoch.get(obj.id) || 0) + 1;
+            modelLoadEpoch.set(obj.id, nextEpoch);
+
+            parseModelObject(obj)
+              .then((loaded) => {
+                if (modelLoadEpoch.get(obj.id) !== nextEpoch) {
+                  disposeNode(loaded);
+                  return;
+                }
+                while (container.children.length > 0) {
+                  const child = container.children[0];
+                  container.remove(child);
+                  disposeNode(child);
+                }
+                loaded.traverse((child) => {
+                  const ud = child.userData as Record<string, unknown>;
+                  ud.objectId = obj.id;
+                  ud.kind = obj.kind;
+                });
+                container.add(loaded);
+              })
+              .catch(() => {
+                // Keep placeholder on loader errors; tool layer returns failures to model.
+              });
+          }
+
+          const ud = container.userData as Record<string, unknown>;
+          ud.objectId = obj.id;
+          ud.kind = obj.kind;
+          setTransform(obj, container);
+          continue;
+        }
+
+        let primitive = existing as THREE.Mesh | undefined;
+        if (!primitive) {
           const geom = buildGeometry(obj);
           const mat = new THREE.MeshStandardMaterial({ color: obj.color, roughness: 0.55, metalness: 0.1 });
-          mesh = new THREE.Mesh(geom, mat);
-          meshGroup.add(mesh);
-          meshes.set(obj.id, mesh);
-          const ud = mesh.userData as Record<string, unknown>;
-          ud.kind = obj.kind;
-          ud.size = obj.size;
-          ud.objectId = obj.id;
+          primitive = new THREE.Mesh(geom, mat);
+          meshGroup.add(primitive);
+          sceneNodes.set(obj.id, primitive);
         } else {
-          const ud = mesh.userData as Record<string, unknown>;
+          const ud = primitive.userData as Record<string, unknown>;
           if (ud.kind !== obj.kind || ud.size !== obj.size) {
-            mesh.geometry.dispose();
-            mesh.geometry = buildGeometry(obj);
-            ud.kind = obj.kind;
-            ud.size = obj.size;
+            primitive.geometry.dispose();
+            primitive.geometry = buildGeometry(obj);
           }
-          ud.objectId = obj.id;
-          (mesh.material as THREE.MeshStandardMaterial).color.set(obj.color);
+          (primitive.material as THREE.MeshStandardMaterial).color.set(obj.color);
         }
-        mesh.position.set(obj.position.x, obj.position.y, obj.position.z);
-        mesh.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
-        mesh.scale.set(obj.scale.x, obj.scale.y, obj.scale.z);
+
+        const ud = primitive.userData as Record<string, unknown>;
+        ud.kind = obj.kind;
+        ud.size = obj.size;
+        ud.objectId = obj.id;
+        setTransform(obj, primitive);
       }
-      for (const [id, mesh] of meshes) {
+
+      for (const [id, node] of sceneNodes) {
         if (seen.has(id)) continue;
-        meshGroup.remove(mesh);
-        mesh.geometry.dispose();
-        (mesh.material as THREE.Material).dispose();
-        meshes.delete(id);
+        meshGroup.remove(node);
+        disposeNode(node);
+        sceneNodes.delete(id);
+        modelLoadEpoch.delete(id);
       }
     };
 
@@ -365,9 +482,8 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
       renderer.domElement.removeEventListener('pointercancel', onUp);
       renderer.domElement.removeEventListener('wheel', onWheel);
       renderer.domElement.removeEventListener('contextmenu', onContextMenu);
-      for (const mesh of meshes.values()) {
-        mesh.geometry.dispose();
-        (mesh.material as THREE.Material).dispose();
+      for (const node of sceneNodes.values()) {
+        disposeNode(node);
       }
       for (const entry of markers.values()) {
         entry.sphere.geometry.dispose();

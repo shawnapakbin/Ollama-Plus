@@ -10,8 +10,8 @@ import './Wiki.css';
 const WIKI_NAME_PATTERN = /^[A-Za-z0-9._\-/ ]+$/;
 
 export default function Wiki() {
-  const [files, setFiles] = useState([]);
-  const [activeFile, setActiveFile] = useState(null);
+  const [files, setFiles] = useState<string[]>([]);
+  const [activeFile, setActiveFile] = useState<string | null>(null);
   const [content, setContent] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [showNewFileForm, setShowNewFileForm] = useState(false);
@@ -20,7 +20,40 @@ export default function Wiki() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    void fetchWikiList();
+    let cancelled = false;
+    void (async () => {
+      try {
+        const list = await ipcService.listWiki();
+        if (cancelled) return;
+        setFiles(list);
+        if (list.length > 0) {
+          const first = list[0];
+          setIsLoading(true);
+          setErrorMessage(null);
+          try {
+            const data = await ipcService.readWiki(first);
+            if (cancelled) return;
+            setContent(data || '');
+            setActiveFile(first);
+            setIsEditing(false);
+          } catch (err) {
+            if (!cancelled) {
+              setErrorMessage(err instanceof Error ? err.message : 'Failed to read file.');
+            }
+          } finally {
+            if (!cancelled) setIsLoading(false);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setErrorMessage(err instanceof Error ? err.message : 'Failed to list wiki files.');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const fetchWikiList = async () => {
@@ -35,7 +68,7 @@ export default function Wiki() {
     }
   };
 
-  const loadFile = async (path) => {
+  const loadFile = async (path: string) => {
     setIsLoading(true);
     setErrorMessage(null);
     try {

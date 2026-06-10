@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ipcService } from '../../../services/ipcService';
 
+interface ProcessorModel {
+  name: string;
+  size_vram: number;
+}
+
+function isProcessorModel(value: unknown): value is ProcessorModel {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as { name?: unknown; size_vram?: unknown };
+  return typeof candidate.name === 'string' && typeof candidate.size_vram === 'number';
+}
+
 /**
  * Polls `/api/ps` to determine whether the selected model is currently loaded
  * into VRAM (GPU) or system RAM (CPU). Exposes the current label plus a manual
@@ -13,10 +24,13 @@ export function useProcessorStatus(hostUrl: string | undefined, selectedModel: s
     if (!hostUrl || !selectedModel) return;
     try {
       const res = await ipcService.invokeOllama(hostUrl, '/api/ps');
-      if (res && res.models && res.models.length > 0) {
-        const current = res.models.find(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (m: any) => m.name === selectedModel || selectedModel.startsWith(m.name)
+      const models = Array.isArray((res as { models?: unknown }).models)
+        ? (res as { models: unknown[] }).models.filter(isProcessorModel)
+        : [];
+
+      if (models.length > 0) {
+        const current = models.find(
+          (m) => m.name === selectedModel || selectedModel.startsWith(m.name)
         );
         if (current) {
           setProcessor(current.size_vram > 0 ? 'GPU' : 'CPU');
@@ -32,7 +46,10 @@ export function useProcessorStatus(hostUrl: string | undefined, selectedModel: s
   }, [hostUrl, selectedModel]);
 
   useEffect(() => {
-    refresh();
+    const timer = window.setTimeout(() => {
+      void refresh();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [refresh]);
 
   return { processor, refresh };

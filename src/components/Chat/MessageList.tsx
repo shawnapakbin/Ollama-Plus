@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import { Bot, Loader2 } from 'lucide-react';
 import { MessageRow } from './MessageRow';
 import type { ChatMessage } from './types';
@@ -26,12 +26,6 @@ export const MessageList: React.FC<MessageListProps> = ({
   onRegenerate,
   endRef
 }) => {
-  // Stable identity for memoized rows; the callbacks above are already stable
-  // when the parent uses useCallback. The hooks below keep this component lean.
-  const handleCopy = useCallback(onCopy, [onCopy]);
-  const handleEdit = useCallback(onEdit, [onEdit]);
-  const handleRegenerate = useCallback(onRegenerate, [onRegenerate]);
-
   return (
     <div className="messages scrollable">
       {messages.length === 0 && (
@@ -54,9 +48,9 @@ export const MessageList: React.FC<MessageListProps> = ({
           isGenerating={isGenerating}
           selectedModel={selectedModel}
           processor={processor}
-          onCopy={handleCopy}
-          onEdit={handleEdit}
-          onRegenerate={handleRegenerate}
+          onCopy={onCopy}
+          onEdit={onEdit}
+          onRegenerate={onRegenerate}
         />
       ))}
 

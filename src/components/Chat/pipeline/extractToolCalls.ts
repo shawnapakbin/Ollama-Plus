@@ -43,7 +43,8 @@ function pickArgs(parsed: Record<string, unknown>, toolName: string): Record<str
     (parsed.arguments as Record<string, unknown> | undefined);
   if (explicit) return explicit;
   if (typeof parsed.tool === 'string') {
-    const { tool: _t, ...rest } = parsed;
+    const rest = { ...parsed };
+    delete rest.tool;
     return rest;
   }
   // For shape-inferred calls (scene_3d, run_shell_command, ...) the whole

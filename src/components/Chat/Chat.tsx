@@ -1,16 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader2, FileText, Square, Zap } from 'lucide-react';
-import { ipcService } from '../services/ipcService';
-import { taskRuntime } from '../services/taskRuntime';
-import { MessageList } from './Chat/MessageList';
-import { buildSteerPayload } from './Chat/pipeline/buildSteerPayload';
-import { useChatSession } from './Chat/hooks/useChatSession';
-import { useOllamaStream } from './Chat/hooks/useOllamaStream';
-import { useProcessorStatus } from './Chat/hooks/useProcessorStatus';
-import { useSteerQueue } from './Chat/hooks/useSteerQueue';
-import { useChatPipeline } from './Chat/hooks/useChatPipeline';
-import type { ChatMessage } from './Chat/types';
-import './Chat.css';
+import { ipcService } from '../../services/ipcService';
+import { taskRuntime } from '../../services/taskRuntime';
+import { MessageList } from './MessageList';
+import { buildSteerPayload } from './pipeline/buildSteerPayload';
+import { useChatSession } from './hooks/useChatSession';
+import { useOllamaStream } from './hooks/useOllamaStream';
+import { useProcessorStatus } from './hooks/useProcessorStatus';
+import { useSteerQueue } from './hooks/useSteerQueue';
+import { useChatPipeline } from './hooks/useChatPipeline';
+import type { ChatMessage } from './types';
+import '../Chat.css';
 
 type ChatMode = 'auto' | 'tools' | 'standard';
 

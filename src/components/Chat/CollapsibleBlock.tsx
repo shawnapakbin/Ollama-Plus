@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -20,10 +20,7 @@ export const CollapsibleBlock: React.FC<CollapsibleBlockProps> = ({
   isStreaming = false
 }) => {
   const [open, setOpen] = useState(isOpen);
-
-  useEffect(() => {
-    if (isStreaming) setOpen(true);
-  }, [isStreaming]);
+  const visibleOpen = isStreaming || open;
 
   return (
     <div className={`collapsible-block ${type}`}>
@@ -37,10 +34,10 @@ export const CollapsibleBlock: React.FC<CollapsibleBlockProps> = ({
         <ChevronDown
           size={16}
           className="chevron"
-          style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+          style={{ transform: visibleOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
         />
       </div>
-      {open && <div className="block-content">{children}</div>}
+      {visibleOpen && <div className="block-content">{children}</div>}
     </div>
   );
 };

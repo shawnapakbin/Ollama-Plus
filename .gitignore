@@ -15,6 +15,7 @@ dist-electron
 
 # Local-only planning notes, not shipped with the repo
 Implementation Plan/
+Plans/
 
 # Editor directories and files
 .vs/

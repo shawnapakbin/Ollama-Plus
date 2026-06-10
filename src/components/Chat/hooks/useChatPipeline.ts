@@ -1,14 +1,22 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { ipcService } from '../../../services/ipcService';
 import { taskRuntime } from '../../../services/taskRuntime';
-import { buildSystemMessages, formatMemoryContext, ROUTER_SYSTEM_PROMPT } from '../pipeline/buildPayload';
+import { buildSystemMessages, formatMemoryContext } from '../pipeline/buildPayload';
 import { extractToolCallsFromContent } from '../pipeline/extractToolCalls';
 import { formatMetrics } from '../pipeline/formatMetrics';
-import { TOOL_SCHEMAS, runTool } from '../tools/registry';
+import {
+  buildRouterPayload,
+  shouldEnableToolsFromRouterResponse,
+  shouldForceTools
+} from '../pipeline/routerDecision';
+import { buildToolRepairContext, shouldRepairToolTurn } from '../pipeline/toolRepair';
+import { TOOL_SCHEMAS } from '../tools/registry';
 import type { ChatMessage, ToolCall, OllamaFinalResponse } from '../types';
 import type { SteerPayload } from './useSteerQueue';
+import { useToolRunner } from './useToolRunner';
 
 type ChatMode = 'auto' | 'tools' | 'standard';
+
 type StreamRunner = (args: {
   hostUrl: string;
   endpoint: string;
@@ -48,7 +56,12 @@ interface UseChatPipelineOptions {
  */
 export function useChatPipeline(opts: UseChatPipelineOptions) {
   const optsRef = useRef(opts);
-  optsRef.current = opts;
+  useEffect(() => {
+    optsRef.current = opts;
+  }, [opts]);
+
+  const commitUserTurnRef = useRef<((payload: SteerPayload, taskId: string | null) => Promise<void>) | null>(null);
+  const { run: runToolCall } = useToolRunner();
 
   const runAutoRename = useCallback(async (currentMessages: ChatMessage[]) => {
     const { selectedModel, hostUrl, keepAlive, renameSession } = optsRef.current;
@@ -75,7 +88,13 @@ Title:`;
     }
   }, []);
 
-  const processOllamaRequest = useCallback(async (currentMessages: ChatMessage[], taskId: string | null = null): Promise<void> => {
+  const processOllamaRequest = useCallback(
+    async function processOllamaRequestInner(
+    currentMessages: ChatMessage[],
+    taskId: string | null = null,
+    repairAttempt = 0,
+    repairContext = ''
+  ): Promise<void> {
     const {
       selectedModel,
       hostUrl,
@@ -86,8 +105,7 @@ Title:`;
       saveSession,
       runStream,
       refreshProcessor,
-      enterGeneration,
-      exitGeneration
+      enterGeneration
     } = optsRef.current;
 
     const firstEntry = enterGeneration();
@@ -99,7 +117,7 @@ Title:`;
       try {
         const mem = await ipcService.readWiki('memory/personal.md');
         memoryContext = formatMemoryContext(mem || '');
-      } catch (e) {
+      } catch {
         /* ignore: memory is optional */
       }
 
@@ -124,17 +142,9 @@ Title:`;
             return updated;
           });
           try {
-            const routerPayload: Record<string, unknown> = {
-              model: selectedModel,
-              messages: [
-                { role: 'system', content: ROUTER_SYSTEM_PROMPT },
-                { role: 'user', content: `User request: "${userPrompt}"\nDo you need tools for this?` }
-              ],
-              stream: false
-            };
-            if (keepAlive) routerPayload.keep_alive = -1;
+            const routerPayload = buildRouterPayload(selectedModel, userPrompt, keepAlive);
             const routerRes = await ipcService.invokeOllama(hostUrl, '/api/chat', routerPayload);
-            if (routerRes && routerRes.message && routerRes.message.content.toUpperCase().includes('YES')) {
+            if (shouldEnableToolsFromRouterResponse(routerRes)) {
               useTools = true;
             }
           } catch (e) {
@@ -149,7 +159,7 @@ Title:`;
       }
 
       if (useTools) payload.tools = TOOL_SCHEMAS;
-      payload.messages = buildSystemMessages(currentMessages, { useTools, memoryContext });
+      payload.messages = buildSystemMessages(currentMessages, { useTools, memoryContext, repairContext });
 
       const { content: currentContent, toolCalls: streamedToolCalls, finalRes } = await runStream({
         hostUrl,
@@ -180,22 +190,28 @@ Title:`;
         if (taskId) taskRuntime.addLog(taskId, `Tool calls requested: ${toolCalls.length}.`);
 
         for (const call of toolCalls) {
-          const fn = call.function.name;
-          const args = typeof call.function.arguments === 'string'
-            ? JSON.parse(call.function.arguments)
-            : call.function.arguments;
-          const result = await runTool(fn, args);
+          const toolMsg = await runToolCall(call);
           if (taskId) {
-            const summary = result ? String(result).slice(0, 120) : 'No output';
-            taskRuntime.addLog(taskId, `Tool ${fn}: ${summary}`);
+            const summary = toolMsg.content ? String(toolMsg.content).slice(0, 120) : 'No output';
+            taskRuntime.addLog(taskId, `Tool ${toolMsg.name}: ${summary}`);
           }
-          toolResults.push({ role: 'tool', content: result, name: fn });
+          toolResults.push(toolMsg);
         }
 
         setMessages([...toolResults, { role: 'assistant', content: '', model: selectedModel }]);
         await saveSession(toolResults);
-        await processOllamaRequest(toolResults, taskId);
+        await processOllamaRequestInner(toolResults, taskId, 0, '');
         return;
+      }
+
+      if (shouldRepairToolTurn({ currentMessages, currentContent, useTools, repairAttempt })) {
+        const nextRepairContext = buildToolRepairContext(currentMessages, currentContent);
+        if (nextRepairContext) {
+          if (taskId) taskRuntime.addLog(taskId, 'Retrying with stricter tool-call guidance after narrated tool intent.');
+          setMessages([...currentMessages, { role: 'assistant', content: '', model: selectedModel }]);
+          await processOllamaRequestInner(currentMessages, taskId, repairAttempt + 1, nextRepairContext);
+          return;
+        }
       }
 
       const metrics = formatMetrics(finalRes);
@@ -228,10 +244,12 @@ Title:`;
       if (flush) {
         const queuedTaskId = taskRuntime.createTask(flush.preview || 'Queued steer', 'chat');
         taskRuntime.setState(queuedTaskId, 'queued', 'Queued steer accepted after current generation.');
-        await commitUserTurn(flush, queuedTaskId);
+        if (commitUserTurnRef.current) {
+          await commitUserTurnRef.current(flush, queuedTaskId);
+        }
       }
     }
-  }, [runAutoRename]);
+  }, [runAutoRename, runToolCall]);
 
   const commitUserTurn = useCallback(async (payload: SteerPayload, taskId: string | null = null): Promise<void> => {
     const { messagesRef, setMessages, selectedModel } = optsRef.current;
@@ -245,28 +263,19 @@ Title:`;
     const newMsgs = [...base, userMsg];
     const ollamaMsgs: ChatMessage[] = [...base, { role: 'user', content: ollamaContent }];
     setMessages([...newMsgs, { role: 'assistant', content: '', model: selectedModel }]);
-    await processOllamaRequest(ollamaMsgs, taskId);
+    await processOllamaRequest(ollamaMsgs, taskId, 0, '');
   }, [processOllamaRequest]);
+
+  useEffect(() => {
+    commitUserTurnRef.current = commitUserTurn;
+  }, [commitUserTurn]);
 
   const regenerate = useCallback(async (index: number): Promise<void> => {
     const { messagesRef, setMessages, selectedModel } = optsRef.current;
     const historyBefore = messagesRef.current.slice(0, index);
     setMessages([...historyBefore, { role: 'assistant', content: '', model: selectedModel }]);
-    await processOllamaRequest(historyBefore);
+    await processOllamaRequest(historyBefore, null, 0, '');
   }, [processOllamaRequest]);
 
   return { commitUserTurn, regenerate };
-}
-
-const SCENE_KEYWORDS = /\b(3d|three\.?js|scene|viewport|workspace|cube|cuboid|box|sphere|cylinder|cone|torus|plane|mesh|primitive)\b/i;
-const SCENE_VERBS = /\b(add|create|spawn|generate|make|draw|render|place|move|translate|rotate|scale|resize|recolor|color|delete|remove|clear|list)\b/i;
-
-/**
- * Skips the router LLM call for prompts that clearly need scene_3d. Cheap
- * heuristic: a scene-related noun plus an action verb implies the user wants
- * the viewport modified, so we enable tools immediately.
- */
-function shouldForceTools(prompt: string): boolean {
-  if (!prompt) return false;
-  return SCENE_KEYWORDS.test(prompt) && SCENE_VERBS.test(prompt);
 }

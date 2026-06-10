@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildSystemMessages,
+  buildToolContinuationContext,
   formatMemoryContext,
+  hasToolResults,
   TOOL_SYSTEM_PROMPT,
   PLAIN_SYSTEM_PROMPT
 } from '../src/components/Chat/pipeline/buildPayload';
@@ -32,6 +34,26 @@ describe('buildSystemMessages', () => {
     expect(out[0]).toEqual({ role: 'system', content: TOOL_SYSTEM_PROMPT });
   });
 
+  it('includes continuation guidance after tool results', () => {
+    const withTool = [
+      ...history,
+      { role: 'tool' as const, content: 'Added sphere as id "sphere-1".', name: 'scene_3d' }
+    ];
+    const out = buildSystemMessages(withTool, { useTools: true, memoryContext: '' });
+    expect(out[0].content).toContain('[AFTER TOOL RESULTS]');
+    expect(out[0].content).toContain('emit the next JSON tool call now');
+  });
+
+  it('appends repair guidance when provided', () => {
+    const out = buildSystemMessages(history, {
+      useTools: true,
+      memoryContext: '',
+      repairContext: 'Output tool JSON instead of narration.'
+    });
+    expect(out[0].content).toContain('[REPAIR]');
+    expect(out[0].content).toContain('Output tool JSON instead of narration.');
+  });
+
   it('appends memory context to the system prompt', () => {
     const mem = formatMemoryContext('remember this');
     const out = buildSystemMessages(history, { useTools: false, memoryContext: mem });
@@ -43,5 +65,16 @@ describe('buildSystemMessages', () => {
     const original = [...history];
     buildSystemMessages(history, { useTools: true, memoryContext: '' });
     expect(history).toEqual(original);
+  });
+});
+
+describe('tool continuation helpers', () => {
+  it('detects when tool results are present', () => {
+    expect(hasToolResults([{ role: 'tool', content: 'ok', name: 'scene_3d' }])).toBe(true);
+    expect(hasToolResults([{ role: 'assistant', content: 'ok' }])).toBe(false);
+  });
+
+  it('builds no continuation context when no tool results or repair are present', () => {
+    expect(buildToolContinuationContext([{ role: 'assistant', content: 'ok' }])).toBe('');
   });
 });

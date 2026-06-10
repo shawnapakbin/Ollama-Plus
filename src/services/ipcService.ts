@@ -67,13 +67,127 @@ export const ipcService = {
     if (!isElectronAvailable()) return rejected('unloadModels');
     return getElectronApi().unloadModels(hostUrl);
   },
+  scanLanOllama() {
+    if (!isElectronAvailable()) return rejected('scanLanOllama');
+    const api = getElectronApi() as typeof window.electronAPI & { scanLanOllama?: () => Promise<Array<{ host: string; address: string; models: Array<{ name: string }> }>> };
+    if (typeof api.scanLanOllama !== 'function') {
+      return Promise.reject(
+        new Error('LAN scan bridge is outdated. Restart the Electron app to load the updated preload script.')
+      );
+    }
+    return api.scanLanOllama();
+  },
   runShellCommand(command: string) {
     if (!isElectronAvailable()) return rejected('runShellCommand');
     return getElectronApi().runShellCommand(command);
   },
+  mcpGatewayCall(request: { server: string; action: string; payload?: Record<string, unknown> }) {
+    if (!isElectronAvailable()) return rejected('mcpGatewayCall');
+    const api = getElectronApi() as typeof window.electronAPI & {
+      mcpGatewayCall?: (request: { server: string; action: string; payload?: Record<string, unknown> }) => Promise<{ ok: boolean; data?: unknown; error?: string }>;
+    };
+    if (typeof api.mcpGatewayCall !== 'function') {
+      return Promise.reject(new Error('MCP gateway bridge is unavailable. Restart Electron to load the latest preload script.'));
+    }
+    return api.mcpGatewayCall(request);
+  },
+  mcpGatewayStatus() {
+    if (!isElectronAvailable()) return rejected('mcpGatewayStatus');
+    const api = getElectronApi() as typeof window.electronAPI & {
+      mcpGatewayStatus?: () => Promise<{ ok: boolean; data?: unknown; error?: string }>;
+    };
+    if (typeof api.mcpGatewayStatus !== 'function') {
+      return Promise.reject(new Error('MCP gateway status bridge is unavailable. Restart Electron to load the latest preload script.'));
+    }
+    return api.mcpGatewayStatus();
+  },
   spawnTerminal(type: string) {
     if (!isElectronAvailable()) return rejected('spawnTerminal');
     return getElectronApi().spawnTerminal(type);
+  },
+  createMcpTerminalSession(options?: { shell?: string; args?: string[]; cwd?: string }) {
+    if (!isElectronAvailable()) return rejected('createMcpTerminalSession');
+    return getElectronApi().createMcpTerminalSession(options);
+  },
+  listMcpTerminalSessions() {
+    if (!isElectronAvailable()) return rejected('listMcpTerminalSessions');
+    return getElectronApi().listMcpTerminalSessions();
+  },
+  readMcpTerminalOutput(sessionId: string, maxChars?: number, clear?: boolean) {
+    if (!isElectronAvailable()) return rejected('readMcpTerminalOutput');
+    return getElectronApi().readMcpTerminalOutput(sessionId, maxChars, clear);
+  },
+  writeMcpTerminalInput(sessionId: string, input: string) {
+    if (!isElectronAvailable()) return rejected('writeMcpTerminalInput');
+    return getElectronApi().writeMcpTerminalInput(sessionId, input);
+  },
+  executeMcpTerminalCommand(sessionId: string, command: string, options?: { timeoutMs?: number; settleMs?: number; approveRisky?: boolean }) {
+    if (!isElectronAvailable()) return rejected('executeMcpTerminalCommand');
+    return getElectronApi().executeMcpTerminalCommand(sessionId, command, options);
+  },
+  closeMcpTerminalSession(sessionId: string) {
+    if (!isElectronAvailable()) return rejected('closeMcpTerminalSession');
+    return getElectronApi().closeMcpTerminalSession(sessionId);
+  },
+  checkMcpPythonSandbox() {
+    if (!isElectronAvailable()) return rejected('checkMcpPythonSandbox');
+    return getElectronApi().checkMcpPythonSandbox();
+  },
+  runMcpPythonSandbox(payload: { code: string; timeoutSec?: number; image?: string; approveUnsafe?: boolean }) {
+    if (!isElectronAvailable()) return rejected('runMcpPythonSandbox');
+    return getElectronApi().runMcpPythonSandbox(payload);
+  },
+  listMcpPythonSandboxRuns(limit?: number) {
+    if (!isElectronAvailable()) return rejected('listMcpPythonSandboxRuns');
+    return getElectronApi().listMcpPythonSandboxRuns(limit);
+  },
+  readMcpPythonSandboxArtifact(runId: string, fileName: string) {
+    if (!isElectronAvailable()) return rejected('readMcpPythonSandboxArtifact');
+    return getElectronApi().readMcpPythonSandboxArtifact(runId, fileName);
+  },
+  getMcpFolderRoot() {
+    if (!isElectronAvailable()) return rejected('getMcpFolderRoot');
+    return getElectronApi().getMcpFolderRoot();
+  },
+  selectMcpFolderRoot() {
+    if (!isElectronAvailable()) return rejected('selectMcpFolderRoot');
+    return getElectronApi().selectMcpFolderRoot();
+  },
+  clearMcpFolderRoot() {
+    if (!isElectronAvailable()) return rejected('clearMcpFolderRoot');
+    return getElectronApi().clearMcpFolderRoot();
+  },
+  listMcpFolder(relativePath?: string) {
+    if (!isElectronAvailable()) return rejected('listMcpFolder');
+    return getElectronApi().listMcpFolder(relativePath);
+  },
+  readMcpFolderText(relativePath: string) {
+    if (!isElectronAvailable()) return rejected('readMcpFolderText');
+    return getElectronApi().readMcpFolderText(relativePath);
+  },
+  writeMcpFolderText(relativePath: string, content: string) {
+    if (!isElectronAvailable()) return rejected('writeMcpFolderText');
+    return getElectronApi().writeMcpFolderText(relativePath, content);
+  },
+  deleteMcpFolderPath(relativePath: string) {
+    if (!isElectronAvailable()) return rejected('deleteMcpFolderPath');
+    return getElectronApi().deleteMcpFolderPath(relativePath);
+  },
+  renameMcpFolderPath(fromPath: string, toPath: string) {
+    if (!isElectronAvailable()) return rejected('renameMcpFolderPath');
+    return getElectronApi().renameMcpFolderPath(fromPath, toPath);
+  },
+  createMcpFolderDir(relativePath: string) {
+    if (!isElectronAvailable()) return rejected('createMcpFolderDir');
+    return getElectronApi().createMcpFolderDir(relativePath);
+  },
+  listMcpFolderModels(relativePath?: string) {
+    if (!isElectronAvailable()) return rejected('listMcpFolderModels');
+    return getElectronApi().listMcpFolderModels(relativePath);
+  },
+  readMcpFolderModel(relativePath: string) {
+    if (!isElectronAvailable()) return rejected('readMcpFolderModel');
+    return getElectronApi().readMcpFolderModel(relativePath);
   },
   terminalInput(id: string, data: string) {
     if (!isElectronAvailable()) return;
@@ -85,12 +199,18 @@ export const ipcService = {
   },
   browserAction(options: {
     action: string;
+    sessionId?: string;
+    pageId?: string;
     url?: string;
     selector?: string;
     text?: string;
     key?: string;
     wait_for?: string;
     script?: string;
+    timeoutMs?: number;
+    fullPage?: boolean;
+    headers?: Record<string, string>;
+    cookies?: Array<Record<string, unknown>>;
   }) {
     if (!isElectronAvailable()) return rejected('browserAction');
     return getElectronApi().browserAction(options);

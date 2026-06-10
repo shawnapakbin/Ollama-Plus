@@ -25,16 +25,201 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   stopOllamaStream: (streamId) => ipcRenderer.send('abort-stream', streamId),
   unloadModels: (hostUrl) => ipcRenderer.invoke('unload-models', hostUrl),
+  scanLanOllama: () => ipcRenderer.invoke('scan-lan-ollama'),
   spawnTerminal: (type) => ipcRenderer.invoke('spawn-terminal', type),
   runShellCommand: (command) => ipcRenderer.invoke('run-shell-command', command),
+  mcpGatewayCall: (request) => ipcRenderer.invoke('mcp-gateway-call', request ?? {}),
+  mcpGatewayStatus: () => ipcRenderer.invoke('mcp-gateway-status'),
   terminalInput: (id, data) => ipcRenderer.send('terminal-input', id, data),
   onTerminalOutput: (callback) => {
     const listener = (_event, id, data) => callback(id, data);
     ipcRenderer.on('terminal-output', listener);
     return () => ipcRenderer.removeListener('terminal-output', listener);
   },
+  createMcpTerminalSession: async (options) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'terminal',
+      action: 'create',
+      payload: options ?? {}
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Terminal create failed.');
+    return res.data;
+  },
+  listMcpTerminalSessions: async () => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', { server: 'terminal', action: 'list', payload: {} });
+    if (!res?.ok) throw new Error(res?.error || 'Terminal list failed.');
+    return res.data;
+  },
+  readMcpTerminalOutput: async (sessionId, maxChars, clear) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'terminal',
+      action: 'read',
+      payload: { sessionId, maxChars, clear }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Terminal read failed.');
+    return res.data;
+  },
+  writeMcpTerminalInput: async (sessionId, input) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'terminal',
+      action: 'write',
+      payload: { sessionId, input }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Terminal write failed.');
+    return res.data;
+  },
+  executeMcpTerminalCommand: async (sessionId, command, options) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'terminal',
+      action: 'execute',
+      payload: { sessionId, command, options: options ?? {} }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Terminal execute failed.');
+    return res.data;
+  },
+  closeMcpTerminalSession: async (sessionId) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'terminal',
+      action: 'close',
+      payload: { sessionId }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Terminal close failed.');
+    return res.data;
+  },
+  checkMcpPythonSandbox: async () => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', { server: 'python', action: 'health', payload: {} });
+    if (!res?.ok) throw new Error(res?.error || 'Python health check failed.');
+    return res.data;
+  },
+  runMcpPythonSandbox: async (payload) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', { server: 'python', action: 'run', payload: payload ?? {} });
+    if (!res?.ok) throw new Error(res?.error || 'Python run failed.');
+    return res.data;
+  },
+  listMcpPythonSandboxRuns: async () => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', { server: 'python', action: 'list_runs', payload: {} });
+    if (!res?.ok) throw new Error(res?.error || 'Python list runs failed.');
+    return res.data;
+  },
+  readMcpPythonSandboxArtifact: async (runId) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'python',
+      action: 'read_artifact',
+      payload: { runId }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Python artifact read failed.');
+    return res.data;
+  },
+  getMcpFolderRoot: async () => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', { server: 'folder', action: 'root', payload: {} });
+    if (!res?.ok) throw new Error(res?.error || 'Folder root lookup failed.');
+    return res.data;
+  },
+  selectMcpFolderRoot: async () => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', { server: 'folder', action: 'select_root', payload: {} });
+    if (!res?.ok) throw new Error(res?.error || 'Folder root selection failed.');
+    return res.data;
+  },
+  clearMcpFolderRoot: async () => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', { server: 'folder', action: 'clear_root', payload: {} });
+    if (!res?.ok) throw new Error(res?.error || 'Folder root clear failed.');
+    return res.data;
+  },
+  listMcpFolder: async (relativePath) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'folder',
+      action: 'list',
+      payload: { relativePath: relativePath ?? '.' }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Folder list failed.');
+    return res.data;
+  },
+  readMcpFolderText: async (relativePath) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'folder',
+      action: 'read',
+      payload: { relativePath }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Folder read failed.');
+    return res.data;
+  },
+  writeMcpFolderText: async (relativePath, content) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'folder',
+      action: 'write',
+      payload: { relativePath, content }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Folder write failed.');
+    return res.data;
+  },
+  deleteMcpFolderPath: async (relativePath) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'folder',
+      action: 'delete',
+      payload: { relativePath }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Folder delete failed.');
+    return res.data;
+  },
+  renameMcpFolderPath: async (fromPath, toPath) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'folder',
+      action: 'rename',
+      payload: { fromPath, toPath }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Folder rename failed.');
+    return res.data;
+  },
+  createMcpFolderDir: async (relativePath) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'folder',
+      action: 'mkdir',
+      payload: { relativePath }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Folder mkdir failed.');
+    return res.data;
+  },
+  listMcpFolderModels: async (relativePath) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'folder',
+      action: 'list_models',
+      payload: { relativePath: relativePath ?? '.' }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Folder list models failed.');
+    return res.data;
+  },
+  readMcpFolderModel: async (relativePath) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'folder',
+      action: 'read_model',
+      payload: { relativePath }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Folder read model failed.');
+    return res.data;
+  },
   runPlaywright: (url, action) => ipcRenderer.invoke('run-playwright', url, action),
-  browserAction: (options) => ipcRenderer.invoke('browser-action', options),
+  browserAction: async (options) => {
+    const browserAction = String(options?.action || '').toLowerCase();
+    const passthroughActions = new Set([
+      'create_session',
+      'list_sessions',
+      'close_session',
+      'create_page',
+      'list_pages',
+      'close_page',
+      'activate_page',
+      'status',
+      'reset'
+    ]);
+    const gatewayAction = passthroughActions.has(browserAction) ? browserAction : 'action';
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'browser',
+      action: gatewayAction,
+      payload: options ?? {}
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Browser action failed.');
+    return res.data;
+  },
   readWiki: (path) => ipcRenderer.invoke('read-wiki', path),
   webSearch: (query) => ipcRenderer.invoke('web-search', query),
   writeWiki: (path, content) => ipcRenderer.invoke('write-wiki', path, content),

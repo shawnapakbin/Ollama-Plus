@@ -12,6 +12,16 @@ Built with Electron, React, Vite, and TypeScript.
 - Supports built-in tools (shell, browser automation, wiki, search, time, engineering calculator).
 - Enforces policy checks for risky tool actions.
 - Uses in-app markdown forms for user interactions that require decisions or guided input.
+- Includes optional local MCP servers for guarded terminal sessions and Docker-isolated Python execution.
+
+## MCP Servers (Local)
+
+The repository now includes two MCP servers under `mcp/`:
+
+- `mcp/terminal-server.mjs` for persistent terminal (punchout) sessions with guardrails.
+- `mcp/python-sandbox-server.mjs` for isolated Python execution suitable for 3D scripting pipelines.
+
+See `mcp/README.md` for setup and environment controls.
 
 ## Workspace Panels
 
@@ -146,6 +156,8 @@ npm run preview
 npm run electron:dev
 npm run electron:debug
 npm run electron:build
+npm run mcp:terminal
+npm run mcp:python
 ```
 
 ## Debugging Inside VS Code (Edge Tools)
@@ -215,6 +227,8 @@ npm run electron:build
 ## Windows Notes
 
 If PowerShell execution policy blocks npm scripts, run via `cmd` or use a policy-compatible shell session.
+
+Electron packaging (`npm run electron:build`) requires native rebuild of `node-pty`. Ensure Visual Studio C++ build tools include Spectre-mitigated libraries for the active MSVC toolset, otherwise packaging can fail with `MSB8040`.
 
 You may see a Vite warning for large JS chunk size in production builds. This is currently non-blocking and expected at this stage.
 

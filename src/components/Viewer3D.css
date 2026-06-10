@@ -1,7 +1,7 @@
 .viewer3d-container {
   height: 100%;
   display: grid;
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: minmax(0, 1fr) 10px minmax(300px, var(--viewer3d-chat-width, 380px));
   gap: 12px;
   padding: 12px;
 }
@@ -22,6 +22,26 @@
 .viewer3d-chat > * {
   flex: 1;
   min-height: 0;
+}
+
+.viewer3d-resize-handle {
+  width: 10px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.15), rgba(56, 189, 248, 0.06));
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  cursor: col-resize;
+  align-self: stretch;
+}
+
+.viewer3d-resize-handle:hover {
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.28), rgba(56, 189, 248, 0.14));
+}
+
+body.viewer3d-resizing,
+body.viewer3d-resizing * {
+  cursor: col-resize !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
 }
 
 .viewer3d-sidebar h3 {
@@ -82,6 +102,10 @@
 @media (max-width: 1280px) {
   .viewer3d-container {
     grid-template-columns: 1fr;
+  }
+
+  .viewer3d-resize-handle {
+    display: none;
   }
 
   .viewer3d-chat {

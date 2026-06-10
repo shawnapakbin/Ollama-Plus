@@ -6,18 +6,24 @@
  */
 
 export type PrimitiveKind = 'box' | 'sphere' | 'cylinder' | 'cone' | 'plane' | 'torus';
+export type ModelFormat = 'obj' | 'stl' | 'gltf' | 'glb';
+export type SceneKind = PrimitiveKind | 'model';
 
 export interface Vec3 { x: number; y: number; z: number }
 
 export interface SceneObject {
   id: string;
   name: string;
-  kind: PrimitiveKind;
+  kind: SceneKind;
   position: Vec3;
   rotation: Vec3;
   scale: Vec3;
   color: string;
   size: number;
+  sourcePath?: string;
+  sourceKey?: string;
+  modelFormat?: ModelFormat;
+  payloadBase64?: string;
 }
 
 type Listener = (objects: SceneObject[]) => void;
@@ -34,7 +40,7 @@ function emit() {
   for (const fn of listeners) fn(snapshot);
 }
 
-function nextId(kind: PrimitiveKind): string {
+function nextId(kind: SceneKind): string {
   counter += 1;
   return `${kind}-${counter}`;
 }
@@ -74,6 +80,36 @@ export function addPrimitive(input: {
     scale: clampVec(input.scale, ONE),
     color: input.color || '#38bdf8',
     size: typeof input.size === 'number' && input.size > 0 ? input.size : 1
+  };
+  objects = [...objects, obj];
+  emit();
+  return obj;
+}
+
+export function addModel(input: {
+  sourcePath: string;
+  sourceKey?: string;
+  modelFormat: ModelFormat;
+  payloadBase64: string;
+  name?: string;
+  position?: Partial<Vec3>;
+  rotation?: Partial<Vec3>;
+  scale?: Partial<Vec3>;
+}): SceneObject {
+  const sourceName = input.sourcePath.split('/').pop() || input.sourcePath;
+  const obj: SceneObject = {
+    id: nextId('model'),
+    name: input.name || sourceName,
+    kind: 'model',
+    position: clampVec(input.position, ZERO),
+    rotation: clampVec(input.rotation, ZERO),
+    scale: clampVec(input.scale, ONE),
+    color: '#94a3b8',
+    size: 1,
+    sourcePath: input.sourcePath,
+    sourceKey: input.sourceKey,
+    modelFormat: input.modelFormat,
+    payloadBase64: input.payloadBase64
   };
   objects = [...objects, obj];
   emit();

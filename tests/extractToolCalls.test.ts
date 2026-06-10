@@ -44,6 +44,16 @@ describe('extractToolCallsFromContent', () => {
     expect(out?.[0].function.name).toBe('run_shell_command');
   });
 
+  it('extracts multiple sequential scene_3d calls', () => {
+    const out = extractToolCallsFromContent([
+      '{"action":"add","kind":"sphere","position":{"x":0,"y":0,"z":2.5}}',
+      '{"action":"add","kind":"sphere","position":{"x":-2.165,"y":0,"z":-1.25}}',
+      '{"action":"add","kind":"sphere","position":{"x":2.165,"y":0,"z":-1.25}}'
+    ].join('\n'));
+    expect(out).toHaveLength(3);
+    expect(out?.every((call) => call.function.name === 'scene_3d')).toBe(true);
+  });
+
   it('returns null when no candidate matched', () => {
     expect(extractToolCallsFromContent('{"expression":""}')).toBeNull();
   });

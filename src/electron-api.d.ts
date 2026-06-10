@@ -8,12 +8,18 @@ type OllamaStreamCallbacks = {
 
 type BrowserActionOptions = {
   action: string;
+  sessionId?: string;
+  pageId?: string;
   url?: string;
   selector?: string;
   text?: string;
   key?: string;
   wait_for?: string;
   script?: string;
+  timeoutMs?: number;
+  fullPage?: boolean;
+  headers?: Record<string, string>;
+  cookies?: Array<Record<string, unknown>>;
 };
 
 type ClockOptions = {
@@ -59,8 +65,52 @@ type RunShellCommandResult = {
   };
 };
 
+type McpTerminalSession = {
+  id: string;
+  shell: string;
+  cwd: string;
+  startedAt: string;
+  lastActivityAt: string;
+  exited: boolean;
+  exitCode: number | null;
+};
+
+type McpTerminalExecuteResult = {
+  blocked: boolean;
+  reason?: string;
+  session: McpTerminalSession;
+  output?: string;
+};
+
+type McpPythonRunResult = {
+  blocked: boolean;
+  reason?: string;
+  runId?: string;
+  runDir?: string;
+  image?: string;
+  exitCode?: number | null;
+  timedOut?: boolean;
+  stdout?: string;
+  stderr?: string;
+  files?: Array<{ name: string; bytes: number }>;
+};
+
+type McpFolderRoot = {
+  root: string;
+  isCustom: boolean;
+  canceled?: boolean;
+};
+
+type McpFolderEntry = {
+  name: string;
+  path: string;
+  type: 'directory' | 'file';
+  bytes: number;
+  modifiedAt: string;
+};
+
 type ElectronAPI = {
-  invokeOllama: (hostUrl: string, endpoint: string, data?: unknown) => Promise<any>;
+  invokeOllama: (hostUrl: string, endpoint: string, data?: unknown) => Promise<unknown>;
   invokeOllamaStream: (
     hostUrl: string,
     endpoint: string,
@@ -71,12 +121,36 @@ type ElectronAPI = {
   ) => string;
   stopOllamaStream: (streamId: string) => void;
   unloadModels: (hostUrl: string) => Promise<void>;
+  scanLanOllama: () => Promise<Array<{ host: string; address: string; models: Array<{ name: string }> }>>;
   spawnTerminal: (type: string) => Promise<string>;
   runShellCommand: (command: string) => Promise<RunShellCommandResult>;
+  mcpGatewayCall: (request: { server: string; action: string; payload?: Record<string, unknown> }) => Promise<{ ok: boolean; data?: unknown; error?: string }>;
+  mcpGatewayStatus: () => Promise<{ ok: boolean; data?: unknown; error?: string }>;
   terminalInput: (id: string, data: string) => void;
   onTerminalOutput: (callback: (id: string, data: string) => void) => () => void;
+  createMcpTerminalSession: (options?: { shell?: string; args?: string[]; cwd?: string }) => Promise<McpTerminalSession>;
+  listMcpTerminalSessions: () => Promise<McpTerminalSession[]>;
+  readMcpTerminalOutput: (sessionId: string, maxChars?: number, clear?: boolean) => Promise<{ session: McpTerminalSession; output: string }>;
+  writeMcpTerminalInput: (sessionId: string, input: string) => Promise<{ session: McpTerminalSession; acceptedChars: number; truncated: boolean }>;
+  executeMcpTerminalCommand: (sessionId: string, command: string, options?: { timeoutMs?: number; settleMs?: number; approveRisky?: boolean }) => Promise<McpTerminalExecuteResult>;
+  closeMcpTerminalSession: (sessionId: string) => Promise<{ id: string; closed: boolean }>;
+  checkMcpPythonSandbox: () => Promise<{ ok: boolean; interpreter: string; shell: string; args: string[]; source: string; version: string; note: string }>;
+  runMcpPythonSandbox: (payload: { code: string; timeoutSec?: number; image?: string; approveUnsafe?: boolean }) => Promise<McpPythonRunResult>;
+  listMcpPythonSandboxRuns: (limit?: number) => Promise<Array<{ runId: string; runDir: string; createdAt: string }>>;
+  readMcpPythonSandboxArtifact: (runId: string, fileName: string) => Promise<{ runId: string; fileName: string; bytes: number; mimeType: string; encoding: string; content: string }>;
+  getMcpFolderRoot: () => Promise<McpFolderRoot>;
+  selectMcpFolderRoot: () => Promise<McpFolderRoot>;
+  clearMcpFolderRoot: () => Promise<McpFolderRoot>;
+  listMcpFolder: (relativePath?: string) => Promise<{ root: string; path: string; entries: McpFolderEntry[] }>;
+  readMcpFolderText: (relativePath: string) => Promise<{ root: string; path: string; bytes: number; content: string }>;
+  writeMcpFolderText: (relativePath: string, content: string) => Promise<{ root: string; path: string; bytes: number }>;
+  deleteMcpFolderPath: (relativePath: string) => Promise<{ deleted: boolean; missing?: boolean }>;
+  renameMcpFolderPath: (fromPath: string, toPath: string) => Promise<{ from: string; to: string }>;
+  createMcpFolderDir: (relativePath: string) => Promise<{ root: string; path: string }>;
+  listMcpFolderModels: (relativePath?: string) => Promise<{ root: string; models: Array<{ path: string; name: string; ext: string; bytes: number; modifiedAt: string }> }>;
+  readMcpFolderModel: (relativePath: string) => Promise<{ root: string; path: string; name: string; ext: string; bytes: number; base64: string }>;
   runPlaywright: (url: string, action: string) => Promise<unknown>;
-  browserAction: (options: BrowserActionOptions) => Promise<any>;
+  browserAction: (options: BrowserActionOptions) => Promise<unknown>;
   readWiki: (path: string) => Promise<string>;
   webSearch: (query: string) => Promise<string>;
   writeWiki: (path: string, content: string) => Promise<void>;
