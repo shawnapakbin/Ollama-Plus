@@ -1,7 +1,7 @@
 {
   "name": "ollama-plus",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -11,9 +11,12 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "electron:dev": "concurrently -k \"cross-env BROWSER=none vite\" \"wait-on tcp:5173 && electron .\"",
-    "electron:debug": "concurrently -k \"cross-env BROWSER=none vite\" \"wait-on tcp:5173 && electron . --remote-debugging-port=9222\"",
-    "electron:build": "npm run build && electron-builder"
+    "electron:dev": "concurrently -k \"cross-env BROWSER=none vite --port 5173 --strictPort\" \"wait-on tcp:5173 && electron .\"",
+    "electron:debug": "concurrently -k \"cross-env BROWSER=none vite --port 5173 --strictPort\" \"wait-on tcp:5173 && electron . --remote-debugging-port=9222\"",
+    "electron:build": "npm run build && electron-builder",
+    "mcp:folder": "node mcp/folder-server.mjs",
+    "mcp:terminal": "node mcp/terminal-server.mjs",
+    "mcp:python": "node mcp/python-sandbox-server.mjs"
   },
   "build": {
     "appId": "com.ollama.nativeapp",
@@ -30,10 +33,12 @@
     }
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0",
     "@types/three": "^0.184.1",
     "csv-parse": "^6.2.1",
     "lucide-react": "^1.14.0",
     "mathjs": "^15.2.0",
+    "node-pty": "^1.0.0",
     "pdf-parse": "^2.4.5",
     "playwright-core": "^1.59.1",
     "react": "^19.2.5",
