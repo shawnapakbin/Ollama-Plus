@@ -1,7 +1,7 @@
 .input-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(2, 6, 23, 0.64);
+  background: var(--bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -29,7 +29,7 @@
   padding: 12px;
   overflow: auto;
   max-height: 260px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-surface);
 }
 
 .input-form-controls {
@@ -42,7 +42,7 @@
   width: 100%;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-surface);
   color: var(--text-main);
   padding: 10px;
 }

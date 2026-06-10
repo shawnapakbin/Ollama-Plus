@@ -1,9 +1,11 @@
 import React, { Suspense, useRef, useState, useEffect, useCallback } from 'react';
 import { Settings, MessageSquare, Terminal as TerminalIcon, Book, ListTodo, Box, Columns2, PanelLeftClose, PanelLeftOpen, Radar, FileText, ShieldCheck, RefreshCcw } from 'lucide-react';
 import ModelSelector, { type ModelEntry } from './components/ModelSelector';
+import ThemeSelector from './components/ThemeSelector';
 import { ipcService, isElectronAvailable } from './services/ipcService';
 import { onOpenViewer3D } from './services/workspaceEvents';
 import logo from './assets/logo.png';
+import { getStoredTheme, type ThemeName } from './theme';
 import './App.css';
 
 const Chat = React.lazy(() => import('./components/Chat/Chat'));
@@ -198,7 +200,7 @@ export default function App() {
 
   const [showSettings, setShowSettings] = useState(false);
   const [lanPickerOpenSignal, setLanPickerOpenSignal] = useState(0);
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
+  const [theme, setTheme] = useState<ThemeName>(() => getStoredTheme(localStorage.getItem('theme')));
   const [hostUrl, setHostUrl] = useState(localStorage.getItem('hostUrl') || 'http://127.0.0.1:11434');
   const [keepAlive, setKeepAlive] = useState(localStorage.getItem('keepAlive') === 'true');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(localStorage.getItem('sidebarCollapsed') === 'true');
@@ -1020,15 +1022,7 @@ export default function App() {
                 <p className="mcp-settings-footnote">Last checked: {mcpStatus.lastCheckedAt || 'not yet checked'}</p>
               </section>
               
-              <div className="setting-group">
-                <label>Theme</label>
-                <select aria-label="Select theme" value={theme} onChange={(e) => setTheme(e.target.value)}>
-                  <option value="dark">Dark</option>
-                  <option value="light">Light</option>
-                  <option value="colorblind">Color Blind (High Contrast)</option>
-                  <option value="solarized">Solarized Dark</option>
-                </select>
-              </div>
+              <ThemeSelector value={theme} onChange={setTheme} />
 
               <div className="setting-group">
                 <label>Ollama Host URL</label>

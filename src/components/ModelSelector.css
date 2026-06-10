@@ -8,10 +8,10 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  color: var(--text-color);
+  color: var(--text-main);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -19,7 +19,7 @@
 }
 
 .model-trigger:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-surface-hover);
 }
 
 .model-trigger-name {
@@ -33,7 +33,7 @@
   font-size: 0.7rem;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(56, 189, 248, 0.15);
+  background: rgba(56, 189, 248, 0.18);
   color: var(--accent-color, #38bdf8);
   white-space: nowrap;
 }
@@ -55,10 +55,10 @@
   padding: 10px;
   border-radius: 12px;
   border: 1px solid var(--border-color);
-  background: var(--bg-elevated, rgba(20, 22, 25, 0.95));
+  background: var(--bg-elevated);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
   max-height: 60vh;
   overflow: hidden;
 }
@@ -69,7 +69,7 @@
   gap: 8px;
   padding: 6px 10px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-surface);
   border: 1px solid var(--border-color);
 }
 
@@ -78,7 +78,7 @@
   background: transparent;
   border: none;
   outline: none;
-  color: var(--text-color);
+  color: var(--text-main);
   font: inherit;
 }
 
@@ -97,14 +97,14 @@
   padding: 6px 10px;
   border-radius: 8px;
   border: 1px solid var(--border-color);
-  background: rgba(56, 189, 248, 0.08);
-  color: var(--text-color);
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--text-main);
   cursor: pointer;
   font-size: 0.8rem;
 }
 
 .model-scan-btn:hover:not(:disabled) {
-  background: rgba(56, 189, 248, 0.18);
+  background: rgba(56, 189, 248, 0.22);
 }
 
 .model-scan-btn:disabled {
@@ -158,11 +158,11 @@
 }
 
 .model-row.is-selected {
-  background: rgba(56, 189, 248, 0.12);
+  background: rgba(56, 189, 248, 0.14);
 }
 
 .model-row:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-surface-hover);
 }
 
 .model-fav-btn {
@@ -194,7 +194,7 @@
   background: transparent;
   border: none;
   padding: 6px 8px;
-  color: var(--text-color);
+  color: var(--text-main);
   text-align: left;
   cursor: pointer;
   border-radius: 6px;
@@ -217,7 +217,7 @@
   height: 8px;
   border-radius: 999px;
   flex: 0 0 8px;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14) inset;
+  box-shadow: 0 0 0 1px var(--border-color) inset;
 }
 
 .model-availability-dot.is-available {

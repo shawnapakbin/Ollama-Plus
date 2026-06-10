@@ -27,14 +27,14 @@
 .viewer3d-resize-handle {
   width: 10px;
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(56, 189, 248, 0.15), rgba(56, 189, 248, 0.06));
-  border: 1px solid rgba(56, 189, 248, 0.2);
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.18), rgba(56, 189, 248, 0.08));
+  border: 1px solid rgba(56, 189, 248, 0.24);
   cursor: col-resize;
   align-self: stretch;
 }
 
 .viewer3d-resize-handle:hover {
-  background: linear-gradient(180deg, rgba(56, 189, 248, 0.28), rgba(56, 189, 248, 0.14));
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.3), rgba(56, 189, 248, 0.16));
 }
 
 body.viewer3d-resizing,
@@ -75,7 +75,7 @@ body.viewer3d-resizing * {
   background:
     radial-gradient(circle at 25% 20%, rgba(56, 189, 248, 0.2), transparent 40%),
     radial-gradient(circle at 80% 75%, rgba(99, 102, 241, 0.2), transparent 35%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(2, 6, 23, 0.9));
+    linear-gradient(180deg, var(--bg-panel), var(--bg-elevated));
 }
 
 .viewer3d-canvas {
