@@ -7,7 +7,7 @@ export const THEME_OPTIONS = [
 
 export type ThemeName = (typeof THEME_OPTIONS)[number]['value'];
 
-export const DEFAULT_THEME: ThemeName = 'dark';
+export const DEFAULT_THEME: ThemeName = 'colorblind';
 
 export function isThemeName(value: string): value is ThemeName {
   return THEME_OPTIONS.some((option) => option.value === value);
