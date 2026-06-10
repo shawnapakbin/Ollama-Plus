@@ -87,10 +87,10 @@ $setupPath = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Install
 
 Write-Host ''
 Write-Host '[preflight] Missing Spectre-mitigated C++ libraries required by node-pty native rebuild.' -ForegroundColor Yellow
-Write-Host '[preflight] Remediation (run in elevated PowerShell):' -ForegroundColor Yellow
-Write-Host "  & '$setupPath' modify --installPath '$installPath' --add $expectedSpectreComponent --passive --norestart --wait"
+Write-Host '[preflight] Remediation (run in an elevated PowerShell window):' -ForegroundColor Yellow
+Write-Host "  & '$setupPath' modify --installPath '$installPath' --add $expectedSpectreComponent --passive --norestart"
 Write-Host '[preflight] If the exact version component is unavailable, try this fallback:' -ForegroundColor Yellow
-Write-Host "  & '$setupPath' modify --installPath '$installPath' --add $fallbackSpectreComponent --passive --norestart --wait"
+Write-Host "  & '$setupPath' modify --installPath '$installPath' --add $fallbackSpectreComponent --passive --norestart"
 Write-Host "[preflight] Then rerun: npm run preflight:electron:win && npm run electron:build"
 
 exit 1
