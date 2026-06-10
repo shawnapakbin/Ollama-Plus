@@ -36,6 +36,8 @@ interface UseChatPipelineOptions {
   chatMode: ChatMode;
   customSystemMessage: string;
   injectDateTime: boolean;
+  turnLimit: number;
+  onTurnLimitReached: (message: string) => void;
   sessionTitle: string;
   messagesRef: React.MutableRefObject<ChatMessage[]>;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -96,7 +98,8 @@ Title:`;
     currentMessages: ChatMessage[],
     taskId: string | null = null,
     repairAttempt = 0,
-    repairContext = ''
+    repairContext = '',
+    turnNumber = 1
   ): Promise<void> {
     const {
       selectedModel,
@@ -105,6 +108,8 @@ Title:`;
       chatMode,
       customSystemMessage,
       injectDateTime,
+      turnLimit,
+      onTurnLimitReached,
       sessionTitle,
       setMessages,
       saveSession,
@@ -124,6 +129,19 @@ Title:`;
         memoryContext = formatMemoryContext(mem || '');
       } catch {
         /* ignore: memory is optional */
+      }
+
+      if (turnLimit > 0 && turnNumber > turnLimit) {
+        const stopMessage = `Research stopped after ${turnLimit} turn${turnLimit === 1 ? '' : 's'}. Adjust the Research turn limit in Settings to continue longer. 0 means unlimited turns.`;
+        const stoppedMsgs: ChatMessage[] = [
+          ...currentMessages,
+          { role: 'assistant', model: selectedModel, content: stopMessage, metrics: null }
+        ];
+        setMessages(stoppedMsgs);
+        await saveSession(stoppedMsgs);
+        onTurnLimitReached(stopMessage);
+        if (taskId) taskRuntime.setState(taskId, 'failed', stopMessage);
+        return;
       }
 
       const payload: Record<string, unknown> = {
@@ -226,7 +244,7 @@ Title:`;
 
         setMessages([...toolResults, { role: 'assistant', content: '', model: selectedModel }]);
         await saveSession(toolResults);
-        await processOllamaRequestInner(toolResults, taskId, 0, '');
+        await processOllamaRequestInner(toolResults, taskId, 0, '', turnNumber + 1);
         return;
       }
 
@@ -235,7 +253,7 @@ Title:`;
         if (nextRepairContext) {
           if (taskId) taskRuntime.addLog(taskId, 'Retrying with stricter tool-call guidance after narrated tool intent.');
           setMessages([...currentMessages, { role: 'assistant', content: '', model: selectedModel }]);
-          await processOllamaRequestInner(currentMessages, taskId, repairAttempt + 1, nextRepairContext);
+          await processOllamaRequestInner(currentMessages, taskId, repairAttempt + 1, nextRepairContext, turnNumber);
           return;
         }
       }
@@ -289,7 +307,7 @@ Title:`;
     const newMsgs = [...base, userMsg];
     const ollamaMsgs: ChatMessage[] = [...base, { role: 'user', content: ollamaContent }];
     setMessages([...newMsgs, { role: 'assistant', content: '', model: selectedModel }]);
-    await processOllamaRequest(ollamaMsgs, taskId, 0, '');
+    await processOllamaRequest(ollamaMsgs, taskId, 0, '', 1);
   }, [processOllamaRequest]);
 
   useEffect(() => {
@@ -300,7 +318,7 @@ Title:`;
     const { messagesRef, setMessages, selectedModel } = optsRef.current;
     const historyBefore = messagesRef.current.slice(0, index);
     setMessages([...historyBefore, { role: 'assistant', content: '', model: selectedModel }]);
-    await processOllamaRequest(historyBefore, null, 0, '');
+    await processOllamaRequest(historyBefore, null, 0, '', 1);
   }, [processOllamaRequest]);
 
   return { commitUserTurn, regenerate };

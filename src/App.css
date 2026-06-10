@@ -737,6 +737,13 @@
   color: var(--text-muted);
 }
 
+.setting-help-text {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 .setting-group-inline {
   flex-direction: row;
   align-items: center;
@@ -765,6 +772,31 @@
   display: flex;
   justify-content: flex-end;
   margin-top: 16px;
+}
+
+.app-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 1300;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  background: rgba(8, 15, 28, 0.95);
+  color: var(--text-main);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  line-height: 1.45;
+}
+
+.app-toast.warn {
+  border-color: rgba(251, 191, 36, 0.32);
+  background: rgba(45, 31, 2, 0.96);
+}
+
+.app-toast.error {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(55, 11, 11, 0.96);
 }
 
 @media (max-width: 1160px) {

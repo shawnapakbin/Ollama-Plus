@@ -86,10 +86,25 @@ type SavedSystemMessage = {
   updatedAt: string;
 };
 
+type AppToast = {
+  id: number;
+  message: string;
+  kind: 'info' | 'warn' | 'error';
+};
+
 const SAVED_SYSTEM_MESSAGES_KEY = 'savedSystemMessages';
 const GLOBAL_SYSTEM_MESSAGE_KEY = 'globalSystemMessage';
 const CHAT_SYSTEM_MESSAGE_OVERRIDES_KEY = 'chatSystemMessageOverrides';
 const AUTO_INJECT_DATETIME_KEY = 'autoInjectDateTime';
+const RESEARCH_TURN_LIMIT_KEY = 'researchTurnLimit';
+
+function loadResearchTurnLimit(): number {
+  const raw = localStorage.getItem(RESEARCH_TURN_LIMIT_KEY);
+  if (raw === null || raw === '') return 5;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return 5;
+  return Math.floor(parsed);
+}
 
 const DEFAULT_LAYOUTS: WorkspaceLayout[] = [
   { id: 'layout-chat', name: 'Chat Focus', primary: 'chat' },
@@ -192,7 +207,10 @@ export default function App() {
   const [globalSystemMessage, setGlobalSystemMessage] = useState(localStorage.getItem(GLOBAL_SYSTEM_MESSAGE_KEY) || '');
   const [chatSystemMessageOverrides, setChatSystemMessageOverrides] = useState<Record<string, string>>(() => loadChatSystemMessageOverrides());
   const [autoInjectDateTime, setAutoInjectDateTime] = useState(localStorage.getItem(AUTO_INJECT_DATETIME_KEY) !== 'false');
+  const [researchTurnLimit, setResearchTurnLimit] = useState<number>(() => loadResearchTurnLimit());
   const [systemMessageDraft, setSystemMessageDraft] = useState('');
+  const [toast, setToast] = useState<AppToast | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState(localStorage.getItem('currentSessionId') || '');
@@ -224,6 +242,18 @@ export default function App() {
   const effectiveSystemMessage = activeHasSystemMessageOverride
     ? chatSystemMessageOverrides[currentSessionId] || ''
     : globalSystemMessage;
+
+  const showToast = useCallback((message: string, kind: AppToast['kind'] = 'info') => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setToast({ id: Date.now(), message, kind });
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 5000);
+  }, []);
 
   const refreshMcpStatus = async () => {
     const checkedAt = new Date().toLocaleTimeString();
@@ -436,11 +466,21 @@ export default function App() {
   }, [autoInjectDateTime]);
 
   useEffect(() => {
+    localStorage.setItem(RESEARCH_TURN_LIMIT_KEY, String(researchTurnLimit));
+  }, [researchTurnLimit]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       setSystemMessageDraft(effectiveSystemMessage);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [effectiveSystemMessage, currentSessionId]);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     const unsubscribe = ipcService.onPolicyDecisionRequest((request) => {
@@ -623,6 +663,8 @@ export default function App() {
             onSessionUpdate={refreshSessions}
             effectiveSystemMessage={effectiveSystemMessage}
             autoInjectDateTime={autoInjectDateTime}
+            researchTurnLimit={researchTurnLimit}
+            onResearchTurnLimitHit={showToast}
           />
         );
       case 'wiki':
@@ -637,6 +679,10 @@ export default function App() {
             keepAlive={keepAlive}
             sessionId={currentSessionId}
             sessionTitle={sessions.find((s) => s.id === currentSessionId)?.title}
+            effectiveSystemMessage={effectiveSystemMessage}
+            autoInjectDateTime={autoInjectDateTime}
+            researchTurnLimit={researchTurnLimit}
+            onResearchTurnLimitHit={showToast}
             onSessionUpdate={refreshSessions}
           />
         );
@@ -717,6 +763,8 @@ export default function App() {
             onSessionUpdate={refreshSessions}
             effectiveSystemMessage={effectiveSystemMessage}
             autoInjectDateTime={autoInjectDateTime}
+            researchTurnLimit={researchTurnLimit}
+            onResearchTurnLimitHit={showToast}
           />
         );
     }
@@ -1012,6 +1060,22 @@ export default function App() {
                 <label htmlFor="autoCollapseSidebarToggle" className="checkbox-label">Auto-collapse sidebar when switching panels</label>
               </div>
 
+              <div className="setting-group">
+                <label htmlFor="researchTurnLimitInput">Research turn limit</label>
+                <input
+                  id="researchTurnLimitInput"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={researchTurnLimit}
+                  onChange={(e) => setResearchTurnLimit(Math.max(0, Number(e.target.value) || 0))}
+                  aria-describedby="researchTurnLimitHelp"
+                />
+                <p id="researchTurnLimitHelp" className="setting-help-text">
+                  0 = unlimited turns. When the limit is hit during research, the assistant stops and shows a toast.
+                </p>
+              </div>
+
               <div className="setting-group setting-group-spaced">
                 <button 
                   className="nav-item" 
@@ -1048,6 +1112,12 @@ export default function App() {
               onSubmit={(value) => resolveActiveInput(value)}
               onCancel={() => resolveActiveInput(null)}
             />
+          </div>
+        )}
+
+        {toast && (
+          <div className={`app-toast ${toast.kind}`} role={toast.kind === 'error' ? 'alert' : 'status'} aria-live="polite">
+            {toast.message}
           </div>
         )}
       </main>

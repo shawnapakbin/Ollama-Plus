@@ -29,6 +29,8 @@ interface ChatProps {
   onSessionUpdate: () => void;
   effectiveSystemMessage: string;
   autoInjectDateTime: boolean;
+  researchTurnLimit: number;
+  onResearchTurnLimitHit: (message: string) => void;
 }
 
 export default function Chat({
@@ -39,7 +41,9 @@ export default function Chat({
   sessionTitle,
   onSessionUpdate,
   effectiveSystemMessage,
-  autoInjectDateTime
+  autoInjectDateTime,
+  researchTurnLimit,
+  onResearchTurnLimitHit
 }: ChatProps) {
   const { messages, setMessages, save: saveSession, rename: renameSession } = useChatSession({ sessionId, onSessionUpdate });
   const [input, setInput] = useState('');
@@ -80,7 +84,9 @@ export default function Chat({
     runStream,
     refreshProcessor,
     enterGeneration,
-    exitGeneration
+    exitGeneration,
+    turnLimit: researchTurnLimit,
+    onTurnLimitReached: onResearchTurnLimitHit
   });
 
   const clearChat = () => {

@@ -23,6 +23,10 @@ interface Viewer3DProps {
   sessionId: string | null;
   sessionTitle?: string;
   onSessionUpdate: () => void;
+  effectiveSystemMessage: string;
+  autoInjectDateTime: boolean;
+  researchTurnLimit: number;
+  onResearchTurnLimitHit: (message: string) => void;
 }
 
 export default function Viewer3D({
@@ -31,7 +35,11 @@ export default function Viewer3D({
   keepAlive,
   sessionId,
   sessionTitle,
-  onSessionUpdate
+  onSessionUpdate,
+  effectiveSystemMessage,
+  autoInjectDateTime,
+  researchTurnLimit,
+  onResearchTurnLimitHit
 }: Viewer3DProps) {
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [chatWidth, setChatWidth] = useState<number>(() => loadChatWidth());
@@ -123,6 +131,10 @@ export default function Viewer3D({
           sessionId={sessionId}
           sessionTitle={sessionTitle}
           onSessionUpdate={onSessionUpdate}
+          effectiveSystemMessage={effectiveSystemMessage}
+          autoInjectDateTime={autoInjectDateTime}
+          researchTurnLimit={researchTurnLimit}
+          onResearchTurnLimitHit={onResearchTurnLimitHit}
         />
       </aside>
     </div>
