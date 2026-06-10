@@ -78,6 +78,10 @@ type McpRuntimeStatus = {
   pythonNote: string;
   folderRoot: string;
   folderCustom: boolean;
+  wikiRoot: string;
+  wikiCustom: boolean;
+  wikiAutonomyMode: 'auto' | 'review' | 'hybrid';
+  wikiKnowledgePolicy: 'strict' | 'balanced' | 'aggressive';
   browserSessionCount: number | null;
   lastCheckedAt: string;
 };
@@ -231,6 +235,10 @@ export default function App() {
     pythonNote: '',
     folderRoot: '',
     folderCustom: false,
+    wikiRoot: '',
+    wikiCustom: false,
+    wikiAutonomyMode: 'hybrid',
+    wikiKnowledgePolicy: 'strict',
     browserSessionCount: null,
     lastCheckedAt: ''
   });
@@ -270,6 +278,10 @@ export default function App() {
         pythonNote: 'Open the app in Electron to use terminal-backed Python sessions.',
         folderRoot: '',
         folderCustom: false,
+        wikiRoot: '',
+        wikiCustom: false,
+        wikiAutonomyMode: 'hybrid',
+        wikiKnowledgePolicy: 'strict',
         browserSessionCount: 0,
         lastCheckedAt: checkedAt
       });
@@ -291,6 +303,10 @@ export default function App() {
         pythonNote?: string;
         folderRoot?: string;
         folderCustom?: boolean;
+        wikiRoot?: string;
+        wikiCustom?: boolean;
+        wikiAutonomyMode?: 'auto' | 'review' | 'hybrid';
+        wikiKnowledgePolicy?: 'strict' | 'balanced' | 'aggressive';
         browserSessionCount?: number;
       };
 
@@ -303,6 +319,10 @@ export default function App() {
         pythonNote: data.pythonNote || '',
         folderRoot: data.folderRoot || '',
         folderCustom: Boolean(data.folderCustom),
+        wikiRoot: data.wikiRoot || '',
+        wikiCustom: Boolean(data.wikiCustom),
+        wikiAutonomyMode: data.wikiAutonomyMode || 'hybrid',
+        wikiKnowledgePolicy: data.wikiKnowledgePolicy || 'strict',
         browserSessionCount: typeof data.browserSessionCount === 'number' ? data.browserSessionCount : null,
         lastCheckedAt: checkedAt
       });
@@ -343,6 +363,66 @@ export default function App() {
     } catch (err) {
       console.error('Failed to clear MCP folder root:', err);
       const message = err instanceof Error ? err.message : 'Unknown error clearing folder root.';
+      setMcpActionError(message);
+    }
+  };
+
+  const handleSelectMcpWikiRoot = async () => {
+    if (!isElectronAvailable()) {
+      setMcpActionError('Wiki folder selection is only available in the Electron app.');
+      return;
+    }
+
+    try {
+      setMcpActionError('');
+      await ipcService.setMcpWikiRoot();
+      await refreshMcpStatus();
+    } catch (err) {
+      console.error('Failed to select wiki root:', err);
+      const message = err instanceof Error ? err.message : 'Unknown error selecting wiki root.';
+      setMcpActionError(message);
+    }
+  };
+
+  const handleResetMcpWikiRoot = async () => {
+    if (!isElectronAvailable()) {
+      setMcpActionError('Wiki folder selection is only available in the Electron app.');
+      return;
+    }
+
+    try {
+      setMcpActionError('');
+      await ipcService.clearMcpWikiRoot();
+      await refreshMcpStatus();
+    } catch (err) {
+      console.error('Failed to reset wiki root:', err);
+      const message = err instanceof Error ? err.message : 'Unknown error resetting wiki root.';
+      setMcpActionError(message);
+    }
+  };
+
+  const handleWikiAutonomyChange = async (mode: 'auto' | 'review' | 'hybrid') => {
+    if (!isElectronAvailable()) return;
+    try {
+      setMcpActionError('');
+      await ipcService.setMcpWikiAutonomyMode(mode);
+      await refreshMcpStatus();
+    } catch (err) {
+      console.error('Failed to update wiki autonomy mode:', err);
+      const message = err instanceof Error ? err.message : 'Unknown error updating wiki autonomy mode.';
+      setMcpActionError(message);
+    }
+  };
+
+  const handleWikiPolicyChange = async (level: 'strict' | 'balanced' | 'aggressive') => {
+    if (!isElectronAvailable()) return;
+    try {
+      setMcpActionError('');
+      await ipcService.setMcpWikiKnowledgePolicy(level);
+      await refreshMcpStatus();
+    } catch (err) {
+      console.error('Failed to update wiki knowledge policy:', err);
+      const message = err instanceof Error ? err.message : 'Unknown error updating wiki knowledge policy.';
       setMcpActionError(message);
     }
   };
@@ -998,6 +1078,51 @@ export default function App() {
 
                   <article className="mcp-card">
                     <div className="mcp-card-head">
+                      <Book size={16} />
+                      <strong>Wiki MCP</strong>
+                      <span className={`mcp-status-chip ${mcpStatus.wikiCustom ? 'ready' : 'warn'}`}>{mcpStatus.wikiCustom ? 'Custom Root' : 'Default Root'}</span>
+                    </div>
+                    <p>Persistent markdown wiki maintained by the assistant for user/profile and requested knowledge.</p>
+                    <ul>
+                      <li>current root: {mcpStatus.wikiRoot || 'not set'}</li>
+                      <li>autonomy mode: {mcpStatus.wikiAutonomyMode}</li>
+                      <li>knowledge policy: {mcpStatus.wikiKnowledgePolicy}</li>
+                    </ul>
+                    <div className="mcp-card-actions">
+                      <button type="button" className="secondary-button" onClick={handleSelectMcpWikiRoot} disabled={!isElectronAvailable()}>Select Wiki Folder</button>
+                      <button type="button" className="secondary-button" onClick={handleResetMcpWikiRoot} disabled={!isElectronAvailable()}>Use Default</button>
+                    </div>
+                    <div className="setting-group">
+                      <label htmlFor="wikiAutonomyMode">Wiki autonomy mode</label>
+                      <select
+                        id="wikiAutonomyMode"
+                        value={mcpStatus.wikiAutonomyMode}
+                        onChange={(e) => void handleWikiAutonomyChange(e.target.value as 'auto' | 'review' | 'hybrid')}
+                        disabled={!isElectronAvailable()}
+                      >
+                        <option value="auto">Auto commit</option>
+                        <option value="review">Review required</option>
+                        <option value="hybrid">Hybrid</option>
+                      </select>
+                    </div>
+                    <div className="setting-group">
+                      <label htmlFor="wikiKnowledgePolicy">Knowledge capture level</label>
+                      <select
+                        id="wikiKnowledgePolicy"
+                        value={mcpStatus.wikiKnowledgePolicy}
+                        onChange={(e) => void handleWikiPolicyChange(e.target.value as 'strict' | 'balanced' | 'aggressive')}
+                        disabled={!isElectronAvailable()}
+                      >
+                        <option value="strict">Level 1: explicit requests only</option>
+                        <option value="balanced">Level 2: explicit + stable preferences</option>
+                        <option value="aggressive">Level 3: broad relevant capture</option>
+                      </select>
+                    </div>
+                    {mcpActionError && <p className="mcp-action-error" role="alert">{mcpActionError}</p>}
+                  </article>
+
+                  <article className="mcp-card">
+                    <div className="mcp-card-head">
                       <TerminalIcon size={16} />
                       <strong>Terminal MCP</strong>
                       <span className={`mcp-status-chip ${mcpStatus.terminalSessionCount === null ? 'unknown' : 'ready'}`}>{mcpStatus.terminalSessionCount === null ? 'Unknown' : 'Ready'}</span>
@@ -1109,8 +1234,13 @@ export default function App() {
           </div>
         )}
 
-        {toast && (
-          <div className={`app-toast ${toast.kind}`} role={toast.kind === 'error' ? 'alert' : 'status'} aria-live="polite">
+        {toast && toast.kind === 'error' && (
+          <div className={`app-toast ${toast.kind}`} role="alert" aria-live="assertive">
+            {toast.message}
+          </div>
+        )}
+        {toast && toast.kind !== 'error' && (
+          <div className={`app-toast ${toast.kind}`} role="status" aria-live="polite">
             {toast.message}
           </div>
         )}

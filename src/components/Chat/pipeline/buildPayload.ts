@@ -5,11 +5,19 @@ Available tools:
 - run_shell_command: {command: string}
 - browser_action: {action: string, url?: string, selector?: string, text?: string, key?: string, wait_for?: string, script?: string}
 - read_wiki: {filepath: string}
+- wiki_maintain: {action: "root"|"list"|"read"|"upsert_note"|"append_entry"|"search"|"set_root"|"set_autonomy"|"set_policy"|"reindex", path?: string, content?: string, entry?: string, heading?: string, query?: string, maxResults?: number, mode?: "auto"|"review"|"hybrid", level?: "strict"|"balanced"|"aggressive"}
 - web_search: {query: string}
 - update_user_memory: {content: string} (Store facts here)
 - get_current_time: {timezone?: string, locale?: string}
 - engineering_calculator: {expression: string, scope?: object}
 - scene_3d: {action: "list"|"add"|"transform"|"remove"|"clear", kind?: "box"|"sphere"|"cylinder"|"cone"|"plane"|"torus", id?: string, color?: string, size?: number, position?: {x,y,z}, rotation?: {x,y,z}, scale?: {x,y,z}} — drives the live 3D Workspace viewport. WHENEVER the user asks to add, generate, move, scale, rotate, color, list, or remove shapes in the 3D workspace, you MUST call this tool instead of writing three.js code or instructions. Do not paste three.js snippets.
+
+Wiki rules:
+- For user-requested "save this", "add to wiki", "remember this", or persistent profile/preferences updates, prefer wiki_maintain over folder_mcp.
+- Use append_entry when adding timestamped journal-style notes and upsert_note for stable topic/profile pages.
+- Respect configured policy mode returned by wiki_maintain root action; if denied, report denial clearly and continue safely.
+- In strict mode, only write when user intent is explicit and set explicit: true.
+- Prefer paths: profile/preferences.md for user prefs, knowledge/topics/*.md for stable facts, journal/YYYY-MM.md for timestamped logs.
 
 Tool-call rules:
 - Output exactly one JSON block per tool call.
@@ -27,7 +35,7 @@ Example to add three spheres in a triangle:
 export const PLAIN_SYSTEM_PROMPT = 'You are a helpful AI assistant.';
 
 export const ROUTER_SYSTEM_PROMPT =
-  'You are a routing agent. Your job is to decide if the user needs external tools. Tools available: run_shell_command (PowerShell), browser_action (Playwright), read_wiki (Markdown), web_search, get_current_time (clock), engineering_calculator (mathjs), scene_3d (manipulate the live 3D Workspace viewport: add/transform/remove primitives). Answer with exactly YES or NO.';
+  'You are a routing agent. Your job is to decide if the user needs external tools. Tools available: run_shell_command (PowerShell), browser_action (Playwright), read_wiki (Markdown), wiki_maintain (persistent wiki updates/search), web_search, get_current_time (clock), engineering_calculator (mathjs), scene_3d (manipulate the live 3D Workspace viewport: add/transform/remove primitives). Answer with exactly YES or NO.';
 
 function buildDateTimeContext(): string {
   const now = new Date();

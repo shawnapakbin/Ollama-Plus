@@ -197,6 +197,104 @@ contextBridge.exposeInMainWorld('electronAPI', {
     if (!res?.ok) throw new Error(res?.error || 'Folder read model failed.');
     return res.data;
   },
+  getMcpWikiConfig: async () => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', { server: 'wiki', action: 'root', payload: {} });
+    if (!res?.ok) throw new Error(res?.error || 'Wiki root lookup failed.');
+    return res.data;
+  },
+  setMcpWikiRoot: async (pathValue) => {
+    const payload = typeof pathValue === 'string' && pathValue.trim() ? { path: pathValue } : {};
+    const res = await ipcRenderer.invoke('mcp-gateway-call', { server: 'wiki', action: 'set_root', payload });
+    if (!res?.ok) throw new Error(res?.error || 'Wiki root selection failed.');
+    return res.data;
+  },
+  clearMcpWikiRoot: async () => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', { server: 'wiki', action: 'clear_root', payload: {} });
+    if (!res?.ok) throw new Error(res?.error || 'Wiki root clear failed.');
+    return res.data;
+  },
+  setMcpWikiAutonomyMode: async (mode) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', { server: 'wiki', action: 'set_autonomy', payload: { mode } });
+    if (!res?.ok) throw new Error(res?.error || 'Wiki autonomy update failed.');
+    return res.data;
+  },
+  setMcpWikiKnowledgePolicy: async (level) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', { server: 'wiki', action: 'set_policy', payload: { level } });
+    if (!res?.ok) throw new Error(res?.error || 'Wiki policy update failed.');
+    return res.data;
+  },
+  listMcpWiki: async (pathValue) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'wiki',
+      action: 'list',
+      payload: { path: pathValue ?? '.' }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Wiki list failed.');
+    return res.data;
+  },
+  readMcpWiki: async (pathValue) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'wiki',
+      action: 'read',
+      payload: { path: pathValue }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Wiki read failed.');
+    return res.data;
+  },
+  upsertMcpWikiNote: async (pathValue, content, overwrite, explicit, category) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'wiki',
+      action: 'upsert_note',
+      payload: { path: pathValue, content, overwrite: Boolean(overwrite), explicit: Boolean(explicit), category }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Wiki upsert failed.');
+    return res.data;
+  },
+  appendMcpWikiEntry: async (entry, pathValue, heading, explicit, category) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'wiki',
+      action: 'append_entry',
+      payload: { entry, path: pathValue, heading, explicit: Boolean(explicit), category }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Wiki append failed.');
+    return res.data;
+  },
+  searchMcpWiki: async (query, maxResults) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'wiki',
+      action: 'search',
+      payload: { query, maxResults }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Wiki search failed.');
+    return res.data;
+  },
+  deleteMcpWikiPath: async (pathValue) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'wiki',
+      action: 'delete',
+      payload: { path: pathValue }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Wiki delete failed.');
+    return res.data;
+  },
+  renameMcpWikiPath: async (fromPath, toPath) => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'wiki',
+      action: 'rename',
+      payload: { fromPath, toPath }
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Wiki rename failed.');
+    return res.data;
+  },
+  reindexMcpWiki: async () => {
+    const res = await ipcRenderer.invoke('mcp-gateway-call', {
+      server: 'wiki',
+      action: 'reindex',
+      payload: {}
+    });
+    if (!res?.ok) throw new Error(res?.error || 'Wiki reindex failed.');
+    return res.data;
+  },
   runPlaywright: (url, action) => ipcRenderer.invoke('run-playwright', url, action),
   browserAction: async (options) => {
     const browserAction = String(options?.action || '').toLowerCase();

@@ -189,6 +189,58 @@ export const ipcService = {
     if (!isElectronAvailable()) return rejected('readMcpFolderModel');
     return getElectronApi().readMcpFolderModel(relativePath);
   },
+  getMcpWikiConfig() {
+    if (!isElectronAvailable()) return rejected('getMcpWikiConfig');
+    return getElectronApi().getMcpWikiConfig();
+  },
+  setMcpWikiRoot(path?: string) {
+    if (!isElectronAvailable()) return rejected('setMcpWikiRoot');
+    return getElectronApi().setMcpWikiRoot(path);
+  },
+  clearMcpWikiRoot() {
+    if (!isElectronAvailable()) return rejected('clearMcpWikiRoot');
+    return getElectronApi().clearMcpWikiRoot();
+  },
+  setMcpWikiAutonomyMode(mode: 'auto' | 'review' | 'hybrid') {
+    if (!isElectronAvailable()) return rejected('setMcpWikiAutonomyMode');
+    return getElectronApi().setMcpWikiAutonomyMode(mode);
+  },
+  setMcpWikiKnowledgePolicy(level: 'strict' | 'balanced' | 'aggressive') {
+    if (!isElectronAvailable()) return rejected('setMcpWikiKnowledgePolicy');
+    return getElectronApi().setMcpWikiKnowledgePolicy(level);
+  },
+  listMcpWiki(path?: string) {
+    if (!isElectronAvailable()) return rejected('listMcpWiki');
+    return getElectronApi().listMcpWiki(path);
+  },
+  readMcpWiki(path: string) {
+    if (!isElectronAvailable()) return rejected('readMcpWiki');
+    return getElectronApi().readMcpWiki(path);
+  },
+  upsertMcpWikiNote(path: string, content: string, overwrite?: boolean, explicit?: boolean, category?: string) {
+    if (!isElectronAvailable()) return rejected('upsertMcpWikiNote');
+    return getElectronApi().upsertMcpWikiNote(path, content, overwrite, explicit, category);
+  },
+  appendMcpWikiEntry(entry: string, path?: string, heading?: string, explicit?: boolean, category?: string) {
+    if (!isElectronAvailable()) return rejected('appendMcpWikiEntry');
+    return getElectronApi().appendMcpWikiEntry(entry, path, heading, explicit, category);
+  },
+  searchMcpWiki(query: string, maxResults?: number) {
+    if (!isElectronAvailable()) return rejected('searchMcpWiki');
+    return getElectronApi().searchMcpWiki(query, maxResults);
+  },
+  deleteMcpWikiPath(path: string) {
+    if (!isElectronAvailable()) return rejected('deleteMcpWikiPath');
+    return getElectronApi().deleteMcpWikiPath(path);
+  },
+  renameMcpWikiPath(fromPath: string, toPath: string) {
+    if (!isElectronAvailable()) return rejected('renameMcpWikiPath');
+    return getElectronApi().renameMcpWikiPath(fromPath, toPath);
+  },
+  reindexMcpWiki() {
+    if (!isElectronAvailable()) return rejected('reindexMcpWiki');
+    return getElectronApi().reindexMcpWiki();
+  },
   terminalInput(id: string, data: string) {
     if (!isElectronAvailable()) return;
     return getElectronApi().terminalInput(id, data);

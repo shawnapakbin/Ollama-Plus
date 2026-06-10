@@ -288,13 +288,15 @@ Title:`;
       }
     } catch (err) {
       console.error(err);
-      const { setMessages: sm } = optsRef.current;
-      sm([
+      const msg = err instanceof Error ? err.message : 'Unknown generation error';
+      const failedMsgs: ChatMessage[] = [
         ...currentMessages,
-        { role: 'assistant', content: '**Error**: Failed to communicate with Ollama.' }
-      ]);
+        { role: 'assistant', content: `**Error**: ${msg}` }
+      ];
+      const { setMessages: sm, saveSession: persist } = optsRef.current;
+      sm(failedMsgs);
+      await persist(failedMsgs);
       if (taskId) {
-        const msg = err instanceof Error ? err.message : 'Unknown generation error';
         taskRuntime.setState(taskId, 'failed', `Failed: ${msg}`);
       }
     } finally {

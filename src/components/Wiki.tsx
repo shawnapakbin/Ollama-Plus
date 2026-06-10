@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { FileText, Save, Edit3, Plus, Loader2 } from 'lucide-react';
+import { FileText, Save, Edit3, Plus, Loader2, RefreshCcw } from 'lucide-react';
 import MarkdownInputForm from './MarkdownInputForm';
 import { ipcService } from '../services/ipcService';
 import { safeMarkdownUrl } from '../services/markdownSafety';
@@ -23,7 +23,8 @@ export default function Wiki() {
     let cancelled = false;
     void (async () => {
       try {
-        const list = await ipcService.listWiki();
+        const listed = await ipcService.listMcpWiki('.');
+        const list = Array.isArray(listed.files) ? listed.files : [];
         if (cancelled) return;
         setFiles(list);
         if (list.length > 0) {
@@ -31,9 +32,9 @@ export default function Wiki() {
           setIsLoading(true);
           setErrorMessage(null);
           try {
-            const data = await ipcService.readWiki(first);
+            const data = await ipcService.readMcpWiki(first);
             if (cancelled) return;
-            setContent(data || '');
+            setContent(data.exists ? data.content : '');
             setActiveFile(first);
             setIsEditing(false);
           } catch (err) {
@@ -58,7 +59,8 @@ export default function Wiki() {
 
   const fetchWikiList = async () => {
     try {
-      const list = await ipcService.listWiki();
+      const listed = await ipcService.listMcpWiki('.');
+      const list = Array.isArray(listed.files) ? listed.files : [];
       setFiles(list);
       if (list.length > 0 && !activeFile) {
         void loadFile(list[0]);
@@ -72,8 +74,8 @@ export default function Wiki() {
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const data = await ipcService.readWiki(path);
-      setContent(data || '');
+      const data = await ipcService.readMcpWiki(path);
+      setContent(data.exists ? data.content : '');
       setActiveFile(path);
       setIsEditing(false);
     } catch (err) {
@@ -88,8 +90,10 @@ export default function Wiki() {
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      const ok = await ipcService.writeWiki(activeFile, content);
-      if (ok === false) throw new Error('Write rejected by main process.');
+      const res = await ipcService.upsertMcpWikiNote(activeFile, content, true, true, activeFile.startsWith('profile/') ? 'profile' : 'knowledge');
+      if (res.denied) {
+        throw new Error(res.reason || res.message || 'Write denied by wiki policy.');
+      }
       setIsEditing(false);
       await fetchWikiList();
     } catch (err) {
@@ -102,6 +106,16 @@ export default function Wiki() {
   const createNewFile = () => {
     setErrorMessage(null);
     setShowNewFileForm(true);
+  };
+
+  const handleReindex = async () => {
+    setErrorMessage(null);
+    try {
+      await ipcService.reindexMcpWiki();
+      await fetchWikiList();
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to reindex wiki files.');
+    }
   };
 
   const commitNewFile = (rawName: string | null) => {
@@ -126,6 +140,9 @@ export default function Wiki() {
       <div className="wiki-sidebar glass-panel">
         <div className="wiki-sidebar-header">
           <h3>Knowledge Base</h3>
+          <button onClick={() => void handleReindex()} className="icon-btn" title="Reindex Wiki">
+            <RefreshCcw size={16} />
+          </button>
           <button onClick={createNewFile} className="icon-btn" title="New Note">
             <Plus size={16} />
           </button>

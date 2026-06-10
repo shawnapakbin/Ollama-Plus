@@ -109,6 +109,14 @@ type McpFolderEntry = {
   modifiedAt: string;
 };
 
+type McpWikiConfig = {
+  root: string;
+  isCustom: boolean;
+  autonomyMode: 'auto' | 'review' | 'hybrid';
+  knowledgePolicy: 'strict' | 'balanced' | 'aggressive';
+  canceled?: boolean;
+};
+
 type ElectronAPI = {
   invokeOllama: (hostUrl: string, endpoint: string, data?: unknown) => Promise<unknown>;
   invokeOllamaStream: (
@@ -149,6 +157,19 @@ type ElectronAPI = {
   createMcpFolderDir: (relativePath: string) => Promise<{ root: string; path: string }>;
   listMcpFolderModels: (relativePath?: string) => Promise<{ root: string; models: Array<{ path: string; name: string; ext: string; bytes: number; modifiedAt: string }> }>;
   readMcpFolderModel: (relativePath: string) => Promise<{ root: string; path: string; name: string; ext: string; bytes: number; base64: string }>;
+  getMcpWikiConfig: () => Promise<McpWikiConfig>;
+  setMcpWikiRoot: (path?: string) => Promise<McpWikiConfig>;
+  clearMcpWikiRoot: () => Promise<McpWikiConfig>;
+  setMcpWikiAutonomyMode: (mode: 'auto' | 'review' | 'hybrid') => Promise<McpWikiConfig>;
+  setMcpWikiKnowledgePolicy: (level: 'strict' | 'balanced' | 'aggressive') => Promise<McpWikiConfig>;
+  listMcpWiki: (path?: string) => Promise<{ root: string; path: string; files: string[] }>;
+  readMcpWiki: (path: string) => Promise<{ root: string; path: string; content: string; exists: boolean; bytes?: number }>;
+  upsertMcpWikiNote: (path: string, content: string, overwrite?: boolean, explicit?: boolean, category?: string) => Promise<{ ok: boolean; denied?: boolean; message?: string; reason?: string; root?: string; path?: string; bytes?: number; policy?: { decisionToken?: string | null; selectionId?: string } }>;
+  appendMcpWikiEntry: (entry: string, path?: string, heading?: string, explicit?: boolean, category?: string) => Promise<{ ok: boolean; denied?: boolean; message?: string; reason?: string; root?: string; path?: string; bytes?: number; policy?: { decisionToken?: string | null; selectionId?: string } }>;
+  searchMcpWiki: (query: string, maxResults?: number) => Promise<{ results: Array<{ path: string; snippet: string }> }>;
+  deleteMcpWikiPath: (path: string) => Promise<{ deleted: boolean; missing?: boolean; denied?: boolean; policy?: { decisionToken?: string | null; selectionId?: string } }>;
+  renameMcpWikiPath: (fromPath: string, toPath: string) => Promise<{ renamed: boolean; from?: string; to?: string; denied?: boolean; policy?: { decisionToken?: string | null; selectionId?: string } }>;
+  reindexMcpWiki: () => Promise<{ indexedAt: string; fileCount: number }>;
   runPlaywright: (url: string, action: string) => Promise<unknown>;
   browserAction: (options: BrowserActionOptions) => Promise<unknown>;
   readWiki: (path: string) => Promise<string>;

@@ -30,4 +30,18 @@ describe('createGateway', () => {
     expect(status.ok).toBe(true);
     expect(status.data).toEqual({ healthy: true });
   });
+
+  it('dispatches wiki route handlers', async () => {
+    const gateway = createGateway();
+    gateway.register('wiki', 'upsert_note', async (payload) => ({ ok: true, path: payload.path }));
+
+    const res = await gateway.dispatchSafe({
+      server: 'wiki',
+      action: 'upsert_note',
+      payload: { path: 'knowledge/topics/general.md' }
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.data).toEqual({ ok: true, path: 'knowledge/topics/general.md' });
+  });
 });

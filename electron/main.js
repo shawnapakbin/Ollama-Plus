@@ -40,6 +40,13 @@ import {
   resolveChatFile as resolveChatFileImpl,
   resolveWikiPath as resolveWikiPathImpl
 } from './lib/validation.js';
+import {
+  isValidWikiAutonomyMode,
+  isValidWikiKnowledgePolicy,
+  normalizeWikiConfig,
+  shouldRequireWikiApproval,
+  evaluateWikiKnowledgePolicy
+} from './lib/wikiPolicy.js';
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
 
@@ -61,6 +68,7 @@ const pendingPolicyDecisions = new Map();
 const DISCOVERABLE_MODEL_EXTENSIONS = new Set(['.obj', '.stl', '.gltf', '.glb', '.scad']);
 const IMPORTABLE_MODEL_EXTENSIONS = new Set(['.obj', '.stl', '.gltf', '.glb']);
 let cachedMcpFolderRoot = null;
+let cachedMcpWikiConfig = null;
 let defaultBrowserSessionId = null;
 let mcpGateway = null;
 const OPENSCAD_FEATURE_ENABLED = process.env.MCP_OPENSCAD_ENABLED !== '0';
@@ -122,7 +130,7 @@ function assertRateLimit(key, limit, windowMs) {
 }
 
 function resolveWikiPath(filePath) {
-  return resolveWikiPathImpl(path.join(app.getPath('userData'), 'wiki'), filePath);
+  return resolveWikiPathImpl(getConfiguredWikiRoot().root, filePath);
 }
 
 function resolveChatFile(sessionId) {
@@ -195,6 +203,109 @@ function getPythonTerminalConfig() {
 
 function getMcpFolderRootStatePath() {
   return path.join(app.getPath('userData'), 'mcp-folder-root.json');
+}
+
+function getMcpWikiConfigStatePath() {
+  return path.join(app.getPath('userData'), 'mcp-wiki-config.json');
+}
+
+function getDefaultWikiRoot() {
+  return path.join(app.getPath('documents'), 'WIKI');
+}
+
+function loadMcpWikiConfigFromDisk() {
+  if (cachedMcpWikiConfig !== null) return cachedMcpWikiConfig;
+  try {
+    const statePath = getMcpWikiConfigStatePath();
+    if (!fs.existsSync(statePath)) {
+      cachedMcpWikiConfig = normalizeWikiConfig({});
+      return cachedMcpWikiConfig;
+    }
+    const raw = fs.readFileSync(statePath, 'utf-8');
+    cachedMcpWikiConfig = normalizeWikiConfig(JSON.parse(raw));
+  } catch {
+    cachedMcpWikiConfig = normalizeWikiConfig({});
+  }
+  return cachedMcpWikiConfig;
+}
+
+function persistMcpWikiConfig(partial) {
+  const current = loadMcpWikiConfigFromDisk();
+  cachedMcpWikiConfig = normalizeWikiConfig({ ...current, ...(partial || {}) });
+  const statePath = getMcpWikiConfigStatePath();
+  fs.writeFileSync(statePath, JSON.stringify(cachedMcpWikiConfig, null, 2), 'utf-8');
+}
+
+function getConfiguredWikiRoot() {
+  const cfg = loadMcpWikiConfigFromDisk();
+  const fallback = path.resolve(getDefaultWikiRoot());
+  const selected = typeof cfg.root === 'string' ? cfg.root.trim() : '';
+  const base = selected ? path.resolve(selected) : fallback;
+  try {
+    if (!fs.existsSync(base)) fs.mkdirSync(base, { recursive: true });
+  } catch {
+    // fall through to fallback recovery below
+  }
+
+  if (!fs.existsSync(base) || !fs.statSync(base).isDirectory()) {
+    if (selected) persistMcpWikiConfig({ root: '' });
+    if (!fs.existsSync(fallback)) fs.mkdirSync(fallback, { recursive: true });
+    return { root: fallback, isCustom: false };
+  }
+
+  return { root: base, isCustom: Boolean(selected) };
+}
+
+function resolveWithinWikiRoot(relativePath = '.') {
+  const { root } = getConfiguredWikiRoot();
+  const target = path.resolve(root, relativePath || '.');
+  const rel = path.relative(root, target);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`Path escapes selected wiki folder: ${relativePath}`);
+  }
+  return { root, target, relPath: rel.replace(/\\/g, '/') || '.' };
+}
+
+function listWikiMarkdownFiles(dir, wikiRoot, out, maxEntries = 4000) {
+  if (out.length >= maxEntries) return;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (out.length >= maxEntries) break;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      listWikiMarkdownFiles(full, wikiRoot, out, maxEntries);
+      continue;
+    }
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.md')) continue;
+    out.push(path.relative(wikiRoot, full).replace(/\\/g, '/'));
+  }
+}
+
+function assertWikiMarkdownPath(relativePath) {
+  if (typeof relativePath !== 'string' || !relativePath.trim()) {
+    throw new Error('Wiki path is required.');
+  }
+  if (!relativePath.toLowerCase().endsWith('.md')) {
+    throw new Error('Wiki path must target a .md file.');
+  }
+}
+
+async function enforceWikiPolicy(action, payload, cfg) {
+  if (!shouldRequireWikiApproval(action, payload, cfg.autonomyMode)) return null;
+  const target = String(payload.path || payload.toPath || 'unknown');
+  const decision = await requestUserDecision({
+    title: 'Wiki Update Approval',
+    markdown: `### Wiki write request\n\nAction: ${action}\nTarget: ${target}\n\nAutonomy mode: ${cfg.autonomyMode}`,
+    options: [
+      { id: 'deny', label: 'Deny', description: 'Block this wiki change.', recommended: true },
+      { id: 'allow', label: 'Allow Once', description: 'Approve this single wiki change.' }
+    ],
+    defaultOptionId: 'deny'
+  });
+  return {
+    decisionToken: decision.decisionToken,
+    selectionId: decision.selectionId
+  };
 }
 
 function loadMcpFolderRootFromDisk() {
@@ -1029,6 +1140,242 @@ function initMcpGateway() {
     };
   });
 
+  gateway.register('wiki', 'root', async () => {
+    const cfg = loadMcpWikiConfigFromDisk();
+    const root = getConfiguredWikiRoot();
+    return {
+      ...root,
+      autonomyMode: cfg.autonomyMode,
+      knowledgePolicy: cfg.knowledgePolicy
+    };
+  });
+  gateway.register('wiki', 'set_root', async (payload) => {
+    if (typeof payload.path === 'string' && payload.path.trim()) {
+      persistMcpWikiConfig({ root: path.resolve(payload.path.trim()) });
+      const cfg = loadMcpWikiConfigFromDisk();
+      const root = getConfiguredWikiRoot();
+      return {
+        ...root,
+        autonomyMode: cfg.autonomyMode,
+        knowledgePolicy: cfg.knowledgePolicy,
+        canceled: false
+      };
+    }
+    const { root } = getConfiguredWikiRoot();
+    const res = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Wiki Folder Root',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: root
+    });
+    if (res.canceled || !res.filePaths?.[0]) {
+      const cfg = loadMcpWikiConfigFromDisk();
+      return {
+        ...getConfiguredWikiRoot(),
+        autonomyMode: cfg.autonomyMode,
+        knowledgePolicy: cfg.knowledgePolicy,
+        canceled: true
+      };
+    }
+    persistMcpWikiConfig({ root: path.resolve(res.filePaths[0]) });
+    const cfg = loadMcpWikiConfigFromDisk();
+    const nextRoot = getConfiguredWikiRoot();
+    return {
+      ...nextRoot,
+      autonomyMode: cfg.autonomyMode,
+      knowledgePolicy: cfg.knowledgePolicy,
+      canceled: false
+    };
+  });
+  gateway.register('wiki', 'clear_root', async () => {
+    persistMcpWikiConfig({ root: '' });
+    const cfg = loadMcpWikiConfigFromDisk();
+    const root = getConfiguredWikiRoot();
+    return {
+      ...root,
+      autonomyMode: cfg.autonomyMode,
+      knowledgePolicy: cfg.knowledgePolicy
+    };
+  });
+  gateway.register('wiki', 'set_autonomy', async (payload) => {
+    const mode = String(payload.mode || '').toLowerCase();
+    if (!isValidWikiAutonomyMode(mode)) {
+      throw new Error('Invalid wiki autonomy mode. Use auto, review, or hybrid.');
+    }
+    persistMcpWikiConfig({ autonomyMode: mode });
+    const cfg = loadMcpWikiConfigFromDisk();
+    return {
+      ...getConfiguredWikiRoot(),
+      autonomyMode: cfg.autonomyMode,
+      knowledgePolicy: cfg.knowledgePolicy
+    };
+  });
+  gateway.register('wiki', 'set_policy', async (payload) => {
+    const level = String(payload.level || '').toLowerCase();
+    if (!isValidWikiKnowledgePolicy(level)) {
+      throw new Error('Invalid wiki knowledge policy. Use strict, balanced, or aggressive.');
+    }
+    persistMcpWikiConfig({ knowledgePolicy: level });
+    const cfg = loadMcpWikiConfigFromDisk();
+    return {
+      ...getConfiguredWikiRoot(),
+      autonomyMode: cfg.autonomyMode,
+      knowledgePolicy: cfg.knowledgePolicy
+    };
+  });
+  gateway.register('wiki', 'list', async (payload) => {
+    assertRateLimit('mcp-wiki-list', 240, 60_000);
+    const relativePath = payload.path ?? payload.relativePath ?? '.';
+    const { root, target, relPath } = resolveWithinWikiRoot(relativePath);
+    if (!fs.existsSync(target)) {
+      if (relPath === '.') return { root, path: '.', files: [] };
+      throw new Error('Wiki target does not exist.');
+    }
+    const stat = fs.statSync(target);
+    if (!stat.isDirectory()) throw new Error('Target is not a directory.');
+    const files = [];
+    listWikiMarkdownFiles(target, root, files, 4000);
+    files.sort((a, b) => a.localeCompare(b));
+    return { root, path: relPath, files };
+  });
+  gateway.register('wiki', 'read', async (payload) => {
+    assertRateLimit('mcp-wiki-read', 240, 60_000);
+    const relativePath = String(payload.path ?? payload.relativePath ?? '');
+    assertWikiMarkdownPath(relativePath);
+    const { root, target } = resolveWithinWikiRoot(relativePath);
+    if (!fs.existsSync(target)) return { root, path: relativePath, content: '', exists: false };
+    const stat = fs.statSync(target);
+    if (!stat.isFile()) throw new Error('Target is not a file.');
+    if (stat.size > 4 * 1024 * 1024) throw new Error('Wiki file exceeds 4 MB text limit.');
+    return {
+      root,
+      path: path.relative(root, target).replace(/\\/g, '/'),
+      bytes: stat.size,
+      exists: true,
+      content: fs.readFileSync(target, 'utf-8')
+    };
+  });
+  gateway.register('wiki', 'upsert_note', async (payload) => {
+    assertRateLimit('mcp-wiki-upsert', 180, 60_000);
+    const relativePath = String(payload.path ?? payload.relativePath ?? '');
+    assertWikiMarkdownPath(relativePath);
+    const content = typeof payload.content === 'string' ? payload.content : '';
+    if (!content.trim()) throw new Error('Wiki note content cannot be empty.');
+    if (content.length > 2_000_000) throw new Error('Wiki note exceeds 2 MB limit.');
+    const cfg = loadMcpWikiConfigFromDisk();
+    const policyEval = evaluateWikiKnowledgePolicy(payload, cfg.knowledgePolicy);
+    if (!policyEval.allowed) {
+      return { ok: false, denied: true, reason: policyEval.reason || 'Denied by knowledge policy.' };
+    }
+    const policy = await enforceWikiPolicy('upsert_note', payload, cfg);
+    if (policy && policy.selectionId !== 'allow') {
+      return { ok: false, denied: true, policy, message: 'Wiki upsert denied by policy.' };
+    }
+    const { root, target } = resolveWithinWikiRoot(relativePath);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content, 'utf-8');
+    const stat = fs.statSync(target);
+    return {
+      ok: true,
+      root,
+      path: path.relative(root, target).replace(/\\/g, '/'),
+      bytes: stat.size,
+      policy
+    };
+  });
+  gateway.register('wiki', 'append_entry', async (payload) => {
+    assertRateLimit('mcp-wiki-append', 180, 60_000);
+    const now = new Date();
+    const relativePath = String(payload.path || `journal/${now.toISOString().slice(0, 7)}.md`);
+    assertWikiMarkdownPath(relativePath);
+    const entry = typeof payload.entry === 'string' ? payload.entry.trim() : '';
+    if (!entry) throw new Error('Wiki journal entry cannot be empty.');
+    const cfg = loadMcpWikiConfigFromDisk();
+    const policyEval = evaluateWikiKnowledgePolicy(payload, cfg.knowledgePolicy);
+    if (!policyEval.allowed) {
+      return { ok: false, denied: true, reason: policyEval.reason || 'Denied by knowledge policy.' };
+    }
+    const policy = await enforceWikiPolicy('append_entry', payload, cfg);
+    if (policy && policy.selectionId !== 'allow') {
+      return { ok: false, denied: true, policy, message: 'Wiki append denied by policy.' };
+    }
+    const { root, target } = resolveWithinWikiRoot(relativePath);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const heading = typeof payload.heading === 'string' && payload.heading.trim()
+      ? payload.heading.trim()
+      : now.toISOString();
+    const block = `\n## ${heading}\n\n${entry}\n`;
+    fs.appendFileSync(target, block, 'utf-8');
+    const stat = fs.statSync(target);
+    return {
+      ok: true,
+      root,
+      path: path.relative(root, target).replace(/\\/g, '/'),
+      bytes: stat.size,
+      policy
+    };
+  });
+  gateway.register('wiki', 'search', async (payload) => {
+    assertRateLimit('mcp-wiki-search', 120, 60_000);
+    const query = String(payload.query || '').trim().toLowerCase();
+    if (!query) return { results: [] };
+    const maxResults = Math.max(1, Math.min(50, Number(payload.maxResults) || 12));
+    const { root } = getConfiguredWikiRoot();
+    if (!fs.existsSync(root)) return { results: [] };
+    const files = [];
+    listWikiMarkdownFiles(root, root, files, 4000);
+    const results = [];
+    for (const rel of files) {
+      if (results.length >= maxResults) break;
+      const full = path.join(root, rel);
+      const content = fs.readFileSync(full, 'utf-8');
+      const idx = content.toLowerCase().indexOf(query);
+      if (idx < 0) continue;
+      const start = Math.max(0, idx - 120);
+      const end = Math.min(content.length, idx + query.length + 120);
+      const snippet = content.slice(start, end).replace(/\s+/g, ' ').trim();
+      results.push({ path: rel, snippet });
+    }
+    return { results };
+  });
+  gateway.register('wiki', 'delete', async (payload) => {
+    assertRateLimit('mcp-wiki-delete', 120, 60_000);
+    const relativePath = String(payload.path ?? payload.relativePath ?? '');
+    if (!relativePath.trim()) throw new Error('Wiki delete path is required.');
+    const cfg = loadMcpWikiConfigFromDisk();
+    const policy = await enforceWikiPolicy('delete', payload, cfg);
+    if (policy && policy.selectionId !== 'allow') {
+      return { deleted: false, denied: true, policy };
+    }
+    const { target } = resolveWithinWikiRoot(relativePath);
+    if (!fs.existsSync(target)) return { deleted: false, missing: true, policy };
+    fs.rmSync(target, { recursive: true, force: true });
+    return { deleted: true, policy };
+  });
+  gateway.register('wiki', 'rename', async (payload) => {
+    assertRateLimit('mcp-wiki-rename', 120, 60_000);
+    const cfg = loadMcpWikiConfigFromDisk();
+    const policy = await enforceWikiPolicy('rename', payload, cfg);
+    if (policy && policy.selectionId !== 'allow') {
+      return { renamed: false, denied: true, policy };
+    }
+    const from = resolveWithinWikiRoot(String(payload.fromPath || ''));
+    const to = resolveWithinWikiRoot(String(payload.toPath || ''));
+    fs.mkdirSync(path.dirname(to.target), { recursive: true });
+    fs.renameSync(from.target, to.target);
+    return { renamed: true, from: from.relPath, to: to.relPath, policy };
+  });
+  gateway.register('wiki', 'reindex', async () => {
+    const { root } = getConfiguredWikiRoot();
+    const files = [];
+    if (fs.existsSync(root)) {
+      listWikiMarkdownFiles(root, root, files, 4000);
+    }
+    return {
+      indexedAt: new Date().toISOString(),
+      fileCount: files.length
+    };
+  });
+
   gateway.register('browser', 'create_session', async (payload) => {
     const created = await createBrowserSession(payload || {});
     defaultBrowserSessionId = created.session.sessionId;
@@ -1081,6 +1428,8 @@ function initMcpGateway() {
     const terminalSessions = listMcpTerminalSessions();
     const python = getPythonTerminalConfig();
     const folder = getConfiguredMcpFolderRoot();
+    const wikiRoot = getConfiguredWikiRoot();
+    const wikiCfg = loadMcpWikiConfigFromDisk();
     const browser = getBrowserRuntimeStatus();
     const openscad = checkOpenScadHealth();
     return {
@@ -1092,6 +1441,10 @@ function initMcpGateway() {
       pythonNote: python.note,
       folderRoot: folder.root,
       folderCustom: folder.isCustom,
+      wikiRoot: wikiRoot.root,
+      wikiCustom: wikiRoot.isCustom,
+      wikiAutonomyMode: wikiCfg.autonomyMode,
+      wikiKnowledgePolicy: wikiCfg.knowledgePolicy,
       browserSessionCount: browser.activeSessionCount,
       openscadEnabled: OPENSCAD_FEATURE_ENABLED,
       openscadReady: openscad.ok,
@@ -1527,24 +1880,12 @@ ipcMain.handle('write-wiki', async (event, filePath, content) => {
 
 ipcMain.handle('list-wiki', async (event) => {
   try {
-    const wikiPath = path.join(app.getPath('userData'), 'wiki');
+    const { root: wikiPath } = getConfiguredWikiRoot();
     if (!fs.existsSync(wikiPath)) return [];
-    
-    const walk = (dir) => {
-      let results = [];
-      const list = fs.readdirSync(dir);
-      list.forEach((file) => {
-        const fullPath = path.join(dir, file);
-        const stat = fs.statSync(fullPath);
-        if (stat && stat.isDirectory()) {
-          results = results.concat(walk(fullPath));
-        } else if (file.endsWith('.md')) {
-          results.push(path.relative(wikiPath, fullPath).replace(/\\/g, '/'));
-        }
-      });
-      return results;
-    };
-    return walk(wikiPath);
+    const files = [];
+    listWikiMarkdownFiles(wikiPath, wikiPath, files, 4000);
+    files.sort((a, b) => a.localeCompare(b));
+    return files;
   } catch (err) {
     return [];
   }

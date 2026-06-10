@@ -277,6 +277,36 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   {
     type: 'function',
     function: {
+      name: 'wiki_maintain',
+      description:
+        'Maintain the user wiki through MCP-backed operations (list/read/upsert/append/search). Use this for persistent user/profile knowledge and user-requested knowledge capture in markdown files.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['root', 'list', 'read', 'upsert_note', 'append_entry', 'search', 'set_root', 'set_autonomy', 'set_policy', 'reindex'],
+            description: 'Wiki action to perform.'
+          },
+          path: { type: 'string', description: 'Relative wiki path for read/list/upsert/append.' },
+          content: { type: 'string', description: 'Markdown note content for upsert_note.' },
+          entry: { type: 'string', description: 'Entry text to append for append_entry.' },
+          heading: { type: 'string', description: 'Optional heading for append_entry.' },
+          explicit: { type: 'boolean', description: 'Set true only when the user explicitly asks to save or remember this content.' },
+          category: { type: 'string', enum: ['profile', 'knowledge', 'journal'], description: 'Knowledge category hint used by wiki policy and default pathing.' },
+          query: { type: 'string', description: 'Search query for action=search.' },
+          maxResults: { type: 'number', description: 'Maximum search results.' },
+          mode: { type: 'string', enum: ['auto', 'review', 'hybrid'], description: 'Autonomy mode for set_autonomy.' },
+          level: { type: 'string', enum: ['strict', 'balanced', 'aggressive'], description: 'Knowledge policy level for set_policy.' },
+          overwrite: { type: 'boolean', description: 'Whether upsert_note should overwrite aggressively.' }
+        },
+        required: ['action']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'web_search',
       description: 'Search the web for current information, news, or general knowledge using DuckDuckGo.',
       parameters: {
@@ -371,15 +401,94 @@ async function runReadWiki(args: ToolArgs): Promise<string> {
   return result || 'File not found.';
 }
 
+async function runWikiMaintain(args: ToolArgs): Promise<string> {
+  const now = new Date();
+  const category = String(args.category || '').toLowerCase();
+  const explicit = args.explicit === true;
+  const normalizePath = (fallback: string): string => {
+    const raw = String(args.path || '').trim();
+    if (raw) return raw;
+    if (category === 'profile') return 'profile/preferences.md';
+    if (category === 'journal') return `journal/${now.toISOString().slice(0, 7)}.md`;
+    if (category === 'knowledge') return 'knowledge/topics/general.md';
+    return fallback;
+  };
+
+  const action = String(args.action || '').toLowerCase();
+  switch (action) {
+    case 'root': {
+      const cfg = await ipcService.getMcpWikiConfig();
+      return JSON.stringify(cfg, null, 2);
+    }
+    case 'set_root': {
+      const next = await ipcService.setMcpWikiRoot(typeof args.path === 'string' ? args.path : undefined);
+      return next.canceled
+        ? `Wiki folder selection canceled. Active root: ${next.root}`
+        : `Wiki folder set to: ${next.root}`;
+    }
+    case 'set_autonomy': {
+      const mode = String(args.mode || 'hybrid').toLowerCase() as 'auto' | 'review' | 'hybrid';
+      const next = await ipcService.setMcpWikiAutonomyMode(mode);
+      return `Wiki autonomy mode set to ${next.autonomyMode}.`;
+    }
+    case 'set_policy': {
+      const level = String(args.level || 'strict').toLowerCase() as 'strict' | 'balanced' | 'aggressive';
+      const next = await ipcService.setMcpWikiKnowledgePolicy(level);
+      return `Wiki knowledge policy set to ${next.knowledgePolicy}.`;
+    }
+    case 'list': {
+      const res = await ipcService.listMcpWiki((args.path as string) || '.');
+      return JSON.stringify(res, null, 2);
+    }
+    case 'read': {
+      const pathValue = String(args.path || args.filepath || '');
+      if (!pathValue) return 'read requires a path.';
+      const res = await ipcService.readMcpWiki(pathValue);
+      return res.exists ? res.content : 'File not found.';
+    }
+    case 'upsert_note': {
+      const pathValue = normalizePath('knowledge/topics/general.md');
+      const content = String(args.content || '');
+      const res = await ipcService.upsertMcpWikiNote(pathValue, content, Boolean(args.overwrite), explicit, category || 'knowledge');
+      if (res.denied) return `Wiki update denied by policy (${res.reason || res.policy?.selectionId || 'deny'}).`;
+      return `Saved wiki note to ${res.path}.`;
+    }
+    case 'append_entry': {
+      const entry = String(args.entry || args.content || '');
+      if (!entry.trim()) return 'append_entry requires entry content.';
+      const pathValue = normalizePath(`journal/${now.toISOString().slice(0, 7)}.md`);
+      const heading = (args.heading as string | undefined) || now.toISOString();
+      const res = await ipcService.appendMcpWikiEntry(entry, pathValue, heading, explicit, category || (pathValue.startsWith('journal/') ? 'journal' : 'knowledge'));
+      if (res.denied) return `Wiki append denied by policy (${res.reason || res.policy?.selectionId || 'deny'}).`;
+      return `Appended wiki entry to ${res.path}.`;
+    }
+    case 'search': {
+      const q = String(args.query || '');
+      if (!q.trim()) return 'search requires a query.';
+      const res = await ipcService.searchMcpWiki(q, typeof args.maxResults === 'number' ? args.maxResults : undefined);
+      return JSON.stringify(res, null, 2);
+    }
+    case 'reindex': {
+      const res = await ipcService.reindexMcpWiki();
+      return `Reindexed wiki at ${res.indexedAt} (${res.fileCount} files).`;
+    }
+    default:
+      return 'Unknown wiki_maintain action. Use root, list, read, upsert_note, append_entry, search, set_root, set_autonomy, set_policy, or reindex.';
+  }
+}
+
 async function runWebSearch(args: ToolArgs): Promise<string> {
   return ipcService.webSearch((args.query as string) || (args.q as string));
 }
 
 async function runUpdateUserMemory(args: ToolArgs): Promise<string> {
-  const currentMem = (await ipcService.readWiki('memory/personal.md')) || '';
-  const newMem = currentMem + '\n- ' + args.content;
-  await ipcService.writeWiki('memory/personal.md', newMem);
-  return 'Memory updated successfully.';
+  const content = String(args.content || '').trim();
+  if (!content) return 'No memory content provided.';
+  const res = await ipcService.appendMcpWikiEntry(content, 'profile/preferences.md', new Date().toISOString(), false, 'profile');
+  if (res.denied) {
+    return `Memory update denied by wiki policy (${res.reason || res.policy?.selectionId || 'deny'}).`;
+  }
+  return 'Memory updated successfully in profile/preferences.md.';
 }
 
 async function runGetCurrentTime(args: ToolArgs): Promise<string> {
@@ -766,6 +875,9 @@ async function runSceneAnnotations(args: ToolArgs): Promise<string> {
 const TOOL_HANDLERS: Record<string, (args: ToolArgs) => Promise<string>> = {
   browser_action: runBrowserAction,
   read_wiki: runReadWiki,
+  wiki_maintain: runWikiMaintain,
+  wiki_mcp: runWikiMaintain,
+  mcp_wiki: runWikiMaintain,
   web_search: runWebSearch,
   search: runWebSearch,
   update_user_memory: runUpdateUserMemory,

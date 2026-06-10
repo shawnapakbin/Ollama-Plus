@@ -109,6 +109,13 @@ describe('buildSystemMessages', () => {
     expect(timeIdx).toBeGreaterThan(repairIdx);
     expect(memoryIdx).toBeGreaterThan(customIdx);
   });
+
+  it('includes wiki strict-mode explicit intent guidance in tool prompt', () => {
+    const out = buildSystemMessages(history, { useTools: true, memoryContext: '' });
+    expect(out[0].content).toContain('In strict mode, only write when user intent is explicit');
+    expect(out[0].content).toContain('profile/preferences.md');
+    expect(out[0].content).toContain('journal/YYYY-MM.md');
+  });
 });
 
 describe('tool continuation helpers', () => {

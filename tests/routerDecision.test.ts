@@ -12,6 +12,11 @@ describe('shouldForceTools', () => {
     expect(shouldForceTools('Rotate this cube in the scene')).toBe(true);
   });
 
+  it('returns true for explicit wiki-maintenance prompts', () => {
+    expect(shouldForceTools('Add this to the wiki with a timestamp')).toBe(true);
+    expect(shouldForceTools('Remember this preference in my profile notes')).toBe(true);
+  });
+
   it('returns false for non-scene prompts', () => {
     expect(shouldForceTools('Summarize this markdown file')).toBe(false);
     expect(shouldForceTools('')).toBe(false);
