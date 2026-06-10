@@ -45,7 +45,7 @@ function buildDateTimeContext(): string {
 function buildCustomSystemMessageContext(customSystemMessage: string): string {
   const trimmed = customSystemMessage.trim();
   if (!trimmed) return '';
-  return `\n\n[CUSTOM_SYSTEM_MESSAGE]\nTreat the following as highest-priority behavior guidance unless it conflicts with safety requirements.\n${trimmed}`;
+  return `[CUSTOM_SYSTEM_MESSAGE]\nTreat the following as highest-priority behavior guidance unless it conflicts with safety requirements.\n${trimmed}`;
 }
 
 export function hasToolResults(messages: ChatMessage[]): boolean {
@@ -83,7 +83,8 @@ export function buildSystemMessages(
     : '';
   const dateTimeContext = options.injectDateTime ? buildDateTimeContext() : '';
   const customContext = buildCustomSystemMessageContext(options.customSystemMessage || '');
-  const content = `${base}${continuation}${dateTimeContext}${customContext}${options.memoryContext}`;
+  const customPrefix = customContext ? `${customContext}\n\n` : '';
+  const content = `${customPrefix}${base}${continuation}${dateTimeContext}${options.memoryContext}`;
   return [{ role: 'system', content }, ...currentMessages];
 }
 

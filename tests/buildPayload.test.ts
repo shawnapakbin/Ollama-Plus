@@ -97,15 +97,16 @@ describe('buildSystemMessages', () => {
       injectDateTime: true
     });
     const content = out[0].content;
+    const customIdx = content.indexOf('[CUSTOM_SYSTEM_MESSAGE]');
     const baseIdx = content.indexOf(TOOL_SYSTEM_PROMPT);
     const repairIdx = content.indexOf('[REPAIR]');
     const timeIdx = content.indexOf('[CURRENT_DATE_TIME]');
-    const customIdx = content.indexOf('[CUSTOM_SYSTEM_MESSAGE]');
     const memoryIdx = content.indexOf('[PERSISTENT MEMORY]');
+    expect(customIdx).toBeGreaterThanOrEqual(0);
+    expect(customIdx).toBeLessThan(baseIdx);
     expect(baseIdx).toBeGreaterThanOrEqual(0);
     expect(repairIdx).toBeGreaterThan(baseIdx);
     expect(timeIdx).toBeGreaterThan(repairIdx);
-    expect(customIdx).toBeGreaterThan(timeIdx);
     expect(memoryIdx).toBeGreaterThan(customIdx);
   });
 });

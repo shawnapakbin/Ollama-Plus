@@ -207,33 +207,6 @@ Title:`;
         }
       });
 
-      if (!completed) {
-        if (incompleteStreamRetryCount < MAX_INCOMPLETE_STREAM_RETRIES) {
-          if (taskId) taskRuntime.addLog(taskId, 'Stream ended without final done token; retrying once.');
-          await processOllamaRequestInner(
-            currentMessages,
-            taskId,
-            repairAttempt,
-            repairContext,
-            turnNumber,
-            incompleteStreamRetryCount + 1
-          );
-          return;
-        }
-        const trimmed = currentContent.trim();
-        const interruptedContent = trimmed
-          ? `${trimmed}\n\n_Generation interrupted before completion._`
-          : '_Generation interrupted before completion._';
-        const interruptedMsgs: ChatMessage[] = [
-          ...currentMessages,
-          { role: 'assistant', model: selectedModel, content: interruptedContent, metrics: null }
-        ];
-        setMessages(interruptedMsgs);
-        await saveSession(interruptedMsgs);
-        if (taskId) taskRuntime.setState(taskId, 'failed', 'Generation interrupted before completion.');
-        return;
-      }
-
       let toolCalls = streamedToolCalls;
       if (!toolCalls || toolCalls.length === 0) {
         const fallback = extractToolCallsFromContent(currentContent);
@@ -259,6 +232,33 @@ Title:`;
         setMessages([...toolResults, { role: 'assistant', content: '', model: selectedModel }]);
         await saveSession(toolResults);
         await processOllamaRequestInner(toolResults, taskId, 0, '', turnNumber + 1, 0);
+        return;
+      }
+
+      if (!completed) {
+        if (incompleteStreamRetryCount < MAX_INCOMPLETE_STREAM_RETRIES) {
+          if (taskId) taskRuntime.addLog(taskId, 'Stream ended without final done token; retrying once.');
+          await processOllamaRequestInner(
+            currentMessages,
+            taskId,
+            repairAttempt,
+            repairContext,
+            turnNumber,
+            incompleteStreamRetryCount + 1
+          );
+          return;
+        }
+        const trimmed = currentContent.trim();
+        const interruptedContent = trimmed
+          ? `${trimmed}\n\n_Generation interrupted before completion._`
+          : '_Generation interrupted before completion._';
+        const interruptedMsgs: ChatMessage[] = [
+          ...currentMessages,
+          { role: 'assistant', model: selectedModel, content: interruptedContent, metrics: null }
+        ];
+        setMessages(interruptedMsgs);
+        await saveSession(interruptedMsgs);
+        if (taskId) taskRuntime.setState(taskId, 'failed', 'Generation interrupted before completion.');
         return;
       }
 
