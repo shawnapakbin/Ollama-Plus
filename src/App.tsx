@@ -104,6 +104,12 @@ const GLOBAL_SYSTEM_MESSAGE_KEY = 'globalSystemMessage';
 const CHAT_SYSTEM_MESSAGE_OVERRIDES_KEY = 'chatSystemMessageOverrides';
 const AUTO_INJECT_DATETIME_KEY = 'autoInjectDateTime';
 const RESEARCH_TURN_LIMIT_KEY = 'researchTurnLimit';
+const CONTEXT_WINDOW_MODE_KEY = 'contextWindowMode';
+const CONTEXT_WINDOW_CUSTOM_KEY = 'contextWindowCustom';
+const CONTEXT_WINDOW_MIN = 1024;
+const CONTEXT_WINDOW_MAX = 131072;
+const CONTEXT_WINDOW_STEP = 1024;
+const CONTEXT_WINDOW_PRESETS = [2048, 4096, 8192, 12288, 16384, 24576, 32768, 65536, 131072];
 
 function loadResearchTurnLimit(): number {
   const raw = localStorage.getItem(RESEARCH_TURN_LIMIT_KEY);
@@ -111,6 +117,23 @@ function loadResearchTurnLimit(): number {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) return 0;
   return Math.floor(parsed);
+}
+
+function loadContextWindowMode(): 'default' | 'custom' {
+  return localStorage.getItem(CONTEXT_WINDOW_MODE_KEY) === 'custom' ? 'custom' : 'default';
+}
+
+function normalizeContextWindowValue(value: number): number {
+  if (!Number.isFinite(value)) return 8192;
+  const next = Math.floor(value);
+  return Math.min(CONTEXT_WINDOW_MAX, Math.max(CONTEXT_WINDOW_MIN, next));
+}
+
+function loadCustomContextWindow(): number {
+  const raw = localStorage.getItem(CONTEXT_WINDOW_CUSTOM_KEY);
+  if (raw === null || raw === '') return 8192;
+  const parsed = Number(raw);
+  return normalizeContextWindowValue(parsed);
 }
 
 const DEFAULT_LAYOUTS: WorkspaceLayout[] = [
@@ -260,6 +283,9 @@ export default function App() {
   const [chatSystemMessageOverrides, setChatSystemMessageOverrides] = useState<Record<string, string>>(() => loadChatSystemMessageOverrides());
   const [autoInjectDateTime, setAutoInjectDateTime] = useState(localStorage.getItem(AUTO_INJECT_DATETIME_KEY) !== 'false');
   const [researchTurnLimit, setResearchTurnLimit] = useState<number>(() => loadResearchTurnLimit());
+  const [contextWindowMode, setContextWindowMode] = useState<'default' | 'custom'>(() => loadContextWindowMode());
+  const [customContextWindow, setCustomContextWindow] = useState<number>(() => loadCustomContextWindow());
+  const [customContextWindowDraft, setCustomContextWindowDraft] = useState<string>(() => String(loadCustomContextWindow()));
   const [systemMessageDraft, setSystemMessageDraft] = useState('');
   const [toast, setToast] = useState<AppToast | null>(null);
   const toastTimerRef = useRef<number | null>(null);
@@ -585,8 +611,24 @@ export default function App() {
     };
   }, [hostUrl, modelContextByKey, selectedHost, selectedModel]);
 
-  const selectedModelContextWindow =
+  const selectedModelDefaultContextWindow =
     modelContextByKey[modelKey(selectedHost || hostUrl, selectedModel)] ?? null;
+  const selectedModelContextWindow = contextWindowMode === 'custom'
+    ? customContextWindow
+    : selectedModelDefaultContextWindow;
+
+  const handleContextWindowModeChange = (enabledDefault: boolean) => {
+    const nextMode = enabledDefault ? 'default' : 'custom';
+    setContextWindowMode(nextMode);
+    localStorage.setItem(CONTEXT_WINDOW_MODE_KEY, nextMode);
+  };
+
+  const commitCustomContextWindowDraft = (value: string) => {
+    const nextValue = normalizeContextWindowValue(Number(value));
+    setCustomContextWindow(nextValue);
+    setCustomContextWindowDraft(String(nextValue));
+    localStorage.setItem(CONTEXT_WINDOW_CUSTOM_KEY, String(nextValue));
+  };
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -612,6 +654,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('workspaceLayouts', JSON.stringify(layouts));
   }, [layouts]);
+
+  useEffect(() => {
+    localStorage.setItem(CONTEXT_WINDOW_MODE_KEY, contextWindowMode);
+  }, [contextWindowMode]);
+
+  useEffect(() => {
+    localStorage.setItem(CONTEXT_WINDOW_CUSTOM_KEY, String(customContextWindow));
+  }, [customContextWindow]);
 
   useEffect(() => {
     localStorage.setItem('activeLayoutId', activeLayoutId);
@@ -1266,8 +1316,12 @@ export default function App() {
                 </div>
                 <p className="mcp-settings-footnote">Last checked: {mcpStatus.lastCheckedAt || 'not yet checked'}</p>
               </section>
+
+              <div className="settings-divider" aria-hidden="true" />
               
               <ThemeSelector value={theme} onChange={setTheme} />
+
+              <div className="settings-divider" aria-hidden="true" />
 
               <div className="setting-group">
                 <label>Ollama Host URL</label>
@@ -1279,6 +1333,76 @@ export default function App() {
                 />
               </div>
 
+              <div className="settings-divider" aria-hidden="true" />
+
+              <div className="setting-group context-window-setting-group">
+                <div className="context-window-setting-header">
+                  <label htmlFor="contextWindowModeToggle">Context window</label>
+                  <span className="context-window-value">
+                    {selectedModelContextWindow ? `${selectedModelContextWindow.toLocaleString()} tokens` : 'Model default'}
+                  </span>
+                </div>
+
+                <div className="setting-group setting-group-inline context-window-toggle-row">
+                  <input
+                    type="checkbox"
+                    id="contextWindowModeToggle"
+                    checked={contextWindowMode === 'default'}
+                    onChange={(e) => handleContextWindowModeChange(e.target.checked)}
+                  />
+                  <label htmlFor="contextWindowModeToggle" className="checkbox-label">
+                    Use model default context window
+                  </label>
+                </div>
+
+                <div className="context-window-slider-row">
+                  <input
+                    id="contextWindowCustomInput"
+                    type="number"
+                    min={CONTEXT_WINDOW_MIN}
+                    max={CONTEXT_WINDOW_MAX}
+                    step={CONTEXT_WINDOW_STEP}
+                    value={customContextWindowDraft}
+                    placeholder="8192"
+                    onChange={(e) => setCustomContextWindowDraft(e.target.value)}
+                    onBlur={(e) => commitCustomContextWindowDraft(e.target.value)}
+                    disabled={contextWindowMode === 'default'}
+                    aria-describedby="contextWindowHelp"
+                  />
+                  <p id="contextWindowHelp" className="setting-help-text">
+                    Choose a custom context size when the toggle is off. The slider below includes common model-sized presets.
+                  </p>
+                  <input
+                    className="context-window-slider"
+                    type="range"
+                    min={CONTEXT_WINDOW_MIN}
+                    max={CONTEXT_WINDOW_MAX}
+                    step={CONTEXT_WINDOW_STEP}
+                    value={customContextWindow}
+                    onChange={(e) => {
+                      const nextValue = normalizeContextWindowValue(Number(e.target.value));
+                      setCustomContextWindow(nextValue);
+                      setCustomContextWindowDraft(String(nextValue));
+                    }}
+                    disabled={contextWindowMode === 'default'}
+                    list="contextWindowPresets"
+                    aria-label="Context window size slider"
+                  />
+                  <datalist id="contextWindowPresets">
+                    {CONTEXT_WINDOW_PRESETS.map((value) => (
+                      <option key={value} value={value} label={value.toLocaleString()} />
+                    ))}
+                  </datalist>
+                  <div className="context-window-presets" aria-hidden="true">
+                    {CONTEXT_WINDOW_PRESETS.map((value) => (
+                      <span key={value}>{value >= 1000 ? `${Math.round(value / 1000)}k` : value}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-divider" aria-hidden="true" />
+
               <div className="setting-group setting-group-inline">
                 <input 
                   type="checkbox" 
@@ -1289,6 +1413,8 @@ export default function App() {
                 <label htmlFor="keepAliveToggle" className="checkbox-label">Keep Model Loaded in Memory (Faster responses)</label>
               </div>
 
+              <div className="settings-divider" aria-hidden="true" />
+
               <div className="setting-group setting-group-inline">
                 <input
                   type="checkbox"
@@ -1298,6 +1424,8 @@ export default function App() {
                 />
                 <label htmlFor="autoCollapseSidebarToggle" className="checkbox-label">Auto-collapse sidebar when switching panels</label>
               </div>
+
+              <div className="settings-divider" aria-hidden="true" />
 
               <div className="setting-group">
                 <label htmlFor="researchTurnLimitInput">Research turn limit</label>
@@ -1314,6 +1442,8 @@ export default function App() {
                   0 = unlimited turns. When the limit is hit during research, the assistant stops and shows a toast.
                 </p>
               </div>
+
+              <div className="settings-divider" aria-hidden="true" />
 
               <div className="setting-group setting-group-spaced">
                 <button 

@@ -266,6 +266,28 @@ function resolveWithinWikiRoot(relativePath = '.') {
   return { root, target, relPath: rel.replace(/\\/g, '/') || '.' };
 }
 
+function buildSpellingMenuItems(params) {
+  if (!params?.isEditable || params?.spellcheckEnabled === false) return [];
+
+  const suggestions = Array.isArray(params.dictionarySuggestions)
+    ? params.dictionarySuggestions.filter((suggestion) => typeof suggestion === 'string' && suggestion.trim().length > 0)
+    : [];
+
+  if (!params.misspelledWord || suggestions.length === 0) return [];
+
+  return [
+    {
+      label: 'Spelling',
+      submenu: suggestions.map((suggestion) => ({
+        label: suggestion,
+        click: () => {
+          mainWindow?.webContents.replaceMisspelling(suggestion);
+        }
+      }))
+    }
+  ];
+}
+
 function listWikiMarkdownFiles(dir, wikiRoot, out, maxEntries = 4000) {
   if (out.length >= maxEntries) return;
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -617,6 +639,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      spellcheck: true,
       sandbox: false,
     },
     titleBarStyle: 'hidden',
@@ -686,6 +709,11 @@ function createWindow() {
         { label: 'Paste', role: 'paste', enabled: Boolean(params.editFlags?.canPaste) },
         { label: 'Select All', role: 'selectAll' }
       );
+
+      const spellingItems = buildSpellingMenuItems(params);
+      if (spellingItems.length > 0) {
+        template.push({ type: 'separator' }, ...spellingItems);
+      }
     } else if (hasSelection) {
       template.push({ label: 'Copy', role: 'copy' });
       template.push({ type: 'separator' });

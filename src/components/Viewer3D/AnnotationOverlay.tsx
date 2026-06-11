@@ -193,6 +193,7 @@ export default function AnnotationOverlay({ selectedId, onSelect }: AnnotationOv
                       className="annotation-item__edit"
                       autoFocus
                       value={draft}
+                      spellCheck={true}
                       onChange={(e) => setDraft(e.target.value)}
                       onClick={(e) => e.stopPropagation()}
                       placeholder="Describe what should happen here..."

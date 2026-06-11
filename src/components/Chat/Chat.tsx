@@ -312,6 +312,7 @@ export default function Chat({
           )}
           <textarea 
             value={input}
+            spellCheck={true}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {

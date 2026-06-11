@@ -189,6 +189,7 @@ export default function Wiki() {
                   aria-label="Edit wiki markdown"
                   className="wiki-textarea" 
                   value={content} 
+                  spellCheck={true}
                   onChange={(e) => setContent(e.target.value)}
                 />
               ) : (
