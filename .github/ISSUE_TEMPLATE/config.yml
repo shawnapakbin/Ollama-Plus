@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability report
+    url: https://github.com/spakb/Ollama-Plus/security/advisories/new
+    about: Open a private security advisory draft instead of a public issue.
+  - name: Documentation and setup guide
+    url: https://github.com/spakb/Ollama-Plus/blob/main/README.md
+    about: Check setup, debugging, and architecture guidance before filing.

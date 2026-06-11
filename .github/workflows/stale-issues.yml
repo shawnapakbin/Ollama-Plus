@@ -1,0 +1,27 @@
+name: Stale issues
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  mark-stale:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark and close stale issues
+        uses: actions/stale@v9
+        with:
+          stale-issue-label: blocked
+          days-before-issue-stale: 30
+          days-before-issue-close: 7
+          stale-issue-message: >-
+            This issue has had no activity for 30 days and is now marked stale.
+            Please comment with updated reproduction details if this is still relevant.
+          close-issue-message: >-
+            Closing as stale due to inactivity. If the issue persists, please open a new issue with fresh logs and reproduction steps.
+          exempt-issue-labels: p0-critical,p1-high,security,in-review,ready-to-implement
+          remove-stale-when-updated: true

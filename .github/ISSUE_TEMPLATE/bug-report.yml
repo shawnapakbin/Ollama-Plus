@@ -1,0 +1,108 @@
+name: Bug report
+description: Report a defect or unexpected behavior in Ollama +
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-info
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. Please provide enough detail for maintainers to reproduce the issue.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Bug summary
+      description: What happened?
+      placeholder: A concise description of the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include exact steps in order.
+      placeholder: |
+        1. Launch the app
+        2. Open Chat panel
+        3. Submit prompt ...
+    validations:
+      required: true
+  - type: dropdown
+    id: subsystem
+    attributes:
+      label: Affected subsystem
+      options:
+        - Chat
+        - Task Board
+        - 3D Viewer
+        - Wiki
+        - MCP servers
+        - Policy and decision flow
+        - Build and packaging
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: mcp_server
+    attributes:
+      label: MCP server involved (if any)
+      options:
+        - None
+        - terminal-server
+        - python-sandbox-server
+        - folder-server
+        - datetime-server
+        - calculator-server
+        - OpenSCAD integration
+  - type: input
+    id: app_version
+    attributes:
+      label: App version or commit
+      description: Version number, tag, or commit SHA.
+      placeholder: main@abcdef1
+    validations:
+      required: true
+  - type: input
+    id: ollama_version
+    attributes:
+      label: Ollama version
+      placeholder: 0.x.x or N/A
+    validations:
+      required: true
+  - type: input
+    id: node_version
+    attributes:
+      label: Node.js version
+      placeholder: 18.x or 20.x
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and errors
+      description: Paste relevant output from app console, Electron logs, or terminal.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I checked for duplicate issues.
+          required: true
+        - label: I can reproduce this on the latest main branch build.
+          required: false

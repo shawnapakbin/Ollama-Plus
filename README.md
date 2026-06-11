@@ -4,6 +4,23 @@ Ollama + is a native desktop workspace for local LLM workflows with agent toolin
 
 Built with Electron, React, Vite, and TypeScript.
 
+## Community and Support
+
+- Report bugs with the GitHub Bug report issue form.
+- Request features with the GitHub Feature request issue form.
+- Read contribution workflow in `CONTRIBUTING.md`.
+- Report vulnerabilities privately using `SECURITY.md`.
+- Pull requests use `.github/PULL_REQUEST_TEMPLATE.md` for consistency.
+- Inactive issues are automatically marked stale and later closed unless updated.
+
+Maintainers can sync repository labels from `.github/labels.yml` using GitHub CLI and `yq`:
+
+```bash
+yq -r '.[] | [.name, .color, .description] | @tsv' .github/labels.yml | while IFS=$'\t' read -r name color description; do
+	gh label create "$name" --color "$color" --description "$description" --force
+done
+```
+
 ## What It Does
 
 - Runs local model chat through Ollama.

@@ -1,0 +1,95 @@
+- name: bug
+  color: d73a4a
+  description: Something is not working
+- name: feature
+  color: a2eeef
+  description: New capability or enhancement request
+- name: docs
+  color: 0075ca
+  description: Documentation changes
+- name: test-coverage
+  color: 5319e7
+  description: Test additions or gaps
+- name: security
+  color: b60205
+  description: Security-related issue
+
+- name: p0-critical
+  color: b60205
+  description: Critical impact, immediate attention
+- name: p1-high
+  color: d93f0b
+  description: High priority
+- name: p2-medium
+  color: fbca04
+  description: Medium priority
+- name: p3-low
+  color: 0e8a16
+  description: Low priority
+- name: needs-investigation
+  color: cfd3d7
+  description: Needs initial diagnosis
+
+- name: needs-info
+  color: cfd3d7
+  description: Waiting for reporter details
+- name: blocked
+  color: 000000
+  description: Blocked by dependency or external condition
+- name: ready-to-implement
+  color: 1d76db
+  description: Clear scope and ready for implementation
+- name: in-review
+  color: 0052cc
+  description: Under active review
+
+- name: subsystem:chat
+  color: 0366d6
+  description: Chat pipeline and UI
+- name: subsystem:task-board
+  color: 0366d6
+  description: Task board and task runtime
+- name: subsystem:3d-viewer
+  color: 0366d6
+  description: 3D viewer and scene tooling
+- name: subsystem:wiki
+  color: 0366d6
+  description: Wiki panel and policy
+- name: subsystem:mcp
+  color: 0366d6
+  description: MCP servers and gateway
+- name: subsystem:policy
+  color: 0366d6
+  description: Permission and decision flow
+- name: subsystem:build
+  color: 0366d6
+  description: Build, packaging, and release pipeline
+
+- name: platform:windows
+  color: 006b75
+  description: Windows-specific
+- name: platform:linux
+  color: 006b75
+  description: Linux-specific
+- name: platform:macos
+  color: 006b75
+  description: macOS-specific
+
+- name: mcp:terminal
+  color: bfdadc
+  description: terminal-server related
+- name: mcp:python
+  color: bfdadc
+  description: python-sandbox-server related
+- name: mcp:folder
+  color: bfdadc
+  description: folder-server related
+- name: mcp:datetime
+  color: bfdadc
+  description: datetime-server related
+- name: mcp:calculator
+  color: bfdadc
+  description: calculator-server related
+- name: mcp:openscad
+  color: bfdadc
+  description: OpenSCAD integration related

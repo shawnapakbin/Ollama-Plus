@@ -1,0 +1,45 @@
+name: Feature request
+description: Propose an enhancement for Ollama +
+title: "[Feature]: "
+labels:
+  - feature
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What user need is not addressed today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe your preferred behavior or workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional alternatives or tradeoffs.
+  - type: dropdown
+    id: subsystem
+    attributes:
+      label: Area
+      options:
+        - Chat
+        - Task Board
+        - 3D Viewer
+        - Wiki
+        - MCP servers
+        - Build and packaging
+        - Documentation
+        - Other
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How should we know this is complete?
+      placeholder: |
+        - Given ..., when ..., then ...

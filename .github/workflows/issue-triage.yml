@@ -1,0 +1,93 @@
+name: Issue triage
+
+on:
+  issues:
+    types:
+      - opened
+      - edited
+
+permissions:
+  issues: write
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add subsystem label from form value
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || "";
+            const labelsToAdd = [];
+
+            const addIfMissing = (label) => {
+              const existing = (issue.labels || []).map(l => l.name);
+              if (!existing.includes(label) && !labelsToAdd.includes(label)) {
+                labelsToAdd.push(label);
+              }
+            };
+
+            const mappings = [
+              { match: /Affected subsystem\s*\n+\s*Chat/i, label: "subsystem:chat" },
+              { match: /Affected subsystem\s*\n+\s*Task Board/i, label: "subsystem:task-board" },
+              { match: /Affected subsystem\s*\n+\s*3D Viewer/i, label: "subsystem:3d-viewer" },
+              { match: /Affected subsystem\s*\n+\s*Wiki/i, label: "subsystem:wiki" },
+              { match: /Affected subsystem\s*\n+\s*MCP servers/i, label: "subsystem:mcp" },
+              { match: /Affected subsystem\s*\n+\s*Policy and decision flow/i, label: "subsystem:policy" },
+              { match: /Affected subsystem\s*\n+\s*Build and packaging/i, label: "subsystem:build" }
+            ];
+
+            for (const map of mappings) {
+              if (map.match.test(body)) {
+                addIfMissing(map.label);
+              }
+            }
+
+            if (/OS and version\s*\n+\s*Windows/i.test(body)) addIfMissing("platform:windows");
+            if (/OS and version\s*\n+\s*Linux/i.test(body)) addIfMissing("platform:linux");
+            if (/OS and version\s*\n+\s*macOS|OS and version\s*\n+\s*Mac/i.test(body)) addIfMissing("platform:macos");
+
+            if (/MCP server involved \(if any\)\s*\n+\s*terminal-server/i.test(body)) addIfMissing("mcp:terminal");
+            if (/MCP server involved \(if any\)\s*\n+\s*python-sandbox-server/i.test(body)) addIfMissing("mcp:python");
+            if (/MCP server involved \(if any\)\s*\n+\s*folder-server/i.test(body)) addIfMissing("mcp:folder");
+            if (/MCP server involved \(if any\)\s*\n+\s*datetime-server/i.test(body)) addIfMissing("mcp:datetime");
+            if (/MCP server involved \(if any\)\s*\n+\s*calculator-server/i.test(body)) addIfMissing("mcp:calculator");
+            if (/MCP server involved \(if any\)\s*\n+\s*OpenSCAD integration/i.test(body)) addIfMissing("mcp:openscad");
+
+            if (labelsToAdd.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: labelsToAdd,
+              });
+            }
+
+      - name: Request details if issue body is too short
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = (issue.body || "").trim();
+            const existing = (issue.labels || []).map(l => l.name);
+
+            // Ignore templates with enough detail and non-bug items.
+            const isLikelyBug = issue.title?.toLowerCase().includes("[bug]") || existing.includes("bug");
+            const hasEnoughDetail = body.length >= 280;
+
+            if (isLikelyBug && !hasEnoughDetail && !existing.includes("needs-info")) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ["needs-info"],
+              });
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: "Thanks for filing this. Please add exact reproduction steps, expected behavior, your environment, and any relevant logs so we can triage quickly.",
+              });
+            }
