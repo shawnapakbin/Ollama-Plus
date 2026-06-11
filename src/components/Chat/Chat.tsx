@@ -253,15 +253,6 @@ export default function Chat({
             🗑️ Clear Chat
           </button>
           
-          <div className="chat-status">
-            {isGenerating && (
-              <span className="status-text">
-                Generating response…
-                {steerQueue ? ' Steer queued.' : ''}
-              </span>
-            )}
-          </div>
-          
           <select 
             aria-label="Select chat mode"
             value={chatMode} 

@@ -135,18 +135,7 @@
   margin-bottom: 12px;
 }
 
-.chat-status {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  font-family: 'Fira Code', monospace;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 
-.status-text {
-  opacity: 0.7;
-}
 
 .processor-badge {
   padding: 2px 8px;
