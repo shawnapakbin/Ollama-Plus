@@ -6,6 +6,7 @@ import { extractToolCallsFromContent } from '../pipeline/extractToolCalls';
 import { formatMetrics } from '../pipeline/formatMetrics';
 import {
   buildRouterPayload,
+  shouldSkipRouterForModel,
   shouldEnableToolsFromRouterResponse,
   shouldForceTools
 } from '../pipeline/routerDecision';
@@ -32,6 +33,7 @@ type StreamRunner = (args: {
 interface UseChatPipelineOptions {
   hostUrl: string;
   selectedModel: string;
+  modelContextWindow?: number | null;
   keepAlive: boolean;
   chatMode: ChatMode;
   customSystemMessage: string;
@@ -70,7 +72,7 @@ export function useChatPipeline(opts: UseChatPipelineOptions) {
   const { run: runToolCall } = useToolRunner();
 
   const runAutoRename = useCallback(async (currentMessages: ChatMessage[]) => {
-    const { selectedModel, hostUrl, keepAlive, renameSession } = optsRef.current;
+    const { selectedModel, modelContextWindow, hostUrl, keepAlive, renameSession } = optsRef.current;
     try {
       const prompt = `You are a helpful assistant. Based on the following conversation, provide a VERY concise (3-5 words) title for this chat session. Do not use quotes or special characters.
 Conversation:
@@ -83,6 +85,9 @@ Title:`;
         messages: [{ role: 'user', content: prompt }],
         stream: false
       };
+      if (modelContextWindow && modelContextWindow > 0) {
+        payload.options = { num_ctx: modelContextWindow };
+      }
       if (keepAlive) payload.keep_alive = -1;
 
       const res = await ipcService.invokeOllama(hostUrl, '/api/chat', payload);
@@ -105,6 +110,7 @@ Title:`;
   ): Promise<void> {
     const {
       selectedModel,
+      modelContextWindow,
       hostUrl,
       keepAlive,
       chatMode,
@@ -149,9 +155,16 @@ Title:`;
       const payload: Record<string, unknown> = {
         model: selectedModel,
         messages: currentMessages,
-        stream: true
+        stream: true,
+        options: {
+          num_predict: 8192,
+          ...(modelContextWindow && modelContextWindow > 0 ? { num_ctx: modelContextWindow } : {})
+        }
       };
       if (keepAlive) payload.keep_alive = -1;
+
+      const skipRouterForModel = shouldSkipRouterForModel(selectedModel);
+      if (skipRouterForModel) payload.think = false;
 
       let useTools = false;
       if (chatMode === 'tools') {
@@ -160,6 +173,10 @@ Title:`;
         const userPrompt = currentMessages[currentMessages.length - 1].content;
         if (shouldForceTools(userPrompt)) {
           useTools = true;
+        } else if (skipRouterForModel) {
+          // Qwen-family models can spend a long reasoning pass on YES/NO routing.
+          // Skip router LLM calls and reserve tools for clear force-intent paths.
+          useTools = false;
         } else {
           setMessages(prev => {
             const updated = [...prev];
@@ -167,7 +184,7 @@ Title:`;
             return updated;
           });
           try {
-            const routerPayload = buildRouterPayload(selectedModel, userPrompt, keepAlive);
+            const routerPayload = buildRouterPayload(selectedModel, userPrompt, keepAlive, modelContextWindow || null);
             const routerRes = await ipcService.invokeOllama(hostUrl, '/api/chat', routerPayload);
             if (shouldEnableToolsFromRouterResponse(routerRes)) {
               useTools = true;

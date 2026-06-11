@@ -33,6 +33,7 @@ type Session = {
 
 type ModelTag = {
   name: string;
+  defaultContextWindow?: number | null;
 };
 
 type WorkspaceLayout = {
@@ -162,6 +163,50 @@ function shortHostLabel(url: string): string {
   }
 }
 
+function modelKey(host: string, model: string): string {
+  return `${host}|${model}`;
+}
+
+function toPositiveInt(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
+}
+
+function extractDefaultContextWindow(showResponse: unknown): number | null {
+  if (!showResponse || typeof showResponse !== 'object') return null;
+  const response = showResponse as {
+    model_info?: Record<string, unknown>;
+    parameters?: string;
+    options?: Record<string, unknown>;
+  };
+
+  const direct = toPositiveInt(response.model_info?.['llama.context_length']);
+  if (direct) return direct;
+
+  if (response.model_info && typeof response.model_info === 'object') {
+    for (const [key, value] of Object.entries(response.model_info)) {
+      if (key.endsWith('.context_length')) {
+        const parsed = toPositiveInt(value);
+        if (parsed) return parsed;
+      }
+    }
+  }
+
+  const optionCtx = toPositiveInt(response.options?.num_ctx);
+  if (optionCtx) return optionCtx;
+
+  if (typeof response.parameters === 'string') {
+    const match = response.parameters.match(/(?:^|\n)\s*num_ctx\s+(\d+)\b/i);
+    if (match) {
+      const parsed = toPositiveInt(match[1]);
+      if (parsed) return parsed;
+    }
+  }
+
+  return null;
+}
+
 function loadSavedSystemMessages(): SavedSystemMessage[] {
   const raw = localStorage.getItem(SAVED_SYSTEM_MESSAGES_KEY);
   if (!raw) return [];
@@ -198,6 +243,7 @@ function loadChatSystemMessageOverrides(): Record<string, string> {
 
 export default function App() {
   const [models, setModels] = useState<ModelTag[]>([]);
+  const [modelContextByKey, setModelContextByKey] = useState<Record<string, number>>({});
   const [selectedModel, setSelectedModel] = useState(localStorage.getItem('selectedModel') || '');
   const [selectedHost, setSelectedHost] = useState(localStorage.getItem('selectedHost') || localStorage.getItem('hostUrl') || 'http://127.0.0.1:11434');
   const [status, setStatus] = useState('Checking Ollama...');
@@ -451,11 +497,46 @@ export default function App() {
     setStatus('Loading models...');
     try {
       const res = await ipcService.invokeOllama(hostUrl, '/api/tags');
-      const m = res.models || [];
-      setModels(m);
+      const m = Array.isArray(res.models) ? res.models : [];
 
-      if (m.length > 0) {
-        const firstNamed = m.find((model: ModelTag) => model.name);
+      const showResults = await Promise.allSettled(
+        m
+          .filter((model: ModelTag) => Boolean(model?.name))
+          .map(async (model: ModelTag) => {
+            const showRes = await ipcService.invokeOllama(hostUrl, '/api/show', { model: model.name });
+            return {
+              name: model.name,
+              defaultContextWindow: extractDefaultContextWindow(showRes)
+            };
+          })
+      );
+
+      const defaultCtxByName = new Map<string, number>();
+      for (const result of showResults) {
+        if (result.status !== 'fulfilled') continue;
+        const ctx = result.value.defaultContextWindow;
+        if (ctx && ctx > 0) defaultCtxByName.set(result.value.name, ctx);
+      }
+
+      const enrichedModels = m.map((model: ModelTag) => ({
+        ...model,
+        defaultContextWindow: defaultCtxByName.get(model.name) ?? null
+      }));
+
+      setModels(enrichedModels);
+      setModelContextByKey((prev) => {
+        const next = { ...prev };
+        for (const model of enrichedModels) {
+          const ctx = model.defaultContextWindow;
+          if (ctx && ctx > 0) {
+            next[modelKey(hostUrl, model.name)] = ctx;
+          }
+        }
+        return next;
+      });
+
+      if (enrichedModels.length > 0) {
+        const firstNamed = enrichedModels.find((model: ModelTag) => model.name);
         if (!firstNamed) {
           setStatus('Ready (0 models)');
           return;
@@ -464,7 +545,7 @@ export default function App() {
         setSelectedHost((prev) => prev || hostUrl);
       }
 
-      setStatus(`Ready (${m.length} models)`);
+      setStatus(`Ready (${enrichedModels.length} models)`);
     } catch (err) {
       console.error(err);
       if (err instanceof Error && err.message.includes('Electron API')) {
@@ -474,6 +555,38 @@ export default function App() {
       }
     }
   }, [hostUrl]);
+
+  useEffect(() => {
+    const effectiveHost = selectedHost || hostUrl;
+    if (!selectedModel || !effectiveHost) return;
+    const key = modelKey(effectiveHost, selectedModel);
+    if (modelContextByKey[key]) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const showRes = await ipcService.invokeOllama(effectiveHost, '/api/show', { model: selectedModel });
+          const ctx = extractDefaultContextWindow(showRes);
+          if (cancelled || !ctx) return;
+          setModelContextByKey((prev) => ({ ...prev, [key]: ctx }));
+          setModels((prev) => prev.map((entry) => (
+            entry.name === selectedModel ? { ...entry, defaultContextWindow: ctx } : entry
+          )));
+        } catch {
+          // Ignore metadata lookup failures; chat will proceed without explicit num_ctx.
+        }
+      })();
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [hostUrl, modelContextByKey, selectedHost, selectedModel]);
+
+  const selectedModelContextWindow =
+    modelContextByKey[modelKey(selectedHost || hostUrl, selectedModel)] ?? null;
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -738,6 +851,7 @@ export default function App() {
         return (
           <Chat
             selectedModel={selectedModel}
+            selectedModelContextWindow={selectedModelContextWindow}
             hostUrl={effectiveHost}
             keepAlive={keepAlive}
             sessionId={currentSessionId}
@@ -757,6 +871,7 @@ export default function App() {
         return (
           <Viewer3D
             selectedModel={selectedModel}
+            selectedModelContextWindow={selectedModelContextWindow}
             hostUrl={effectiveHost}
             keepAlive={keepAlive}
             sessionId={currentSessionId}
@@ -838,6 +953,7 @@ export default function App() {
         return (
           <Chat
             selectedModel={selectedModel}
+            selectedModelContextWindow={selectedModelContextWindow}
             hostUrl={effectiveHost}
             keepAlive={keepAlive}
             sessionId={currentSessionId}
@@ -914,7 +1030,11 @@ export default function App() {
             <span className={`mcp-status-chip ${selectedModel ? 'ready' : 'unknown'}`}>
               {selectedModel ? (selectedHost === hostUrl ? 'Local' : 'Remote') : 'Unset'}
             </span>
-            <span>{selectedModel ? shortHostLabel(selectedHost || hostUrl) : 'Choose a model from the dropdown'}</span>
+            <span>
+              {selectedModel
+                ? `${shortHostLabel(selectedHost || hostUrl)}${selectedModelContextWindow ? ` • ctx ${selectedModelContextWindow.toLocaleString()}` : ''}`
+                : 'Choose a model from the dropdown'}
+            </span>
           </div>
         </section>
 

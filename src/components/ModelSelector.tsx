@@ -8,17 +8,18 @@ export type ModelEntry = {
   name: string;
   host: string;
   available: boolean;
+  defaultContextWindow?: number | null;
 };
 
 type LanResult = {
   host: string;
   address: string;
-  models: Array<{ name: string }>;
+  models: Array<{ name: string; defaultContextWindow?: number | null }>;
 };
 
 interface ModelSelectorProps {
   localHostUrl: string;
-  localModels: Array<{ name: string }>;
+  localModels: Array<{ name: string; defaultContextWindow?: number | null }>;
   selectedModel: string;
   selectedHost: string;
   status: string;
@@ -195,7 +196,7 @@ export default function ModelSelector({
       const key = modelKey(localHostUrl, m.name);
       if (seen.has(key)) continue;
       seen.add(key);
-      result.push({ name: m.name, host: localHostUrl, available: true });
+      result.push({ name: m.name, host: localHostUrl, available: true, defaultContextWindow: m.defaultContextWindow ?? null });
     }
     for (const lan of lanHosts) {
       for (const m of lan.models) {
@@ -217,7 +218,7 @@ export default function ModelSelector({
       const name = key.slice(sep + 1);
       if (!host || !name) continue;
       seen.add(key);
-      result.push({ name, host, available: false });
+      result.push({ name, host, available: false, defaultContextWindow: null });
     }
 
     return result;
@@ -319,7 +320,7 @@ export default function ModelSelector({
             <span>{m.name}</span>
           </span>
           <span className={`model-pick-host${m.host === localHostUrl ? ' is-local' : ''}`}>
-            {m.host === localHostUrl ? 'local' : shortHost(m.host)}
+            {m.host === localHostUrl ? 'local' : shortHost(m.host)}{m.defaultContextWindow ? ` • ctx ${m.defaultContextWindow.toLocaleString()}` : ''}
           </span>
         </button>
       </li>

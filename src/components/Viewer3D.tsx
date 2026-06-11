@@ -18,6 +18,7 @@ function loadChatWidth(): number {
 
 interface Viewer3DProps {
   selectedModel: string;
+  selectedModelContextWindow?: number | null;
   hostUrl: string;
   keepAlive: boolean;
   sessionId: string | null;
@@ -31,6 +32,7 @@ interface Viewer3DProps {
 
 export default function Viewer3D({
   selectedModel,
+  selectedModelContextWindow = null,
   hostUrl,
   keepAlive,
   sessionId,
@@ -126,6 +128,7 @@ export default function Viewer3D({
       <aside className="viewer3d-chat glass-panel">
         <Chat
           selectedModel={selectedModel}
+          selectedModelContextWindow={selectedModelContextWindow}
           hostUrl={hostUrl}
           keepAlive={keepAlive}
           sessionId={sessionId}

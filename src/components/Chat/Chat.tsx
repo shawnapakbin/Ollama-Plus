@@ -22,6 +22,7 @@ interface AttachedFile {
 
 interface ChatProps {
   selectedModel: string;
+  selectedModelContextWindow?: number | null;
   hostUrl: string;
   keepAlive: boolean;
   sessionId: string | null;
@@ -35,6 +36,7 @@ interface ChatProps {
 
 export default function Chat({
   selectedModel,
+  selectedModelContextWindow = null,
   hostUrl,
   keepAlive,
   sessionId,
@@ -72,6 +74,7 @@ export default function Chat({
   const { commitUserTurn, regenerate } = useChatPipeline({
     hostUrl,
     selectedModel,
+    modelContextWindow: selectedModelContextWindow,
     keepAlive,
     chatMode,
     customSystemMessage: effectiveSystemMessage,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildRouterPayload,
+  shouldSkipRouterForModel,
   shouldEnableToolsFromRouterResponse,
   shouldForceTools
 } from '../src/components/Chat/pipeline/routerDecision';
@@ -17,7 +18,12 @@ describe('shouldForceTools', () => {
     expect(shouldForceTools('Remember this preference in my profile notes')).toBe(true);
   });
 
-  it('returns false for non-scene prompts', () => {
+  it('returns true for current-events and live-info prompts', () => {
+    expect(shouldForceTools('can you give the current state of war in the Persian Gulf?')).toBe(true);
+    expect(shouldForceTools('what is the latest news on oil prices today')).toBe(true);
+  });
+
+  it('returns false for non-tool prompts', () => {
     expect(shouldForceTools('Summarize this markdown file')).toBe(false);
     expect(shouldForceTools('')).toBe(false);
   });
@@ -32,13 +38,23 @@ describe('buildRouterPayload', () => {
         { role: 'system', content: ROUTER_SYSTEM_PROMPT },
         { role: 'user', content: 'User request: "find the weather"\nDo you need tools for this?' }
       ],
-      stream: false
+      stream: false,
+      options: {
+        temperature: 0,
+        num_predict: 8
+      }
     });
   });
 
   it('includes keep_alive when keepAlive is enabled', () => {
     const payload = buildRouterPayload('llama3.2', 'find the weather', true);
     expect(payload.keep_alive).toBe(-1);
+  });
+
+  it('skips router calls for qwen-family models', () => {
+    expect(shouldSkipRouterForModel('qwen3:8b')).toBe(true);
+    expect(shouldSkipRouterForModel('QWEN3-VL:30B')).toBe(true);
+    expect(shouldSkipRouterForModel('llama3.2')).toBe(false);
   });
 });
 
