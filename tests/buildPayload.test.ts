@@ -116,6 +116,15 @@ describe('buildSystemMessages', () => {
     expect(out[0].content).toContain('profile/preferences.md');
     expect(out[0].content).toContain('journal/YYYY-MM.md');
   });
+
+  it('lists MCP server inventory and modern MCP tool names', () => {
+    const out = buildSystemMessages(history, { useTools: true, memoryContext: '' });
+    expect(out[0].content).toContain('Available MCP servers:');
+    expect(out[0].content).toContain('terminal_session');
+    expect(out[0].content).toContain('python_terminal');
+    expect(out[0].content).toContain('folder_mcp');
+    expect(out[0].content).toContain('openscad_generate');
+  });
 });
 
 describe('tool continuation helpers', () => {

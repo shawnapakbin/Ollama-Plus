@@ -499,6 +499,17 @@ async function runGetCurrentTime(args: ToolArgs): Promise<string> {
   return typeof res === 'string' ? res : JSON.stringify(res);
 }
 
+async function runLegacyShellCommand(args: ToolArgs): Promise<string> {
+  const command = String(args.command || '').trim();
+  if (!command) return 'run_shell_command requires a non-empty command.';
+  const res = await ipcService.runShellCommand(command);
+  if (!res?.ok) {
+    const denied = res?.denied ? ' (denied by policy)' : '';
+    return `Shell command failed${denied}: ${res?.message || 'Unknown error.'}`;
+  }
+  return `Shell command started in terminal ${res.terminalId}. ${res.message || ''}`.trim();
+}
+
 async function runTerminalSession(args: ToolArgs): Promise<string> {
   const action = String(args.action || '').toLowerCase();
   switch (action) {
@@ -873,6 +884,7 @@ async function runSceneAnnotations(args: ToolArgs): Promise<string> {
 }
 
 const TOOL_HANDLERS: Record<string, (args: ToolArgs) => Promise<string>> = {
+  run_shell_command: runLegacyShellCommand,
   browser_action: runBrowserAction,
   read_wiki: runReadWiki,
   wiki_maintain: runWikiMaintain,

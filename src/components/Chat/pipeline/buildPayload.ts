@@ -2,15 +2,32 @@ import type { ChatMessage } from '../types';
 
 export const TOOL_SYSTEM_PROMPT = `You have access to tools. To use them, you MUST output a JSON block like: {"tool": "tool_name", "parameters": {"arg": "val"}}. 
 Available tools:
-- run_shell_command: {command: string}
-- browser_action: {action: string, url?: string, selector?: string, text?: string, key?: string, wait_for?: string, script?: string}
+- browser_action: {action: string, sessionId?: string, pageId?: string, url?: string, selector?: string, text?: string, key?: string, wait_for?: string, script?: string, timeoutMs?: number, fullPage?: boolean, headers?: object, cookies?: object[]}
 - read_wiki: {filepath: string}
 - wiki_maintain: {action: "root"|"list"|"read"|"upsert_note"|"append_entry"|"search"|"set_root"|"set_autonomy"|"set_policy"|"reindex", path?: string, content?: string, entry?: string, heading?: string, query?: string, maxResults?: number, mode?: "auto"|"review"|"hybrid", level?: "strict"|"balanced"|"aggressive"}
 - web_search: {query: string}
 - update_user_memory: {content: string} (Store facts here)
 - get_current_time: {timezone?: string, locale?: string}
 - engineering_calculator: {expression: string, scope?: object}
-- scene_3d: {action: "list"|"add"|"transform"|"remove"|"clear", kind?: "box"|"sphere"|"cylinder"|"cone"|"plane"|"torus", id?: string, color?: string, size?: number, position?: {x,y,z}, rotation?: {x,y,z}, scale?: {x,y,z}} — drives the live 3D Workspace viewport. WHENEVER the user asks to add, generate, move, scale, rotate, color, list, or remove shapes in the 3D workspace, you MUST call this tool instead of writing three.js code or instructions. Do not paste three.js snippets.
+- scene_3d: {action: "list"|"add"|"transform"|"remove"|"clear"|"import_model"|"list_models", kind?: "box"|"sphere"|"cylinder"|"cone"|"plane"|"torus", id?: string, name?: string, color?: string, size?: number, position?: {x,y,z}, rotation?: {x,y,z}, scale?: {x,y,z}, sourcePath?: string, modelName?: string, scanPath?: string} — drives the live 3D Workspace viewport. WHENEVER the user asks to add, generate, move, scale, rotate, color, list, or remove shapes in the 3D workspace, you MUST call this tool instead of writing three.js code or instructions. Do not paste three.js snippets.
+- scene_annotations: {action: "list"|"remove"|"clear", id?: string}
+- terminal_session: {action: "create"|"list"|"read"|"write"|"execute"|"close", sessionId?: string, shell?: string, args?: string[], cwd?: string, command?: string, input?: string, maxChars?: number, clear?: boolean, timeoutMs?: number, settleMs?: number, approveRisky?: boolean}
+- python_terminal: {action: "health"|"create"|"list"|"read"|"write"|"execute"|"run"|"close", sessionId?: string, shell?: string, args?: string[], cwd?: string, command?: string, input?: string, maxChars?: number, clear?: boolean, timeoutMs?: number, settleMs?: number}
+- folder_mcp: {action: "root"|"select_root"|"clear_root"|"list"|"read"|"write"|"delete"|"rename"|"mkdir"|"list_models", path?: string, fromPath?: string, toPath?: string, content?: string}
+- openscad_generate: {action: "health"|"compile", source?: string, sourcePath?: string, parameters?: object, modelName?: string, createNew?: boolean, timeoutMs?: number}
+
+Available MCP servers:
+- terminal (terminal_session)
+- python (python_terminal)
+- folder (folder_mcp)
+- wiki (wiki_maintain)
+- browser (browser_action)
+- openscad (openscad_generate)
+
+Server visibility rules:
+- These MCP servers are integrated into the app and routed through the local MCP gateway.
+- Do not claim servers are unavailable unless a tool call or status check explicitly returns an error.
+- If asked to list available MCP servers, list the names above.
 
 Wiki rules:
 - For user-requested "save this", "add to wiki", "remember this", or persistent profile/preferences updates, prefer wiki_maintain over folder_mcp.
@@ -35,7 +52,7 @@ Example to add three spheres in a triangle:
 export const PLAIN_SYSTEM_PROMPT = 'You are a helpful AI assistant.';
 
 export const ROUTER_SYSTEM_PROMPT =
-  'You are a routing agent. Your job is to decide if the user needs external tools. Tools available: run_shell_command (PowerShell), browser_action (Playwright), read_wiki (Markdown), wiki_maintain (persistent wiki updates/search), web_search, get_current_time (clock), engineering_calculator (mathjs), scene_3d (manipulate the live 3D Workspace viewport: add/transform/remove primitives). Answer with exactly YES or NO.';
+  'You are a routing agent. Your job is to decide if the user needs external tools. Tools available: browser_action (Playwright session/page actions), read_wiki (Markdown), wiki_maintain (persistent wiki updates/search), web_search, update_user_memory, get_current_time (clock), engineering_calculator (mathjs), scene_3d (live 3D workspace object operations), scene_annotations, terminal_session, python_terminal, folder_mcp, openscad_generate. Answer with exactly YES or NO.';
 
 function buildDateTimeContext(): string {
   const now = new Date();
