@@ -9,6 +9,7 @@ import {
   getAnnotations,
   subscribeAnnotations,
   subscribeGrid,
+  setGrid,
   type Annotation
 } from '../../services/annotationStore';
 
@@ -23,6 +24,69 @@ function buildGeometry(obj: SceneObject): THREE.BufferGeometry {
     case 'box':
     default:         return new THREE.BoxGeometry(s, s, s);
   }
+}
+
+function makeAxisLabel(text: string, color: string): THREE.Sprite {
+  const W = 80; const H = 80;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, W, H);
+  ctx.beginPath();
+  ctx.arc(W / 2, H / 2, W / 2 - 4, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 48px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, W / 2, H / 2 + 3);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 4;
+  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(0.45, 0.45, 1);
+  sprite.renderOrder = 998;
+  return sprite;
+}
+
+function makeEdgeLabel(text: string): THREE.Sprite {
+  const ctx2 = document.createElement('canvas').getContext('2d')!;
+  ctx2.font = 'bold 22px system-ui, sans-serif';
+  const measured = ctx2.measureText(text).width;
+  const W = Math.ceil(measured) + 24;
+  const H = 36;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(15,23,42,0.72)';
+  const r = 6;
+  ctx.beginPath();
+  ctx.moveTo(r, 0); ctx.lineTo(W - r, 0);
+  ctx.quadraticCurveTo(W, 0, W, r);
+  ctx.lineTo(W, H - r);
+  ctx.quadraticCurveTo(W, H, W - r, H);
+  ctx.lineTo(r, H); ctx.quadraticCurveTo(0, H, 0, H - r);
+  ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(99,115,148,0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = '#cbd5e1';
+  ctx.font = 'bold 22px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, W / 2, H / 2 + 1);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 4;
+  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+  const sprite = new THREE.Sprite(mat);
+  const aspect = W / H;
+  sprite.scale.set(aspect * 0.55, 0.55, 1);
+  sprite.renderOrder = 996;
+  return sprite;
 }
 
 function makeLabelSprite(text: string, accent = '#fbbf24'): THREE.Sprite {
@@ -90,8 +154,15 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
     scene.add(ambient, dir);
 
     let grid = new THREE.GridHelper(20, 20, 0x334155, 0x1e293b);
-    const axes = new THREE.AxesHelper(2);
-    scene.add(grid, axes);
+    // AxesHelper draws RGB lines; sprites add readable letter labels at each tip
+    const axesHelper = new THREE.AxesHelper(2);
+    const axisLabelX = makeAxisLabel('X', '#ef4444');
+    axisLabelX.position.set(2.45, 0.05, 0);
+    const axisLabelY = makeAxisLabel('Y', '#22c55e');
+    axisLabelY.position.set(0, 2.45, 0);
+    const axisLabelZ = makeAxisLabel('Z', '#3b82f6');
+    axisLabelZ.position.set(0, 0.05, 2.45);
+    scene.add(grid, axesHelper, axisLabelX, axisLabelY, axisLabelZ);
 
     const meshGroup = new THREE.Group();
     const annotationGroup = new THREE.Group();
@@ -253,6 +324,39 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
       });
     };
 
+    // Normalize a freshly loaded model so its bounding sphere fits targetRadius.
+    // Must be called before the object is parented to a container so the BB
+    // is computed in local (identity) space.
+    const normalizeModel = (obj: THREE.Object3D, targetRadius = 1.0): void => {
+      const box = new THREE.Box3().setFromObject(obj);
+      if (box.isEmpty()) return;
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      const sphere = new THREE.Sphere();
+      box.getBoundingSphere(sphere);
+      if (sphere.radius < 1e-6) return;
+      const s = targetRadius / sphere.radius;
+      // Apply scale first so the position offset uses scaled coords
+      obj.scale.multiplyScalar(s);
+      obj.position.sub(center.multiplyScalar(s));
+    };
+
+    // Re-frame the camera so the entire meshGroup is comfortably visible.
+    // Also auto-resizes the grid to span the scene.
+    const fitCameraToMeshGroup = (): void => {
+      const box = new THREE.Box3().setFromObject(meshGroup);
+      if (box.isEmpty()) return;
+      const sphere = new THREE.Sphere();
+      box.getBoundingSphere(sphere);
+      if (sphere.radius < 0.01) return;
+      target.copy(sphere.center);
+      radius = Math.max(sphere.radius * 3, 1.5);
+      applyCamera();
+      // Expand the grid so it comfortably contains the scene
+      const desiredGrid = Math.ceil(sphere.radius * 6);
+      if (desiredGrid > 4) setGrid({ size: Math.max(desiredGrid, 10) });
+    };
+
     const parseModelObject = async (obj: SceneObject): Promise<THREE.Object3D> => {
       const payload = obj.payloadBase64 || '';
       const format = obj.modelFormat || 'obj';
@@ -319,12 +423,14 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
                   container.remove(child);
                   disposeNode(child);
                 }
+                normalizeModel(loaded);
                 loaded.traverse((child) => {
                   const ud = child.userData as Record<string, unknown>;
                   ud.objectId = obj.id;
                   ud.kind = obj.kind;
                 });
                 container.add(loaded);
+                fitCameraToMeshGroup();
               })
               .catch(() => {
                 // Keep placeholder on loader errors; tool layer returns failures to model.
@@ -439,6 +545,16 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
 
     let lastSelected: string | null = selectedIdRef.current;
 
+    let gridEdgeLabels: THREE.Sprite[] = [];
+    const disposeGridEdgeLabels = () => {
+      for (const s of gridEdgeLabels) {
+        scene.remove(s);
+        (s.material as THREE.SpriteMaterial).map?.dispose();
+        (s.material as THREE.SpriteMaterial).dispose();
+      }
+      gridEdgeLabels = [];
+    };
+
     const unsubscribeGrid = subscribeGrid((cfg) => {
       scene.remove(grid);
       grid.geometry.dispose();
@@ -446,6 +562,16 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
       const divisions = Math.max(2, Math.min(200, Math.round(cfg.size)));
       grid = new THREE.GridHelper(cfg.size, divisions, 0x334155, 0x1e293b);
       scene.add(grid);
+
+      disposeGridEdgeLabels();
+      const half = cfg.size / 2;
+      const labelText = `${cfg.size} ${cfg.unit}`;
+      const lx = makeEdgeLabel(labelText);
+      lx.position.set(half + 0.9, 0.12, 0);
+      const lz = makeEdgeLabel(labelText);
+      lz.position.set(0, 0.12, half + 0.9);
+      scene.add(lx, lz);
+      gridEdgeLabels = [lx, lz];
     });
 
     const resize = () => {
@@ -493,6 +619,7 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
       }
       grid.geometry.dispose();
       (grid.material as THREE.Material).dispose();
+      disposeGridEdgeLabels();
       renderer.dispose();
       if (renderer.domElement.parentNode === mount) {
         mount.removeChild(renderer.domElement);
