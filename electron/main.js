@@ -853,6 +853,53 @@ function buildOllamaUrl(hostUrl, endpoint) {
   return url;
 }
 
+function parseFetchCause(err) {
+  const cause = err && typeof err === 'object' ? err.cause : null;
+  if (!cause || typeof cause !== 'object') return { code: '', address: '', port: '' };
+  return {
+    code: typeof cause.code === 'string' ? cause.code : '',
+    address: typeof cause.address === 'string' ? cause.address : '',
+    port: typeof cause.port === 'number' ? String(cause.port) : ''
+  };
+}
+
+function formatOllamaFetchError(err, hostUrl) {
+  const safe = sanitizeError(err);
+  if (/^HTTP\s\d+/i.test(safe)) return safe;
+
+  const { code, address, port } = parseFetchCause(err);
+  const target = address ? `${address}${port ? `:${port}` : ''}` : '';
+
+  if (code === 'ECONNREFUSED') {
+    return `Cannot connect to Ollama at ${hostUrl}${target ? ` (${target})` : ''}. Start Ollama or update the host URL.`;
+  }
+  if (code === 'ETIMEDOUT') {
+    return `Connection to Ollama timed out at ${hostUrl}${target ? ` (${target})` : ''}. Verify Ollama is running and reachable.`;
+  }
+  if (code === 'ENOTFOUND') {
+    return `Cannot resolve Ollama host ${hostUrl}. Check the host URL.`;
+  }
+  if (safe.toLowerCase().includes('fetch failed')) {
+    return `Cannot reach Ollama at ${hostUrl}. Start Ollama and verify the host URL (for local Windows setups, try http://127.0.0.1:11434).`;
+  }
+  return safe;
+}
+
+async function fetchOllama(url, init) {
+  try {
+    return await fetch(url, init);
+  } catch (err) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname.toLowerCase() !== 'localhost') throw err;
+      parsed.hostname = '127.0.0.1';
+      return await fetch(parsed.toString(), init);
+    } catch {
+      throw err;
+    }
+  }
+}
+
 async function buildHttpError(response) {
   let body = '';
   try {
@@ -870,7 +917,7 @@ async function buildHttpError(response) {
 ipcMain.handle('ollama-request', async (event, hostUrl, endpoint, data) => {
   try {
     const url = buildOllamaUrl(hostUrl, endpoint);
-    const response = await fetch(url, {
+    const response = await fetchOllama(url, {
       method: data ? 'POST' : 'GET',
       headers: { 'Content-Type': 'application/json' },
       body: data ? JSON.stringify(data) : undefined
@@ -880,7 +927,7 @@ ipcMain.handle('ollama-request', async (event, hostUrl, endpoint, data) => {
     return await response.json();
   } catch (err) {
     console.error('Ollama Error:', sanitizeError(err));
-    throw new Error(sanitizeError(err));
+    throw new Error(formatOllamaFetchError(err, hostUrl));
   }
 });
 
@@ -890,7 +937,7 @@ ipcMain.on('ollama-stream', async (event, streamId, hostUrl, endpoint, data) => 
 
   try {
     const url = buildOllamaUrl(hostUrl, endpoint);
-    const response = await fetch(url, {
+    const response = await fetchOllama(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -913,7 +960,7 @@ ipcMain.on('ollama-stream', async (event, streamId, hostUrl, endpoint, data) => 
       console.log(`Stream ${streamId} aborted`);
       event.sender.send(`ollama-end-${streamId}`);
     } else {
-      event.sender.send(`ollama-error-${streamId}`, sanitizeError(err));
+      event.sender.send(`ollama-error-${streamId}`, formatOllamaFetchError(err, hostUrl));
     }
   } finally {
     delete activeStreams[streamId];
@@ -2283,12 +2330,12 @@ ipcMain.handle('unload-models', async (event, hostUrl) => {
       throw new Error('Invalid Ollama host URL.');
     }
     const url = hostUrl.replace(/\/$/, '');
-    const psRes = await fetch(`${url}/api/ps`);
+    const psRes = await fetchOllama(`${url}/api/ps`);
     const data = await psRes.json();
 
     if (data.models) {
       for (const m of data.models) {
-        await fetch(`${url}/api/chat`, {
+        await fetchOllama(`${url}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: m.name, keep_alive: 0 })
@@ -2297,7 +2344,7 @@ ipcMain.handle('unload-models', async (event, hostUrl) => {
     }
     return true;
   } catch (err) {
-    console.error('Unload Error:', sanitizeError(err));
+    console.error('Unload Error:', formatOllamaFetchError(err, hostUrl));
     return false;
   }
 });
