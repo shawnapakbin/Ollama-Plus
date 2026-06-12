@@ -248,7 +248,7 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
         target.addScaledVector(right, -dx * worldPerPixel);
         target.addScaledVector(up, dy * worldPerPixel);
       } else {
-        yaw -= dx * 0.005;
+        yaw += dx * 0.005;
         pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch + dy * 0.005));
       }
       applyCamera();
