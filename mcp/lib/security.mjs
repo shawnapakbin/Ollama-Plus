@@ -46,11 +46,16 @@ export function trimOutput(text, maxLen = DEFAULT_OUTPUT_LIMIT) {
 export function sanitizeEnv(baseEnv = process.env) {
   const allow = new Set([
     'PATH',
+    'Path',
     'PATHEXT',
     'HOME',
     'USERPROFILE',
     'SystemRoot',
+    'SYSTEMROOT',
+    'windir',
+    'WINDIR',
     'ComSpec',
+    'COMSPEC',
     'TMP',
     'TEMP',
     'TERM',

@@ -5,6 +5,8 @@ export const MAX_TOOL_REPAIR_ATTEMPTS = 1;
 const NARRATED_TOOL_INTENT = /\b(i(?:'| wi)?ll|let me|going to|continue by|next\s*,?\s*i(?:'| wi)?ll|i can|i should|i need to|i want to)\b/i;
 const TOOLISH_ACTION = /\b(add|create|place|move|translate|rotate|scale|resize|recolor|color|delete|remove|clear|list|check|inspect|search|open|click|type|run|execute|read|write|transform|recheck)\b/i;
 const COMPLETION_LANGUAGE = /\b(done|completed|finished|here(?:'| i)?s|there (?:are|is)|i (?:added|created|checked|found|ran|updated|removed|listed|completed)|the scene now|result|summary)\b/i;
+const BLENDER_SCRIPT_MARKERS = /(```(?:python|py)?[\s\S]*?\bimport\s+bpy\b[\s\S]*?```|\bimport\s+bpy\b|\bbpy\.ops\.)/i;
+const SCENE_INTENT_MARKERS = /\b(3d|3-d|scene|viewer|viewport|workspace|object|model|mesh|blender|glb|gltf|stl|obj|cube|sphere|cylinder|cone|torus|plane|on screen|onscreen)\b/i;
 
 function getLastToolName(messages: ChatMessage[]): string | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -46,4 +48,33 @@ export function shouldRepairToolTurn(args: {
   if (!args.useTools || args.repairAttempt >= MAX_TOOL_REPAIR_ATTEMPTS) return false;
   if (!args.currentMessages.some((message) => message.role === 'tool')) return false;
   return looksLikeToolIntentNarration(args.currentContent);
+}
+
+export function shouldRepairMissingToolCall(args: {
+  currentMessages: ChatMessage[];
+  currentContent: string;
+  useTools: boolean;
+  repairAttempt: number;
+}): boolean {
+  if (!args.useTools || args.repairAttempt >= MAX_TOOL_REPAIR_ATTEMPTS) return false;
+  const latestUser = [...args.currentMessages].reverse().find((message) => message.role === 'user');
+  const userPrompt = latestUser?.content || '';
+  if (!userPrompt || !SCENE_INTENT_MARKERS.test(userPrompt)) return false;
+  return BLENDER_SCRIPT_MARKERS.test(args.currentContent || '');
+}
+
+export function buildMissingToolCallRepairContext(currentMessages: ChatMessage[], currentContent: string): string | null {
+  const latestUser = [...currentMessages].reverse().find((message) => message.role === 'user');
+  const userPrompt = latestUser?.content || '';
+  if (!userPrompt || !SCENE_INTENT_MARKERS.test(userPrompt)) return null;
+
+  const preview = currentContent.trim().replace(/\s+/g, ' ').slice(0, 180);
+  const parts = [
+    'Do not output raw Blender Python script or code fences in your assistant response.',
+    'Use tool JSON only to fulfill 3D requests. Prefer blender_plate_scene.',
+    'For generating geometry from Python source, emit {"tool":"blender_plate_scene","parameters":{"action":"build","source":"...","format":"glb"}}.',
+    'For direct primitive edits, emit blender_plate_scene add/transform/remove JSON calls.'
+  ];
+  if (preview) parts.push(`Replace this code-style output with tool JSON: "${preview}"`);
+  return parts.join(' ');
 }

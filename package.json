@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "electron:dev": "concurrently -k \"cross-env BROWSER=none vite --port 5173 --strictPort\" \"wait-on tcp:5173 && electron .\"",
+    "electron:dev": "node scripts/electron-dev.mjs",
     "electron:debug": "concurrently -k \"cross-env BROWSER=none vite --port 5173 --strictPort\" \"wait-on tcp:5173 && electron . --remote-debugging-port=9222\"",
     "preflight:electron:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-electron-win-prereqs.ps1",
     "electron:build:checked": "npm run preflight:electron:win && npm run electron:build",

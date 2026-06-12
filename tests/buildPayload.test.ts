@@ -116,6 +116,16 @@ describe('buildSystemMessages', () => {
     expect(out[0].content).toContain('profile/preferences.md');
     expect(out[0].content).toContain('journal/YYYY-MM.md');
   });
+
+  it('strips assistant think blocks from outbound model history', () => {
+    const withThink = [
+      { role: 'user' as const, content: 'build a plan' },
+      { role: 'assistant' as const, content: '<think>hidden reasoning</think>Visible answer' }
+    ];
+    const out = buildSystemMessages(withThink, { useTools: false, memoryContext: '' });
+    expect(out[2].content).toBe('Visible answer');
+    expect(out[2].content).not.toContain('<think>');
+  });
 });
 
 describe('tool continuation helpers', () => {

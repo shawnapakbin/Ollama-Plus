@@ -12,6 +12,11 @@ import {
   subscribeGrid,
   updateAnnotation
 } from '../../services/annotationStore';
+import {
+  type SceneObject,
+  getSceneObjects,
+  subscribeScene
+} from '../../services/sceneStore';
 import './AnnotationOverlay.css';
 
 interface AnnotationOverlayProps {
@@ -37,17 +42,43 @@ function buildPromptText(list: Annotation[], unit: MeasurementUnit, gridSize: nu
     return `${a.index}. at ${formatPos(a.position)}${target}${note}`;
   });
   const footer =
-    `Use the scene_3d tool to act on these annotations: add, transform, recolor, or remove primitives so the result matches the user's intent at each marker. Confirm what you changed.`;
+    `Use blender_plate_scene as the primary tool to act on these annotations (add, transform, recolor, remove, or build models). Use scene_3d only for legacy fallback. Confirm what you changed.`;
   return `${header}\n\n${lines.join('\n')}\n\n${footer}`;
+}
+
+function engineLabel(kind: SceneObject['engineKind']): string {
+  switch (kind) {
+    case 'blender_plate':
+      return 'Blender';
+    case 'openscad':
+      return 'OpenSCAD';
+    case 'legacy_scene3d':
+    default:
+      return 'Legacy';
+  }
+}
+
+function engineClass(kind: SceneObject['engineKind']): string {
+  switch (kind) {
+    case 'blender_plate':
+      return 'blender';
+    case 'openscad':
+      return 'openscad';
+    case 'legacy_scene3d':
+    default:
+      return 'legacy';
+  }
 }
 
 export default function AnnotationOverlay({ selectedId, onSelect }: AnnotationOverlayProps) {
   const [list, setList] = useState<Annotation[]>([]);
+  const [sceneObjects, setSceneObjects] = useState<SceneObject[]>(() => getSceneObjects());
   const [grid, setGridState] = useState<GridConfig>(() => getGrid());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
 
   useEffect(() => subscribeAnnotations(setList), []);
+  useEffect(() => subscribeScene(setSceneObjects), []);
   useEffect(() => subscribeGrid(setGridState), []);
 
   const beginEdit = useCallback((ann: Annotation) => {
@@ -227,6 +258,28 @@ export default function AnnotationOverlay({ selectedId, onSelect }: AnnotationOv
             </div>
           );
         })}
+      </div>
+
+      <div className="annotation-overlay__scene">
+        <div className="annotation-overlay__scene-title">
+          Scene Objects
+          <span className="annotation-overlay__count">({sceneObjects.length})</span>
+        </div>
+        {sceneObjects.length === 0 ? (
+          <div className="annotation-overlay__empty">No objects in scene yet.</div>
+        ) : (
+          <div className="annotation-overlay__scene-list scrollable">
+            {sceneObjects.map((obj) => (
+              <div key={obj.id} className="annotation-overlay__scene-item">
+                <span className={`annotation-overlay__engine annotation-overlay__engine--${engineClass(obj.engineKind)}`}>
+                  {engineLabel(obj.engineKind)}
+                </span>
+                <span className="annotation-overlay__scene-name" title={obj.name}>{obj.name}</span>
+                <span className="annotation-overlay__scene-id" title={obj.id}>{obj.id}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -8,6 +8,7 @@
 export type PrimitiveKind = 'box' | 'sphere' | 'cylinder' | 'cone' | 'plane' | 'torus';
 export type ModelFormat = 'obj' | 'stl' | 'gltf' | 'glb';
 export type SceneKind = PrimitiveKind | 'model';
+export type SceneEngineKind = 'legacy_scene3d' | 'openscad' | 'blender_plate';
 
 export interface Vec3 { x: number; y: number; z: number }
 
@@ -15,6 +16,7 @@ export interface SceneObject {
   id: string;
   name: string;
   kind: SceneKind;
+  engineKind: SceneEngineKind;
   position: Vec3;
   rotation: Vec3;
   scale: Vec3;
@@ -24,6 +26,8 @@ export interface SceneObject {
   sourceKey?: string;
   modelFormat?: ModelFormat;
   payloadBase64?: string;
+  engineObjectId?: string;
+  engineRevision?: number;
 }
 
 type Listener = (objects: SceneObject[]) => void;
@@ -65,6 +69,9 @@ export function getSceneObjects(): SceneObject[] {
 export function addPrimitive(input: {
   kind: PrimitiveKind;
   name?: string;
+  engineKind?: SceneEngineKind;
+  engineObjectId?: string;
+  engineRevision?: number;
   position?: Partial<Vec3>;
   rotation?: Partial<Vec3>;
   scale?: Partial<Vec3>;
@@ -75,11 +82,14 @@ export function addPrimitive(input: {
     id: nextId(input.kind),
     name: (input.name || input.kind).toString(),
     kind: input.kind,
+    engineKind: input.engineKind || 'legacy_scene3d',
     position: clampVec(input.position, ZERO),
     rotation: clampVec(input.rotation, ZERO),
     scale: clampVec(input.scale, ONE),
     color: input.color || '#38bdf8',
-    size: typeof input.size === 'number' && input.size > 0 ? input.size : 1
+    size: typeof input.size === 'number' && input.size > 0 ? input.size : 1,
+    engineObjectId: input.engineObjectId,
+    engineRevision: typeof input.engineRevision === 'number' ? input.engineRevision : undefined
   };
   objects = [...objects, obj];
   emit();
@@ -89,6 +99,9 @@ export function addPrimitive(input: {
 export function addModel(input: {
   sourcePath: string;
   sourceKey?: string;
+  engineKind?: SceneEngineKind;
+  engineObjectId?: string;
+  engineRevision?: number;
   modelFormat: ModelFormat;
   payloadBase64: string;
   name?: string;
@@ -101,6 +114,7 @@ export function addModel(input: {
     id: nextId('model'),
     name: input.name || sourceName,
     kind: 'model',
+    engineKind: input.engineKind || 'legacy_scene3d',
     position: clampVec(input.position, ZERO),
     rotation: clampVec(input.rotation, ZERO),
     scale: clampVec(input.scale, ONE),
@@ -109,7 +123,9 @@ export function addModel(input: {
     sourcePath: input.sourcePath,
     sourceKey: input.sourceKey,
     modelFormat: input.modelFormat,
-    payloadBase64: input.payloadBase64
+    payloadBase64: input.payloadBase64,
+    engineObjectId: input.engineObjectId,
+    engineRevision: typeof input.engineRevision === 'number' ? input.engineRevision : undefined
   };
   objects = [...objects, obj];
   emit();
@@ -123,6 +139,8 @@ export function transformObject(id: string, patch: {
   color?: string;
   name?: string;
   size?: number;
+  engineObjectId?: string;
+  engineRevision?: number;
 }): SceneObject | null {
   const idx = objects.findIndex((o) => o.id === id);
   if (idx === -1) return null;
@@ -134,7 +152,9 @@ export function transformObject(id: string, patch: {
     scale: clampVec({ ...cur.scale, ...patch.scale }, cur.scale),
     color: patch.color || cur.color,
     name: patch.name || cur.name,
-    size: typeof patch.size === 'number' && patch.size > 0 ? patch.size : cur.size
+    size: typeof patch.size === 'number' && patch.size > 0 ? patch.size : cur.size,
+    engineObjectId: patch.engineObjectId || cur.engineObjectId,
+    engineRevision: typeof patch.engineRevision === 'number' ? patch.engineRevision : cur.engineRevision
   };
   objects = objects.slice();
   objects[idx] = merged;

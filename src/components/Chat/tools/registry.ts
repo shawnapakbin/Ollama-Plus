@@ -101,6 +101,86 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   {
     type: 'function',
     function: {
+      name: 'blender_plate_generate',
+      description:
+        'Run Blender Plate Python source through the guarded MCP Blender runtime, export to STL/OBJ/GLTF/GLB, then import into the 3D workspace. Supports health checks and compile from inline source or a .py file path under Folder MCP root.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['health', 'build'],
+            description: 'health checks Blender runtime availability; build generates and imports a model.'
+          },
+          source: { type: 'string', description: 'Inline Blender Python source text (use with action=build).' },
+          sourcePath: { type: 'string', description: 'Relative .py path under Folder MCP root (use with action=build).' },
+          format: {
+            type: 'string',
+            enum: ['stl', 'obj', 'gltf', 'glb'],
+            description: 'Output artifact format. Defaults to glb.'
+          },
+          modelName: { type: 'string', description: 'Optional display name for the imported model.' },
+          createNew: { type: 'boolean', description: 'When true, keep prior models from the same source instead of replacing them.' },
+          timeoutMs: { type: 'number', description: 'Optional build timeout in milliseconds.' },
+          fallbackToOpenScad: { type: 'boolean', description: 'When true (default), .scad sourcePath requests are routed to openscad_generate compile.' }
+        },
+        required: ['action']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'blender_plate_scene',
+      description:
+        'Primary Blender Plate scene tool for small-model reliability. Manage Blender-owned scene objects with a concise action set, and delegate model builds through Blender Plate runtime when needed.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['list', 'add', 'transform', 'remove', 'clear', 'import_model', 'build'],
+            description: 'Blender scene operation to perform.'
+          },
+          id: { type: 'string', description: 'Target object id for transform/remove.' },
+          kind: {
+            type: 'string',
+            enum: ['box', 'sphere', 'cylinder', 'cone', 'plane', 'torus'],
+            description: 'Primitive kind for action=add.'
+          },
+          name: { type: 'string', description: 'Optional friendly object name.' },
+          color: { type: 'string', description: 'CSS color.' },
+          size: { type: 'number', description: 'Base primitive size in scene units.' },
+          position: {
+            type: 'object',
+            properties: { x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' } },
+            description: 'World-space position.'
+          },
+          rotation: {
+            type: 'object',
+            properties: { x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' } },
+            description: 'Euler rotation in radians.'
+          },
+          scale: {
+            type: 'object',
+            properties: { x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' } },
+            description: 'Per-axis scale.'
+          },
+          sourcePath: { type: 'string', description: 'Relative model path under Folder MCP root for import/build.' },
+          source: { type: 'string', description: 'Inline Blender Python source for action=build.' },
+          format: { type: 'string', enum: ['stl', 'obj', 'gltf', 'glb'], description: 'Build output format for action=build.' },
+          modelName: { type: 'string', description: 'Optional imported model display name.' },
+          createNew: { type: 'boolean', description: 'For action=build, keep prior models when true.' },
+          timeoutMs: { type: 'number', description: 'Optional build timeout in milliseconds.' },
+          fallbackToOpenScad: { type: 'boolean', description: 'For action=build, fallback .scad to OpenSCAD compile when true (default).' }
+        },
+        required: ['action']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'scene_annotations',
       description:
         'Inspect or clean up the user-placed annotations on the 3D stage. Each annotation has a world position (in scene units shown with the user-selected measurement unit), an optional target object id, and a note describing the user\'s intent. Use action=list before planning scene_3d changes when annotations are present.',
@@ -760,6 +840,7 @@ async function runOpenScadGenerate(args: ToolArgs): Promise<string> {
   const model = addModel({
     sourcePath: modelSourcePath,
     sourceKey,
+    engineKind: 'openscad',
     modelFormat: 'stl',
     payloadBase64,
     name: (args.modelName as string) || String(artifact.name || 'OpenSCAD Model'),
@@ -771,6 +852,279 @@ async function runOpenScadGenerate(args: ToolArgs): Promise<string> {
   const durationMs = typeof result.durationMs === 'number' ? result.durationMs : undefined;
   const replacedMsg = createNew ? 'Created a new model entry.' : 'Replaced prior model(s) from the same source path.';
   return `Compiled OpenSCAD to STL and imported as id "${model.id}" (${model.name}). ${replacedMsg}${durationMs ? ` Compile time: ${durationMs} ms.` : ''}`;
+}
+
+function emitBlenderFallbackTelemetry(payload: {
+  reason: string;
+  sourceKind: 'scad_path' | 'scad_inline';
+  requestedAction: string;
+}) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('ollama-plus:blender-fallback', {
+    detail: {
+      ...payload,
+      at: new Date().toISOString()
+    }
+  }));
+}
+
+function looksLikeOpenScadSource(source: string): boolean {
+  const text = source.trim();
+  if (!text) return false;
+  const hasConstruct = /\b(cube|sphere|cylinder|polyhedron|difference|union|intersection|module|linear_extrude|rotate_extrude)\s*\(/i.test(text);
+  const hasStatement = /;/.test(text);
+  const looksLikePython = /^\s*(import\s+|from\s+\w+\s+import\s+|def\s+\w+\s*\()/m.test(text);
+  return hasConstruct && hasStatement && !looksLikePython;
+}
+
+async function tryOpenScadFallback(
+  args: ToolArgs,
+  reason: string,
+  source?: string,
+  sourcePath?: string
+): Promise<string | null> {
+  const fallbackToOpenScad = args.fallbackToOpenScad !== false;
+  if (!fallbackToOpenScad) return null;
+
+  const scadPath = sourcePath && /\.scad$/i.test(sourcePath) ? sourcePath : undefined;
+  const scadSource = source && looksLikeOpenScadSource(source) ? source : undefined;
+  if (!scadPath && !scadSource) return null;
+
+  emitBlenderFallbackTelemetry({
+    reason,
+    sourceKind: scadPath ? 'scad_path' : 'scad_inline',
+    requestedAction: String(args.action || 'build')
+  });
+
+  const fallbackOut = await runOpenScadGenerate({
+    ...args,
+    action: 'compile',
+    source: scadSource,
+    sourcePath: scadPath
+  });
+  return `Blender Plate fallback (${reason}) -> ${fallbackOut}`;
+}
+
+async function runBlenderPlateGenerate(args: ToolArgs): Promise<string> {
+  requestOpenViewer3D();
+  const action = String(args.action || '').toLowerCase();
+
+  if (action === 'health') {
+    const res = await ipcService.mcpGatewayCall({
+      server: 'blender_plate',
+      action: 'health',
+      payload: {}
+    });
+    if (!res.ok) return `Blender Plate health check failed: ${res.error || 'Unknown error.'}`;
+    return JSON.stringify(res.data, null, 2);
+  }
+
+  if (action !== 'build') {
+    return 'Unknown blender_plate_generate action. Use health or build.';
+  }
+
+  const sourcePath = typeof args.sourcePath === 'string' ? args.sourcePath : undefined;
+  const source = typeof args.source === 'string' ? args.source : undefined;
+  const fallbackToOpenScad = args.fallbackToOpenScad !== false;
+  if (sourcePath && /\.scad$/i.test(sourcePath) && fallbackToOpenScad) {
+    const out = await runOpenScadGenerate({
+      ...args,
+      action: 'compile',
+      source,
+      sourcePath
+    });
+    return `Blender Plate fallback -> ${out}`;
+  }
+
+  const health = await ipcService.mcpGatewayCall({
+    server: 'blender_plate',
+    action: 'health',
+    payload: {}
+  });
+  if (!health.ok) {
+    const fallback = await tryOpenScadFallback(args, 'health request failed', source, sourcePath);
+    if (fallback) return fallback;
+    return `Blender Plate health check failed: ${health.error || 'Unknown error.'}`;
+  }
+  const healthData = (health.data || {}) as Record<string, unknown>;
+  if (!healthData.ok) {
+    const fallback = await tryOpenScadFallback(args, 'runtime unavailable', source, sourcePath);
+    if (fallback) return fallback;
+    return `Blender Plate runtime unavailable: ${String(healthData.note || 'Blender Plate is not ready.')}`;
+  }
+
+  const format = typeof args.format === 'string' ? args.format.toLowerCase() : 'glb';
+  const timeoutMs = typeof args.timeoutMs === 'number' ? args.timeoutMs : undefined;
+
+  const build = await ipcService.mcpGatewayCall({
+    server: 'blender_plate',
+    action: 'build',
+    payload: {
+      source,
+      sourcePath,
+      format,
+      timeoutMs,
+      returnPayloadBase64: true
+    }
+  });
+
+  if (!build.ok) {
+    const fallback = await tryOpenScadFallback(args, 'build request failed', source, sourcePath);
+    if (fallback) return fallback;
+    return `Blender Plate build request failed: ${build.error || 'Unknown error.'}`;
+  }
+
+  const result = (build.data || {}) as Record<string, unknown>;
+  if (!result.ok) {
+    const fallback = await tryOpenScadFallback(args, String(result.errorCategory || 'build failed'), source, sourcePath);
+    if (fallback) return fallback;
+    const category = String(result.errorCategory || 'ERROR');
+    const error = String(result.error || 'Blender Plate build failed.');
+    const stderr = typeof result.stderr === 'string' && result.stderr.trim()
+      ? `\n\nBlender stderr:\n${result.stderr}`
+      : '';
+    return `Blender Plate ${category}: ${error}${stderr}`;
+  }
+
+  const payloadBase64 = String(result.payloadBase64 || '');
+  if (!payloadBase64) {
+    return 'Blender Plate build succeeded but no payload was returned.';
+  }
+
+  const resultFormat = String(result.format || format || 'glb').toLowerCase() as ModelFormat;
+  const modelSourcePath = String(result.modelSourcePath || sourcePath || `generated/blender_plate/${Date.now()}.${resultFormat}`);
+  const sourceInfo = (result.source && typeof result.source === 'object') ? (result.source as Record<string, unknown>) : {};
+  const sourceHash = String(sourceInfo.sourceHash || '').trim();
+  const sourceKey = sourceHash ? `blender_plate:${sourceHash}:${resultFormat}` : modelSourcePath;
+  const createNew = args.createNew === true;
+
+  if (!createNew) {
+    const existing = getSceneObjects().filter((obj) => {
+      if (obj.kind !== 'model') return false;
+      if (obj.sourceKey) return obj.sourceKey === sourceKey;
+      return obj.sourcePath === modelSourcePath;
+    });
+    for (const obj of existing) {
+      removeObject(obj.id);
+    }
+  }
+
+  const artifact = (result.artifact && typeof result.artifact === 'object') ? (result.artifact as Record<string, unknown>) : {};
+  const model = addModel({
+    sourcePath: modelSourcePath,
+    sourceKey,
+    engineKind: 'blender_plate',
+    modelFormat: resultFormat,
+    payloadBase64,
+    name: (args.modelName as string) || String(artifact.name || 'Blender Plate Model'),
+    position: args.position as Partial<{ x: number; y: number; z: number }> | undefined,
+    rotation: args.rotation as Partial<{ x: number; y: number; z: number }> | undefined,
+    scale: args.scale as Partial<{ x: number; y: number; z: number }> | undefined
+  });
+
+  const durationMs = typeof result.durationMs === 'number' ? result.durationMs : undefined;
+  const replacedMsg = createNew ? 'Created a new model entry.' : 'Replaced prior model(s) from the same source.';
+  return `Built Blender Plate model (${resultFormat.toUpperCase()}) and imported as id "${model.id}" (${model.name}). ${replacedMsg}${durationMs ? ` Build time: ${durationMs} ms.` : ''}`;
+}
+
+function isBlenderOwnedObject(obj: { engineKind: string }): boolean {
+  return obj.engineKind === 'blender_plate';
+}
+
+async function runBlenderPlateScene(args: ToolArgs): Promise<string> {
+  requestOpenViewer3D();
+  const action = String(args.action || '').toLowerCase();
+  switch (action) {
+    case 'list': {
+      const blenderObjects = getSceneObjects().filter((obj) => isBlenderOwnedObject(obj));
+      return JSON.stringify({
+        engine: 'blender_plate',
+        totalObjects: blenderObjects.length,
+        objects: blenderObjects
+      }, null, 2);
+    }
+    case 'add': {
+      const kind = String(args.kind || 'box').toLowerCase() as PrimitiveKind;
+      const allowed: PrimitiveKind[] = ['box', 'sphere', 'cylinder', 'cone', 'plane', 'torus'];
+      if (!allowed.includes(kind)) return `Unsupported kind: ${kind}. Use one of ${allowed.join(', ')}.`;
+      const obj = addPrimitive({
+        kind,
+        engineKind: 'blender_plate',
+        name: args.name as string | undefined,
+        color: args.color as string | undefined,
+        size: typeof args.size === 'number' ? args.size : undefined,
+        position: args.position as Partial<{ x: number; y: number; z: number }> | undefined,
+        rotation: args.rotation as Partial<{ x: number; y: number; z: number }> | undefined,
+        scale: args.scale as Partial<{ x: number; y: number; z: number }> | undefined
+      });
+      return `Blender Plate scene: added ${obj.kind} as id "${obj.id}".`;
+    }
+    case 'transform': {
+      const id = String(args.id || '');
+      if (!id) return 'transform requires an id.';
+      const current = getSceneObjects().find((obj) => obj.id === id);
+      if (!current) return `No object with id "${id}".`;
+      if (!isBlenderOwnedObject(current)) {
+        return `Object "${id}" is not Blender Plate-owned. Use scene_3d for legacy objects.`;
+      }
+      const next = transformObject(id, {
+        name: args.name as string | undefined,
+        color: args.color as string | undefined,
+        size: typeof args.size === 'number' ? args.size : undefined,
+        position: args.position as Partial<{ x: number; y: number; z: number }> | undefined,
+        rotation: args.rotation as Partial<{ x: number; y: number; z: number }> | undefined,
+        scale: args.scale as Partial<{ x: number; y: number; z: number }> | undefined
+      });
+      return next ? `Blender Plate scene: updated "${id}".` : `No object with id "${id}".`;
+    }
+    case 'remove': {
+      const id = String(args.id || '');
+      if (!id) return 'remove requires an id.';
+      const current = getSceneObjects().find((obj) => obj.id === id);
+      if (!current) return `No object with id "${id}".`;
+      if (!isBlenderOwnedObject(current)) {
+        return `Object "${id}" is not Blender Plate-owned. Use scene_3d for legacy objects.`;
+      }
+      return removeObject(id) ? `Blender Plate scene: removed "${id}".` : `No object with id "${id}".`;
+    }
+    case 'clear': {
+      const blenderObjects = getSceneObjects().filter((obj) => isBlenderOwnedObject(obj));
+      for (const obj of blenderObjects) {
+        removeObject(obj.id);
+      }
+      return `Blender Plate scene: cleared ${blenderObjects.length} object(s).`;
+    }
+    case 'import_model': {
+      const sourcePath = String(args.sourcePath || args.path || '').trim();
+      if (!sourcePath) return 'import_model requires sourcePath (relative to Folder MCP root).';
+      if (/\.scad$/i.test(sourcePath)) {
+        return 'SCAD source files should be built via action="build" to allow Blender Plate fallback behavior.';
+      }
+      const payload = await ipcService.readMcpFolderModel(sourcePath);
+      const format = payload.ext.replace('.', '').toLowerCase() as ModelFormat;
+      const model = addModel({
+        sourcePath: payload.path,
+        sourceKey: `blender_plate:import:${payload.path}`,
+        engineKind: 'blender_plate',
+        modelFormat: format,
+        payloadBase64: payload.base64,
+        name: (args.modelName as string) || payload.name,
+        position: args.position as Partial<{ x: number; y: number; z: number }> | undefined,
+        rotation: args.rotation as Partial<{ x: number; y: number; z: number }> | undefined,
+        scale: args.scale as Partial<{ x: number; y: number; z: number }> | undefined
+      });
+      return `Blender Plate scene: imported model ${payload.name} as id "${model.id}".`;
+    }
+    case 'build': {
+      const out = await runBlenderPlateGenerate({
+        ...args,
+        action: 'build'
+      });
+      return `Blender Plate scene build -> ${out}`;
+    }
+    default:
+      return 'Unknown blender_plate_scene action. Use list, add, transform, remove, clear, import_model, or build.';
+  }
 }
 
 async function runScene3d(args: ToolArgs): Promise<string> {
@@ -795,6 +1149,7 @@ async function runScene3d(args: ToolArgs): Promise<string> {
       if (!allowed.includes(kind)) return `Unsupported kind: ${kind}. Use one of ${allowed.join(', ')}.`;
       const obj = addPrimitive({
         kind,
+        engineKind: 'legacy_scene3d',
         name: args.name as string | undefined,
         color: args.color as string | undefined,
         size: typeof args.size === 'number' ? args.size : undefined,
@@ -836,6 +1191,7 @@ async function runScene3d(args: ToolArgs): Promise<string> {
       const format = payload.ext.replace('.', '').toLowerCase() as ModelFormat;
       const model = addModel({
         sourcePath: payload.path,
+        engineKind: 'legacy_scene3d',
         modelFormat: format,
         payloadBase64: payload.base64,
         name: (args.modelName as string) || payload.name,
@@ -890,6 +1246,11 @@ const TOOL_HANDLERS: Record<string, (args: ToolArgs) => Promise<string>> = {
   scene_3d: runScene3d,
   scene3d: runScene3d,
   three_d_scene: runScene3d,
+  blender_plate_scene: runBlenderPlateScene,
+  blender_scene: runBlenderPlateScene,
+  blender_plate_generate: runBlenderPlateGenerate,
+  blender_plate: runBlenderPlateGenerate,
+  blender_generate: runBlenderPlateGenerate,
   openscad_generate: runOpenScadGenerate,
   openscad: runOpenScadGenerate,
   scene_annotations: runSceneAnnotations,

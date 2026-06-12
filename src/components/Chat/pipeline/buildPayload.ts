@@ -9,19 +9,25 @@ Available tools:
 - update_user_memory: {content: string}
 - get_current_time: {timezone?: string, locale?: string}
 - engineering_calculator: {expression: string, scope?: object}
-- scene_3d: {action: "list"|"add"|"transform"|"remove"|"clear"|"import_model"|"list_models", kind?: "box"|"sphere"|"cylinder"|"cone"|"plane"|"torus", id?: string, color?: string, size?: number, position?: {x,y,z}, rotation?: {x,y,z}, scale?: {x,y,z}} — drives the live 3D Workspace viewport. WHENEVER the user asks to add, generate, move, scale, rotate, color, list, or remove shapes in the 3D workspace, you MUST call this tool.
+- blender_plate_scene: {action: "list"|"add"|"transform"|"remove"|"clear"|"import_model"|"build", kind?: "box"|"sphere"|"cylinder"|"cone"|"plane"|"torus", id?: string, color?: string, size?: number, sourcePath?: string, source?: string, format?: "stl"|"obj"|"gltf"|"glb", position?: {x,y,z}, rotation?: {x,y,z}, scale?: {x,y,z}} — primary 3D workspace tool for Blender Plate scene operations.
+- scene_3d: {action: "list"|"add"|"transform"|"remove"|"clear"|"import_model"|"list_models", kind?: "box"|"sphere"|"cylinder"|"cone"|"plane"|"torus", id?: string, color?: string, size?: number, position?: {x,y,z}, rotation?: {x,y,z}, scale?: {x,y,z}} — legacy 3D workspace tool kept for compatibility.
 - scene_annotations: {action: "list"|"remove"|"clear", id?: string}
 
 MCP Servers (integrated tool backends):
 - terminal_session: Create and manage terminal sessions (shell, PowerShell, bash). {action: "create"|"list"|"read"|"write"|"execute"|"close"}
 - python_terminal: Execute Python code and manage Python sessions. {action: "health"|"create"|"list"|"read"|"execute"|"run"|"close"}
 - folder_mcp: Read, write, list files in the configured folder root. {action: "root"|"select_root"|"clear_root"|"list"|"read"|"write"|"delete"|"rename"|"mkdir"}
+- blender_plate_generate: Build Blender Python scripts to 3D models. {action: "health"|"build"}
+- blender_plate_scene: Primary Blender Plate scene manipulation and build tool. {action: "list"|"add"|"transform"|"remove"|"clear"|"import_model"|"build"}
 - openscad_generate: Compile OpenSCAD scripts to 3D models. {action: "health"|"compile"}
 
 Important guidelines:
 - For current/live information (news, prices, weather, conflicts, elections), ALWAYS use web_search first before using knowledge from training.
 - When the user asks about current events, breaking news, or "latest", web_search is your primary tool.
 - Knowledge cutoff: July 2024. For anything after that date, use web_search.
+- For new 3D workspace edits, prefer blender_plate_scene first.
+- For Blender-generated model builds, prefer blender_plate_scene action="build" or blender_plate_generate.
+- Use openscad_generate as fallback for .scad workflows or when Blender Plate is unavailable.
 
 Wiki rules:
 - For user-requested "save this", "add to wiki", "remember this", or persistent profile/preferences updates, prefer wiki_maintain over folder_mcp.
@@ -46,7 +52,26 @@ Example to add three spheres in a triangle:
 export const PLAIN_SYSTEM_PROMPT = 'You are a helpful AI assistant.';
 
 export const ROUTER_SYSTEM_PROMPT =
-  'You are a routing agent. Your job is to decide if the user needs external tools. Tools available: run_shell_command (PowerShell), browser_action (Playwright), read_wiki (Markdown), wiki_maintain (persistent wiki updates/search), web_search, get_current_time (clock), engineering_calculator (mathjs), scene_3d (manipulate the live 3D Workspace viewport: add/transform/remove primitives). Answer with exactly YES or NO.';
+  'You are a routing agent. Your job is to decide if the user needs external tools. Tools available: run_shell_command (PowerShell), browser_action (Playwright), read_wiki (Markdown), wiki_maintain (persistent wiki updates/search), web_search, get_current_time (clock), engineering_calculator (mathjs), blender_plate_scene (primary live 3D Workspace operations), scene_3d (legacy 3D viewport operations). Answer with exactly YES or NO.';
+
+function stripAssistantThinkBlocks(content: string): string {
+  if (!content || !content.includes('<think>')) return content;
+  const withoutClosed = content.replace(/<think>[\s\S]*?<\/think>/g, '');
+  const withoutOpenTail = withoutClosed.replace(/<think>[\s\S]*$/g, '');
+  return withoutOpenTail;
+}
+
+function normalizeMessagesForModel(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((message) => {
+    if (message.role !== 'assistant' || typeof message.content !== 'string' || !message.content.includes('<think>')) {
+      return message;
+    }
+    return {
+      ...message,
+      content: stripAssistantThinkBlocks(message.content)
+    };
+  });
+}
 
 function buildDateTimeContext(): string {
   const now = new Date();
@@ -104,7 +129,7 @@ export function buildSystemMessages(
   const customContext = buildCustomSystemMessageContext(options.customSystemMessage || '');
   const customPrefix = customContext ? `${customContext}\n\n` : '';
   const content = `${customPrefix}${base}${continuation}${dateTimeContext}${options.memoryContext}`;
-  return [{ role: 'system', content }, ...currentMessages];
+  return [{ role: 'system', content }, ...normalizeMessagesForModel(currentMessages)];
 }
 
 export function formatMemoryContext(memory: string): string {

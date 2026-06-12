@@ -62,6 +62,7 @@ describe('openscad_generate tool', () => {
     expect(models).toHaveLength(1);
     expect(models[0].name).toBe('second.stl');
     expect(models[0].sourceKey).toBe('openscad:abc123:p1');
+    expect(models[0].engineKind).toBe('openscad');
   });
 
   it('keeps prior models when createNew is true', async () => {

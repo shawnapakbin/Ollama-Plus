@@ -1,13 +1,89 @@
 # MCP Servers: Central Gateway + Browser + Terminal + Python Sandbox
 
-This folder contains three local MCP servers plus an in-process OpenSCAD MCP capability:
+This folder contains three local MCP servers plus in-process OpenSCAD and Blender Plate MCP capabilities:
 
 - `mcp/folder-server.mjs`: workspace-rooted folder operations with path guards.
 - `mcp/terminal-server.mjs`: persistent punchout terminal sessions (Windows/Linux), with command risk checks.
 - `mcp/python-sandbox-server.mjs`: Docker-isolated Python executor for 3D scripts and rendering pipelines.
 - `mcp/lib/openscad.mjs`: guarded OpenSCAD compile runtime used by the Electron MCP gateway (`server=openscad`).
+- `mcp/lib/blenderPlate.mjs`: guarded Blender Plate runtime used by the Electron MCP gateway (`server=blender_plate`).
 
-The Electron app now routes all in-app MCP operations through a central gateway (`mcp-gateway-call`) in the main process. Terminal, Python, Folder, Browser, and OpenSCAD operations share one dispatch contract and one status endpoint (`mcp-gateway-status`).
+The Electron app now routes all in-app MCP operations through a central gateway (`mcp-gateway-call`) in the main process. Terminal, Python, Folder, Browser, OpenSCAD, and Blender Plate operations share one dispatch contract and one status endpoint (`mcp-gateway-status`).
+
+## Blender Plate MCP Runtime
+
+The Blender Plate runtime is exposed through gateway routes:
+
+- `server=blender_plate, action=health`: probe Blender CLI availability/version.
+- `server=blender_plate, action=build`: execute Blender Python script and export artifact (`stl`, `obj`, `gltf`, `glb`).
+
+Build input modes:
+
+- Inline Python source (`source`)
+- Rooted script path (`sourcePath`) under the selected Folder MCP root (`.py` only)
+
+Safety controls in the current implementation:
+
+- Exactly one input mode required (`source` xor `sourcePath`)
+- Root/path guard inherited from Folder MCP root resolver for `sourcePath`
+- Basic blocked-pattern validation for unsafe Python modules/functions
+- Build timeout + process kill
+- Source and artifact byte limits
+- Structured error categories (`VALIDATION_ERROR`, `EXEC_NOT_FOUND`, `EXEC_TIMEOUT`, `COMPILE_ERROR`, `ARTIFACT_EMPTY`, `ARTIFACT_TOO_LARGE`)
+
+### Blender Requirement
+
+Blender must be installed on the host machine and callable from PATH (or via `MCP_BLENDER_BIN`).
+
+Set `MCP_BLENDER_PLATE_ENABLED=0` to disable Blender Plate routing at runtime (kill switch).
+
+Examples:
+
+```bash
+blender --version
+```
+
+Windows PowerShell:
+
+```powershell
+$env:MCP_BLENDER_BIN = "C:\Program Files\Blender Foundation\Blender 4.2\blender.exe"
+```
+
+### Blender Plate Small-LLM Contract
+
+For reliable tool use with smaller models, keep calls minimal and explicit:
+
+- Prefer `blender_plate_scene` for live workspace operations.
+- Use one action per call.
+- Use required fields only; avoid optional payload bloat.
+- For generation, use `action="build"` with exactly one source mode (`source` xor `sourcePath`).
+
+Canonical examples:
+
+```json
+{"tool":"blender_plate_scene","parameters":{"action":"add","kind":"box","size":1}}
+```
+
+```json
+{"tool":"blender_plate_scene","parameters":{"action":"transform","id":"box-1","position":{"x":1,"y":0,"z":0}}}
+```
+
+```json
+{"tool":"blender_plate_scene","parameters":{"action":"build","sourcePath":"models/chair.py","format":"glb"}}
+```
+
+```json
+{"tool":"blender_plate_scene","parameters":{"action":"import_model","sourcePath":"assets/part.glb"}}
+```
+
+```json
+{"tool":"blender_plate_scene","parameters":{"action":"list"}}
+```
+
+Fallback notes:
+
+- If Blender Plate cannot fulfill SCAD-compatible requests, the tool may fall back to OpenSCAD (unless `fallbackToOpenScad=false`).
+- Fallback events are surfaced in the app MCP status summary.
 
 ## OpenSCAD MCP Runtime
 

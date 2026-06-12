@@ -33,6 +33,7 @@ import {
 } from '../mcp/lib/playwrightSessions.mjs';
 import { createGateway } from '../mcp/lib/gateway.mjs';
 import { checkOpenScadHealth, compileOpenScad } from '../mcp/lib/openscad.mjs';
+import { checkBlenderPlateHealth, buildBlenderPlate } from '../mcp/lib/blenderPlate.mjs';
 import {
   isSafeHttpUrl,
   isRiskyCommand,
@@ -69,9 +70,11 @@ const DISCOVERABLE_MODEL_EXTENSIONS = new Set(['.obj', '.stl', '.gltf', '.glb', 
 const IMPORTABLE_MODEL_EXTENSIONS = new Set(['.obj', '.stl', '.gltf', '.glb']);
 let cachedMcpFolderRoot = null;
 let cachedMcpWikiConfig = null;
+let cachedMcpBlenderBin = null;
 let defaultBrowserSessionId = null;
 let mcpGateway = null;
 const OPENSCAD_FEATURE_ENABLED = process.env.MCP_OPENSCAD_ENABLED !== '0';
+const BLENDER_PLATE_FEATURE_ENABLED = process.env.MCP_BLENDER_PLATE_ENABLED !== '0';
 
 process.on('uncaughtException', (err) => {
   console.error('Main process uncaught exception:', sanitizeError(err));
@@ -207,6 +210,10 @@ function getMcpFolderRootStatePath() {
 
 function getMcpWikiConfigStatePath() {
   return path.join(app.getPath('userData'), 'mcp-wiki-config.json');
+}
+
+function getMcpBlenderConfigStatePath() {
+  return path.join(app.getPath('userData'), 'mcp-blender-config.json');
 }
 
 function getDefaultWikiRoot() {
@@ -345,6 +352,57 @@ function loadMcpFolderRootFromDisk() {
     cachedMcpFolderRoot = '';
   }
   return cachedMcpFolderRoot;
+}
+
+function loadMcpBlenderBinFromDisk() {
+  if (cachedMcpBlenderBin !== null) return cachedMcpBlenderBin;
+  try {
+    const statePath = getMcpBlenderConfigStatePath();
+    if (!fs.existsSync(statePath)) {
+      cachedMcpBlenderBin = '';
+      return cachedMcpBlenderBin;
+    }
+    const raw = fs.readFileSync(statePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    cachedMcpBlenderBin = typeof parsed?.bin === 'string' ? parsed.bin.trim() : '';
+  } catch {
+    cachedMcpBlenderBin = '';
+  }
+  return cachedMcpBlenderBin;
+}
+
+function persistMcpBlenderBin(bin) {
+  cachedMcpBlenderBin = typeof bin === 'string' ? bin.trim() : '';
+  const statePath = getMcpBlenderConfigStatePath();
+  fs.writeFileSync(statePath, JSON.stringify({ bin: cachedMcpBlenderBin }, null, 2), 'utf-8');
+}
+
+function getConfiguredBlenderBin() {
+  const saved = loadMcpBlenderBinFromDisk();
+  if (saved) {
+    const resolved = path.resolve(saved);
+    if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+      return { bin: resolved, isCustom: true, source: 'saved' };
+    }
+    persistMcpBlenderBin('');
+  }
+
+  const envOverride = String(process.env.MCP_BLENDER_BIN || '').trim();
+  if (envOverride) {
+    return { bin: envOverride, isCustom: true, source: 'env' };
+  }
+
+  return { bin: '', isCustom: false, source: 'default' };
+}
+
+function applyConfiguredBlenderBin() {
+  const configured = getConfiguredBlenderBin();
+  if (configured.bin) {
+    process.env.MCP_BLENDER_BIN = configured.bin;
+  } else {
+    delete process.env.MCP_BLENDER_BIN;
+  }
+  return configured;
 }
 
 function persistMcpFolderRoot(root) {
@@ -653,7 +711,8 @@ function createWindow() {
   const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
+    const devServerUrl = String(process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173');
+    mainWindow.loadURL(devServerUrl);
     // mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
@@ -794,6 +853,19 @@ function buildOllamaUrl(hostUrl, endpoint) {
   return url;
 }
 
+async function buildHttpError(response) {
+  let body = '';
+  try {
+    body = await response.text();
+  } catch {
+    body = '';
+  }
+  const snippet = body.replace(/[\r\n]+/g, ' ').trim().slice(0, 220);
+  return snippet
+    ? `HTTP ${response.status} ${response.statusText}: ${snippet}`
+    : `HTTP ${response.status} ${response.statusText}`;
+}
+
 // Ollama API Proxy (Bypasses CORS)
 ipcMain.handle('ollama-request', async (event, hostUrl, endpoint, data) => {
   try {
@@ -804,7 +876,7 @@ ipcMain.handle('ollama-request', async (event, hostUrl, endpoint, data) => {
       body: data ? JSON.stringify(data) : undefined
     });
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) throw new Error(await buildHttpError(response));
     return await response.json();
   } catch (err) {
     console.error('Ollama Error:', sanitizeError(err));
@@ -825,7 +897,7 @@ ipcMain.on('ollama-stream', async (event, streamId, hostUrl, endpoint, data) => 
       signal: controller.signal
     });
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) throw new Error(await buildHttpError(response));
     
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -841,7 +913,7 @@ ipcMain.on('ollama-stream', async (event, streamId, hostUrl, endpoint, data) => 
       console.log(`Stream ${streamId} aborted`);
       event.sender.send(`ollama-end-${streamId}`);
     } else {
-      event.sender.send(`ollama-error-${streamId}`, err.message);
+      event.sender.send(`ollama-error-${streamId}`, sanitizeError(err));
     }
   } finally {
     delete activeStreams[streamId];
@@ -1452,6 +1524,120 @@ function initMcpGateway() {
     });
   });
 
+  gateway.register('blender_plate', 'health', async () => {
+    if (!BLENDER_PLATE_FEATURE_ENABLED) {
+      return {
+        ok: false,
+        executable: '',
+        version: '',
+        checkedAt: new Date().toISOString(),
+        note: 'Blender Plate feature is disabled by MCP_BLENDER_PLATE_ENABLED=0.'
+      };
+    }
+    applyConfiguredBlenderBin();
+    return checkBlenderPlateHealth();
+  });
+
+  gateway.register('blender_plate', 'config_get', async () => {
+    const configured = applyConfiguredBlenderBin();
+    return {
+      ok: true,
+      bin: configured.bin,
+      isCustom: configured.isCustom,
+      source: configured.source
+    };
+  });
+
+  gateway.register('blender_plate', 'config_set', async (payload) => {
+    const raw = String(payload?.bin || '').trim();
+    if (!raw) {
+      throw new Error('Blender executable path is required.');
+    }
+    const unquoted = raw.replace(/^"|"$/g, '');
+    const resolved = path.resolve(unquoted);
+    if (!fs.existsSync(resolved)) {
+      throw new Error('Blender executable path does not exist.');
+    }
+    if (!fs.statSync(resolved).isFile()) {
+      throw new Error('Blender executable path must be a file.');
+    }
+    persistMcpBlenderBin(resolved);
+    const configured = applyConfiguredBlenderBin();
+    const health = checkBlenderPlateHealth();
+    return {
+      ok: true,
+      bin: configured.bin,
+      isCustom: configured.isCustom,
+      source: configured.source,
+      health
+    };
+  });
+
+  gateway.register('blender_plate', 'config_clear', async () => {
+    persistMcpBlenderBin('');
+    const configured = applyConfiguredBlenderBin();
+    const health = checkBlenderPlateHealth();
+    return {
+      ok: true,
+      bin: configured.bin,
+      isCustom: configured.isCustom,
+      source: configured.source,
+      health
+    };
+  });
+
+  gateway.register('blender_plate', 'config_select_bin', async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      throw new Error('Main window is unavailable for file selection.');
+    }
+    const selection = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Blender Executable',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Executable', extensions: ['exe', 'com', 'cmd', 'bat'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+    if (selection.canceled || !selection.filePaths?.[0]) {
+      const configured = applyConfiguredBlenderBin();
+      return {
+        ok: true,
+        canceled: true,
+        bin: configured.bin,
+        isCustom: configured.isCustom,
+        source: configured.source
+      };
+    }
+    const picked = path.resolve(selection.filePaths[0]);
+    persistMcpBlenderBin(picked);
+    const configured = applyConfiguredBlenderBin();
+    const health = checkBlenderPlateHealth();
+    return {
+      ok: true,
+      canceled: false,
+      bin: configured.bin,
+      isCustom: configured.isCustom,
+      source: configured.source,
+      health
+    };
+  });
+
+  gateway.register('blender_plate', 'build', async (payload) => {
+    assertRateLimit('mcp-blender-plate-build', 20, 60_000);
+    if (!BLENDER_PLATE_FEATURE_ENABLED) {
+      return {
+        ok: false,
+        errorCategory: 'FEATURE_DISABLED',
+        error: 'Blender Plate feature is disabled by MCP_BLENDER_PLATE_ENABLED=0.'
+      };
+    }
+    applyConfiguredBlenderBin();
+    return buildBlenderPlate(payload || {}, {
+      resolveSourcePath: (relativePath) => resolveWithinMcpFolder(String(relativePath || '')),
+      tempRoot: path.join(app.getPath('temp'), 'ollama-plus-blender-plate')
+    });
+  });
+
   gateway.setStatusProvider(async () => {
     const terminalSessions = listMcpTerminalSessions();
     const python = getPythonTerminalConfig();
@@ -1460,6 +1646,8 @@ function initMcpGateway() {
     const wikiCfg = loadMcpWikiConfigFromDisk();
     const browser = getBrowserRuntimeStatus();
     const openscad = checkOpenScadHealth();
+    const blenderConfig = applyConfiguredBlenderBin();
+    const blenderPlate = checkBlenderPlateHealth();
     return {
       terminalSessionCount: terminalSessions.length,
       pythonReady: python.ok,
@@ -1474,6 +1662,13 @@ function initMcpGateway() {
       wikiAutonomyMode: wikiCfg.autonomyMode,
       wikiKnowledgePolicy: wikiCfg.knowledgePolicy,
       browserSessionCount: browser.activeSessionCount,
+      blenderPlateEnabled: BLENDER_PLATE_FEATURE_ENABLED,
+      blenderPlateReady: blenderPlate.ok,
+      blenderPlateExecutable: blenderPlate.executable,
+      blenderPlateVersion: blenderPlate.version,
+      blenderPlateNote: blenderPlate.note || '',
+      blenderPlateConfiguredBin: blenderConfig.bin,
+      blenderPlateBinCustom: blenderConfig.isCustom,
       openscadEnabled: OPENSCAD_FEATURE_ENABLED,
       openscadReady: openscad.ok,
       openscadExecutable: openscad.executable,
@@ -1528,6 +1723,7 @@ ipcMain.handle('spawn-terminal', (event, type) => {
   return id;
 });
 
+applyConfiguredBlenderBin();
 mcpGateway = initMcpGateway();
 
 ipcMain.handle('mcp-gateway-call', async (_event, request) => {

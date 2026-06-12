@@ -138,6 +138,7 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
     scene.background = new THREE.Color(0x0b1220);
 
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    camera.up.set(0, 0, 1);
     camera.position.set(4, 4, 6);
     camera.lookAt(0, 0, 0);
 
@@ -154,25 +155,26 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
     scene.add(ambient, dir);
 
     let grid = new THREE.GridHelper(20, 20, 0x334155, 0x1e293b);
+    grid.rotation.x = Math.PI / 2;
     // AxesHelper draws RGB lines; sprites add readable letter labels at each tip
     const axesHelper = new THREE.AxesHelper(2);
     const axisLabelX = makeAxisLabel('X', '#ef4444');
-    axisLabelX.position.set(2.45, 0.05, 0);
+    axisLabelX.position.set(2.45, 0, 0.05);
     const axisLabelY = makeAxisLabel('Y', '#22c55e');
-    axisLabelY.position.set(0, 2.45, 0);
+    axisLabelY.position.set(0, 2.45, 0.05);
     const axisLabelZ = makeAxisLabel('Z', '#3b82f6');
-    axisLabelZ.position.set(0, 0.05, 2.45);
+    axisLabelZ.position.set(0, 0, 2.45);
     scene.add(grid, axesHelper, axisLabelX, axisLabelY, axisLabelZ);
 
     const meshGroup = new THREE.Group();
     const annotationGroup = new THREE.Group();
     scene.add(meshGroup, annotationGroup);
 
-    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 
     const target = new THREE.Vector3(0, 0, 0);
-    let yaw = Math.atan2(camera.position.x, camera.position.z);
-    let pitch = Math.asin(camera.position.y / camera.position.length());
+    let yaw = Math.atan2(camera.position.x, camera.position.y);
+    let pitch = Math.asin(camera.position.z / camera.position.length());
     let radius = camera.position.length();
     let dragging = false;
     let dragMode: 'orbit' | 'pan' | 'none' = 'none';
@@ -188,8 +190,8 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
       const cp = Math.cos(pitch);
       camera.position.set(
         target.x + Math.sin(yaw) * cp * radius,
-        target.y + Math.sin(pitch) * radius,
-        target.z + Math.cos(yaw) * cp * radius
+        target.y + Math.cos(yaw) * cp * radius,
+        target.z + Math.sin(pitch) * radius
       );
       camera.lookAt(target);
     };
@@ -561,17 +563,18 @@ export default function Scene3D({ selectedAnnotationId = null, onAnnotationCreat
       (grid.material as THREE.Material).dispose();
       const divisions = Math.max(2, Math.min(200, Math.round(cfg.size)));
       grid = new THREE.GridHelper(cfg.size, divisions, 0x334155, 0x1e293b);
+      grid.rotation.x = Math.PI / 2;
       scene.add(grid);
 
       disposeGridEdgeLabels();
       const half = cfg.size / 2;
       const labelText = `${cfg.size} ${cfg.unit}`;
       const lx = makeEdgeLabel(labelText);
-      lx.position.set(half + 0.9, 0.12, 0);
-      const lz = makeEdgeLabel(labelText);
-      lz.position.set(0, 0.12, half + 0.9);
-      scene.add(lx, lz);
-      gridEdgeLabels = [lx, lz];
+      lx.position.set(half + 0.9, 0, 0.12);
+      const ly = makeEdgeLabel(labelText);
+      ly.position.set(0, half + 0.9, 0.12);
+      scene.add(lx, ly);
+      gridEdgeLabels = [lx, ly];
     });
 
     const resize = () => {

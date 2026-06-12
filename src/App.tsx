@@ -77,6 +77,16 @@ type McpRuntimeStatus = {
   pythonVersion: string;
   pythonSource: string;
   pythonNote: string;
+  blenderPlateEnabled: boolean | null;
+  blenderPlateReady: boolean | null;
+  blenderPlateExecutable: string;
+  blenderPlateVersion: string;
+  blenderPlateNote: string;
+  blenderPlateConfiguredBin: string;
+  blenderPlateBinCustom: boolean;
+  openscadEnabled: boolean | null;
+  openscadReady: boolean | null;
+  openscadNote: string;
   folderRoot: string;
   folderCustom: boolean;
   wikiRoot: string;
@@ -85,6 +95,13 @@ type McpRuntimeStatus = {
   wikiKnowledgePolicy: 'strict' | 'balanced' | 'aggressive';
   browserSessionCount: number | null;
   lastCheckedAt: string;
+};
+
+type BlenderFallbackTelemetry = {
+  count: number;
+  lastReason: string;
+  lastAt: string;
+  lastSourceKind: 'scad_path' | 'scad_inline' | '';
 };
 
 type SavedSystemMessage = {
@@ -305,6 +322,16 @@ export default function App() {
     pythonVersion: '',
     pythonSource: '',
     pythonNote: '',
+    blenderPlateEnabled: null,
+    blenderPlateReady: null,
+    blenderPlateExecutable: '',
+    blenderPlateVersion: '',
+    blenderPlateNote: '',
+    blenderPlateConfiguredBin: '',
+    blenderPlateBinCustom: false,
+    openscadEnabled: null,
+    openscadReady: null,
+    openscadNote: '',
     folderRoot: '',
     folderCustom: false,
     wikiRoot: '',
@@ -315,6 +342,13 @@ export default function App() {
     lastCheckedAt: ''
   });
   const [mcpActionError, setMcpActionError] = useState('');
+  const [blenderBinDraft, setBlenderBinDraft] = useState('');
+  const [blenderFallback, setBlenderFallback] = useState<BlenderFallbackTelemetry>({
+    count: 0,
+    lastReason: '',
+    lastAt: '',
+    lastSourceKind: ''
+  });
   const localDecisionHandlers = useRef(new Map<string, (selectionId: string) => void>());
   const localInputHandlers = useRef(new Map<string, (value: string | null) => void>());
 
@@ -348,6 +382,16 @@ export default function App() {
         pythonVersion: '',
         pythonSource: '',
         pythonNote: 'Open the app in Electron to use terminal-backed Python sessions.',
+        blenderPlateEnabled: false,
+        blenderPlateReady: false,
+        blenderPlateExecutable: '',
+        blenderPlateVersion: '',
+        blenderPlateNote: 'Open the app in Electron to use Blender Plate runtime.',
+        blenderPlateConfiguredBin: '',
+        blenderPlateBinCustom: false,
+        openscadEnabled: false,
+        openscadReady: false,
+        openscadNote: 'Open the app in Electron to use OpenSCAD runtime.',
         folderRoot: '',
         folderCustom: false,
         wikiRoot: '',
@@ -357,6 +401,7 @@ export default function App() {
         browserSessionCount: 0,
         lastCheckedAt: checkedAt
       });
+      setBlenderBinDraft('');
       return;
     }
 
@@ -373,6 +418,16 @@ export default function App() {
         pythonVersion?: string;
         pythonSource?: string;
         pythonNote?: string;
+        blenderPlateEnabled?: boolean;
+        blenderPlateReady?: boolean;
+        blenderPlateExecutable?: string;
+        blenderPlateVersion?: string;
+        blenderPlateNote?: string;
+        blenderPlateConfiguredBin?: string;
+        blenderPlateBinCustom?: boolean;
+        openscadEnabled?: boolean;
+        openscadReady?: boolean;
+        openscadNote?: string;
         folderRoot?: string;
         folderCustom?: boolean;
         wikiRoot?: string;
@@ -389,6 +444,16 @@ export default function App() {
         pythonVersion: data.pythonVersion || '',
         pythonSource: data.pythonSource || '',
         pythonNote: data.pythonNote || '',
+        blenderPlateEnabled: typeof data.blenderPlateEnabled === 'boolean' ? data.blenderPlateEnabled : null,
+        blenderPlateReady: typeof data.blenderPlateReady === 'boolean' ? data.blenderPlateReady : null,
+        blenderPlateExecutable: data.blenderPlateExecutable || '',
+        blenderPlateVersion: data.blenderPlateVersion || '',
+        blenderPlateNote: data.blenderPlateNote || '',
+        blenderPlateConfiguredBin: data.blenderPlateConfiguredBin || '',
+        blenderPlateBinCustom: Boolean(data.blenderPlateBinCustom),
+        openscadEnabled: typeof data.openscadEnabled === 'boolean' ? data.openscadEnabled : null,
+        openscadReady: typeof data.openscadReady === 'boolean' ? data.openscadReady : null,
+        openscadNote: data.openscadNote || '',
         folderRoot: data.folderRoot || '',
         folderCustom: Boolean(data.folderCustom),
         wikiRoot: data.wikiRoot || '',
@@ -398,6 +463,9 @@ export default function App() {
         browserSessionCount: typeof data.browserSessionCount === 'number' ? data.browserSessionCount : null,
         lastCheckedAt: checkedAt
       });
+      // Keep the draft tied to explicit user configuration only.
+      // In auto-detect mode, leave the input empty so the mode change is visible.
+      setBlenderBinDraft(data.blenderPlateConfiguredBin || '');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to read MCP status.';
       setMcpActionError(message);
@@ -495,6 +563,74 @@ export default function App() {
     } catch (err) {
       console.error('Failed to update wiki knowledge policy:', err);
       const message = err instanceof Error ? err.message : 'Unknown error updating wiki knowledge policy.';
+      setMcpActionError(message);
+    }
+  };
+
+  const handleSelectBlenderExecutable = async () => {
+    if (!isElectronAvailable()) {
+      setMcpActionError('Blender executable selection is only available in the Electron app.');
+      return;
+    }
+    try {
+      setMcpActionError('');
+      const res = await ipcService.mcpGatewayCall({
+        server: 'blender_plate',
+        action: 'config_select_bin',
+        payload: {}
+      });
+      if (!res.ok) throw new Error(res.error || 'Blender executable selection failed.');
+      await refreshMcpStatus();
+    } catch (err) {
+      console.error('Failed to select Blender executable:', err);
+      const message = err instanceof Error ? err.message : 'Unknown error selecting Blender executable.';
+      setMcpActionError(message);
+    }
+  };
+
+  const handleApplyBlenderExecutable = async () => {
+    if (!isElectronAvailable()) {
+      setMcpActionError('Blender executable configuration is only available in the Electron app.');
+      return;
+    }
+    try {
+      setMcpActionError('');
+      const trimmed = blenderBinDraft.trim();
+      if (!trimmed) {
+        throw new Error('Blender executable path is required.');
+      }
+      const res = await ipcService.mcpGatewayCall({
+        server: 'blender_plate',
+        action: 'config_set',
+        payload: { bin: trimmed }
+      });
+      if (!res.ok) throw new Error(res.error || 'Blender executable update failed.');
+      await refreshMcpStatus();
+    } catch (err) {
+      console.error('Failed to apply Blender executable:', err);
+      const message = err instanceof Error ? err.message : 'Unknown error updating Blender executable.';
+      setMcpActionError(message);
+    }
+  };
+
+  const handleClearBlenderExecutable = async () => {
+    if (!isElectronAvailable()) {
+      setMcpActionError('Blender executable configuration is only available in the Electron app.');
+      return;
+    }
+    try {
+      setMcpActionError('');
+      const res = await ipcService.mcpGatewayCall({
+        server: 'blender_plate',
+        action: 'config_clear',
+        payload: {}
+      });
+      if (!res.ok) throw new Error(res.error || 'Blender executable reset failed.');
+      setBlenderBinDraft('');
+      await refreshMcpStatus();
+    } catch (err) {
+      console.error('Failed to clear Blender executable:', err);
+      const message = err instanceof Error ? err.message : 'Unknown error clearing Blender executable.';
       setMcpActionError(message);
     }
   };
@@ -756,6 +892,27 @@ export default function App() {
       if (autoCollapseSidebar) setSidebarCollapsed(true);
     });
   }, [activeLayout.id, autoCollapseSidebar]);
+
+  useEffect(() => {
+    const onFallback = (event: Event) => {
+      const custom = event as CustomEvent<{
+        reason?: string;
+        at?: string;
+        sourceKind?: 'scad_path' | 'scad_inline';
+      }>;
+      const detail = custom.detail || {};
+      setBlenderFallback((prev) => ({
+        count: prev.count + 1,
+        lastReason: detail.reason || 'unknown',
+        lastAt: detail.at || new Date().toISOString(),
+        lastSourceKind: detail.sourceKind || ''
+      }));
+    };
+    window.addEventListener('ollama-plus:blender-fallback', onFallback as EventListener);
+    return () => {
+      window.removeEventListener('ollama-plus:blender-fallback', onFallback as EventListener);
+    };
+  }, []);
 
   const deleteSession = async (e, id) => {
     e.stopPropagation();
@@ -1108,6 +1265,42 @@ export default function App() {
             <span className={`mcp-status-chip ${mcpStatus.pythonReady ? 'ready' : mcpStatus.pythonReady === false ? 'warn' : 'unknown'}`}>
               Python {mcpStatus.pythonReady ? 'Ready' : mcpStatus.pythonReady === false ? 'Unavailable' : 'Unknown'}
             </span>
+            <span
+              className={`mcp-status-chip ${
+                mcpStatus.blenderPlateEnabled === false
+                  ? 'warn'
+                  : mcpStatus.blenderPlateReady
+                    ? 'ready'
+                    : mcpStatus.blenderPlateReady === false
+                      ? 'error'
+                      : 'unknown'
+              }`}
+              title={mcpStatus.blenderPlateNote || ''}
+            >
+              Blender {mcpStatus.blenderPlateEnabled === false ? 'Off' : mcpStatus.blenderPlateReady ? 'Ready' : mcpStatus.blenderPlateReady === false ? 'Unavailable' : 'Unknown'}
+            </span>
+            <span
+              className={`mcp-status-chip ${
+                mcpStatus.openscadEnabled === false
+                  ? 'warn'
+                  : mcpStatus.openscadReady
+                    ? 'ready'
+                    : mcpStatus.openscadReady === false
+                      ? 'error'
+                      : 'unknown'
+              }`}
+              title={mcpStatus.openscadNote || ''}
+            >
+              OpenSCAD {mcpStatus.openscadEnabled === false ? 'Off' : mcpStatus.openscadReady ? 'Ready' : mcpStatus.openscadReady === false ? 'Unavailable' : 'Unknown'}
+            </span>
+            <span
+              className={`mcp-status-chip ${blenderFallback.count > 0 ? 'warn' : 'ready'}`}
+              title={blenderFallback.count > 0
+                ? `Last fallback: ${blenderFallback.lastReason} (${blenderFallback.lastSourceKind || 'unknown'}) at ${blenderFallback.lastAt}`
+                : 'No Blender fallback events in this app session.'}
+            >
+              Fallback {blenderFallback.count > 0 ? `${blenderFallback.count}` : '0'}
+            </span>
             <span className={`mcp-status-chip ${mcpStatus.browserSessionCount === null ? 'unknown' : 'ready'}`}>
               Browser {mcpStatus.browserSessionCount === null ? 'Unknown' : `${mcpStatus.browserSessionCount} Active`}
             </span>
@@ -1312,6 +1505,41 @@ export default function App() {
                     {mcpStatus.pythonVersion && <p>{mcpStatus.pythonVersion}</p>}
                     {mcpStatus.pythonSource && <p>Source: {mcpStatus.pythonSource}</p>}
                     {mcpStatus.pythonNote && <p>{mcpStatus.pythonNote}</p>}
+                  </article>
+
+                  <article className="mcp-card">
+                    <div className="mcp-card-head">
+                      <Box size={16} />
+                      <strong>Blender Plate</strong>
+                      <span className={`mcp-status-chip ${mcpStatus.blenderPlateReady ? 'ready' : mcpStatus.blenderPlateReady === false ? 'warn' : 'unknown'}`}>{mcpStatus.blenderPlateReady ? 'Ready' : mcpStatus.blenderPlateReady === false ? 'Not Found' : 'Unknown'}</span>
+                    </div>
+                    <p>Primary 3D generation engine for Blender Plate tool calls.</p>
+                    <ul>
+                      <li>configured binary: {mcpStatus.blenderPlateConfiguredBin || 'auto-detect'}</li>
+                      <li>detected executable: {mcpStatus.blenderPlateExecutable || 'not detected'}</li>
+                      <li>version: {mcpStatus.blenderPlateVersion || 'unknown'}</li>
+                    </ul>
+                    <p className="setting-help-text">
+                      detection source: {mcpStatus.blenderPlateBinCustom ? 'configured override' : 'PATH auto-detect'}
+                    </p>
+                    <div className="setting-group">
+                      <label htmlFor="blenderExecutablePath">Blender executable path</label>
+                      <input
+                        id="blenderExecutablePath"
+                        type="text"
+                        value={blenderBinDraft}
+                        onChange={(e) => setBlenderBinDraft(e.target.value)}
+                        placeholder="C:\\Program Files\\Blender Foundation\\Blender\\blender.exe"
+                        disabled={!isElectronAvailable()}
+                      />
+                    </div>
+                    <div className="mcp-card-actions">
+                      <button type="button" className="secondary-button" onClick={() => void handleApplyBlenderExecutable()} disabled={!isElectronAvailable() || !blenderBinDraft.trim()}>Apply Path</button>
+                      <button type="button" className="secondary-button" onClick={() => void handleSelectBlenderExecutable()} disabled={!isElectronAvailable()}>Browse…</button>
+                      <button type="button" className="secondary-button" onClick={() => void handleClearBlenderExecutable()} disabled={!isElectronAvailable()}>Auto Detect</button>
+                    </div>
+                    {mcpStatus.blenderPlateNote && <p>{mcpStatus.blenderPlateNote}</p>}
+                    {mcpActionError && <p className="mcp-action-error" role="alert">{mcpActionError}</p>}
                   </article>
                 </div>
                 <p className="mcp-settings-footnote">Last checked: {mcpStatus.lastCheckedAt || 'not yet checked'}</p>

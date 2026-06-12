@@ -9,8 +9,8 @@
   gap: 8px;
   padding: 10px 12px;
   background: transparent;
-  backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
   border: 1px solid rgba(148, 163, 184, 0.25);
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
@@ -208,4 +208,82 @@
 
 .annotation-item__placeholder {
   opacity: 0.6;
+}
+
+.annotation-overlay__scene {
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.annotation-overlay__scene-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+
+.annotation-overlay__scene-list {
+  max-height: 128px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.annotation-overlay__scene-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.annotation-overlay__engine {
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.annotation-overlay__engine--blender {
+  color: #0c4a6e;
+  background: #bae6fd;
+  border-color: #7dd3fc;
+}
+
+.annotation-overlay__engine--openscad {
+  color: #422006;
+  background: #fed7aa;
+  border-color: #fdba74;
+}
+
+.annotation-overlay__engine--legacy {
+  color: #374151;
+  background: #e5e7eb;
+  border-color: #d1d5db;
+}
+
+.annotation-overlay__scene-name {
+  color: var(--text-main);
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.annotation-overlay__scene-id {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildMissingToolCallRepairContext,
   buildToolRepairContext,
   looksLikeToolIntentNarration,
+  shouldRepairMissingToolCall,
   shouldRepairToolTurn
 } from '../src/components/Chat/pipeline/toolRepair';
 
@@ -44,5 +46,26 @@ describe('tool repair helpers', () => {
     const out = buildToolRepairContext(toolHistory, "I'll add the third sphere to complete the triangular arrangement.");
     expect(out).toContain('scene_3d');
     expect(out).toContain('one JSON call per object');
+  });
+
+  it('repairs raw Blender script output when the user asked for 3D output', () => {
+    const script = '```python\nimport bpy\nbpy.ops.mesh.primitive_cube_add()\n```';
+    expect(shouldRepairMissingToolCall({
+      currentMessages: [
+        { role: 'user', content: 'show this 3d object on screen in the viewer' }
+      ],
+      currentContent: script,
+      useTools: true,
+      repairAttempt: 0
+    })).toBe(true);
+  });
+
+  it('builds strict tool-json guidance for script-like output', () => {
+    const out = buildMissingToolCallRepairContext(
+      [{ role: 'user', content: 'render a blender model in 3d workspace' }],
+      'import bpy\nbpy.ops.mesh.primitive_cube_add()'
+    );
+    expect(out).toContain('Do not output raw Blender Python script');
+    expect(out).toContain('blender_plate_scene');
   });
 });

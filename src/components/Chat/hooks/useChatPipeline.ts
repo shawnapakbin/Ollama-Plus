@@ -10,7 +10,12 @@ import {
   shouldEnableToolsFromRouterResponse,
   shouldForceTools
 } from '../pipeline/routerDecision';
-import { buildToolRepairContext, shouldRepairToolTurn } from '../pipeline/toolRepair';
+import {
+  buildMissingToolCallRepairContext,
+  buildToolRepairContext,
+  shouldRepairMissingToolCall,
+  shouldRepairToolTurn
+} from '../pipeline/toolRepair';
 import { TOOL_SCHEMAS } from '../tools/registry';
 import type { ChatMessage, ToolCall, OllamaFinalResponse } from '../types';
 import type { SteerPayload } from './useSteerQueue';
@@ -283,6 +288,16 @@ Title:`;
         const nextRepairContext = buildToolRepairContext(currentMessages, currentContent);
         if (nextRepairContext) {
           if (taskId) taskRuntime.addLog(taskId, 'Retrying with stricter tool-call guidance after narrated tool intent.');
+          setMessages([...currentMessages, { role: 'assistant', content: '', model: selectedModel }]);
+          await processOllamaRequestInner(currentMessages, taskId, repairAttempt + 1, nextRepairContext, turnNumber, 0);
+          return;
+        }
+      }
+
+      if (shouldRepairMissingToolCall({ currentMessages, currentContent, useTools, repairAttempt })) {
+        const nextRepairContext = buildMissingToolCallRepairContext(currentMessages, currentContent);
+        if (nextRepairContext) {
+          if (taskId) taskRuntime.addLog(taskId, 'Retrying after raw Blender script output; requesting strict tool JSON.');
           setMessages([...currentMessages, { role: 'assistant', content: '', model: selectedModel }]);
           await processOllamaRequestInner(currentMessages, taskId, repairAttempt + 1, nextRepairContext, turnNumber, 0);
           return;

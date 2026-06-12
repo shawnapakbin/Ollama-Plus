@@ -11,6 +11,8 @@ describe('shouldForceTools', () => {
   it('returns true for clear scene-edit prompts', () => {
     expect(shouldForceTools('Add three spheres to the 3d workspace')).toBe(true);
     expect(shouldForceTools('Rotate this cube in the scene')).toBe(true);
+    expect(shouldForceTools('show a 3d object on screen')).toBe(true);
+    expect(shouldForceTools('display a blender model in the viewer')).toBe(true);
   });
 
   it('returns true for explicit wiki-maintenance prompts', () => {

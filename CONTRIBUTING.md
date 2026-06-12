@@ -66,3 +66,20 @@ Issue lifecycle:
 
 - Inactive issues may be auto-marked stale after 30 days and auto-closed 7 days later.
 - Priority and active-work labels are exempt from stale auto-close.
+
+## Blender Plate Contribution Notes
+
+When contributing to 3D workspace behavior:
+
+- Treat `blender_plate_scene` as the primary 3D tool contract.
+- Keep tool actions narrow and deterministic (one action per call, no action arrays).
+- Preserve fallback compatibility with `openscad_generate` for SCAD-oriented flows.
+- Keep scene object provenance (`engineKind`) intact when adding or mutating objects.
+
+Minimum validation for Blender Plate changes:
+
+```bash
+npm run test -- tests/blenderPlate.test.ts tests/blenderPlateTool.test.ts tests/blenderPlateSceneTool.test.ts tests/openscadTool.test.ts
+npm run build
+npm run lint
+```
