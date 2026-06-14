@@ -1,8 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   applyOllamaStreamChunk,
+  computeStreamMaxDurationMs,
   flushOllamaStreamChunkBuffer
 } from '../src/components/Chat/hooks/useOllamaStream';
+
+describe('computeStreamMaxDurationMs', () => {
+  it('uses the 3-minute base duration for default or small contexts', () => {
+    expect(computeStreamMaxDurationMs({})).toBe(180_000);
+    expect(computeStreamMaxDurationMs({ options: { num_ctx: 4096 } })).toBe(180_000);
+    expect(computeStreamMaxDurationMs({ options: { num_ctx: 8192 } })).toBe(180_000);
+  });
+
+  it('scales linearly with larger context windows', () => {
+    expect(computeStreamMaxDurationMs({ options: { num_ctx: 16384 } })).toBe(360_000);
+    expect(computeStreamMaxDurationMs({ options: { num_ctx: 32768 } })).toBe(720_000);
+  });
+
+  it('caps the duration for very large contexts', () => {
+    expect(computeStreamMaxDurationMs({ options: { num_ctx: 65536 } })).toBe(900_000);
+    expect(computeStreamMaxDurationMs({ options: { num_ctx: 131072 } })).toBe(900_000);
+  });
+});
 
 describe('useOllamaStream helpers', () => {
   it('buffers incomplete JSON lines across chunks until a newline arrives', () => {

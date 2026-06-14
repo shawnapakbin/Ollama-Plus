@@ -24,6 +24,15 @@ interface OllamaPsResponse {
   models?: OllamaPsModel[];
 }
 
+interface PayloadOptions {
+  num_ctx?: unknown;
+}
+
+interface OllamaStreamPayload {
+  model?: unknown;
+  options?: PayloadOptions;
+}
+
 interface StreamAccumulatorState {
   content: string;
   toolCalls: ToolCall[] | null;
@@ -35,12 +44,29 @@ interface StreamAccumulatorState {
 }
 
 const STREAM_INACTIVITY_TIMEOUT_MS = 180_000;
-const STREAM_MAX_DURATION_MS = 3 * 60_000;
+const STREAM_BASE_MAX_DURATION_MS = 3 * 60_000;
+const STREAM_BASE_CONTEXT_WINDOW = 8_192;
+const STREAM_MAX_DURATION_CAP_MS = 15 * 60_000;
 
 function getPayloadModel(payload: unknown): string {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return '';
   const model = (payload as { model?: unknown }).model;
   return typeof model === 'string' ? model.trim() : '';
+}
+
+function getPayloadContextWindow(payload: unknown): number | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const raw = (payload as OllamaStreamPayload).options?.num_ctx;
+  const parsed = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.floor(parsed);
+}
+
+export function computeStreamMaxDurationMs(payload: unknown): number {
+  const contextWindow = getPayloadContextWindow(payload) ?? STREAM_BASE_CONTEXT_WINDOW;
+  const scale = Math.max(1, contextWindow / STREAM_BASE_CONTEXT_WINDOW);
+  const scaledDuration = Math.round(STREAM_BASE_MAX_DURATION_MS * scale);
+  return Math.min(STREAM_MAX_DURATION_CAP_MS, scaledDuration);
 }
 
 function modelAppearsLoaded(psRes: unknown, modelName: string): boolean {
@@ -169,6 +195,7 @@ export function useOllamaStream() {
         let settled = false;
         let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
         let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
+        const maxDurationMs = computeStreamMaxDurationMs(payload);
 
         const cleanupTimers = () => {
           if (inactivityTimer) {
@@ -257,9 +284,9 @@ export function useOllamaStream() {
         resetInactivityTimer();
         maxDurationTimer = setTimeout(() => {
           failStream(
-            'Ollama stream exceeded the maximum generation time. Try a smaller model, shorter prompt, or lower context window.'
+            'Ollama stream exceeded the maximum generation time for the active context window. Try a smaller model, shorter prompt, or lower context window.'
           );
-        }, STREAM_MAX_DURATION_MS);
+        }, maxDurationMs);
       });
     },
     []
