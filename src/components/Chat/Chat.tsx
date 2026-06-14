@@ -60,7 +60,8 @@ export default function Chat({
     enterGeneration,
     exitGeneration,
     clear: clearSteerQueue,
-    setAbortIntent
+    setAbortIntent,
+    getAbortIntent
   } = useSteerQueue();
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
@@ -88,6 +89,7 @@ export default function Chat({
     refreshProcessor,
     enterGeneration,
     exitGeneration,
+    getAbortIntent,
     turnLimit: researchTurnLimit,
     onTurnLimitReached: onResearchTurnLimitHit
   });
@@ -110,6 +112,9 @@ export default function Chat({
   const handleStop = () => {
     setAbortIntent('stop-only');
     stopStream();
+    void ipcService.unloadModels(hostUrl).catch((err) => {
+      console.warn('Failed to unload models after stop', err);
+    });
   };
 
   const handleInterruptSteer = () => {

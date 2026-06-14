@@ -23,7 +23,7 @@ export function useProcessorStatus(hostUrl: string | undefined, selectedModel: s
   const refresh = useCallback(async () => {
     if (!hostUrl || !selectedModel) return;
     try {
-      const res = await ipcService.invokeOllama(hostUrl, '/api/ps');
+      const res = await ipcService.invokeOllama(hostUrl, '/api/ps', undefined, 4_000);
       const models = Array.isArray((res as { models?: unknown }).models)
         ? (res as { models: unknown[] }).models.filter(isProcessorModel)
         : [];

@@ -144,6 +144,8 @@ export function useSteerQueue() {
     steerAbortIntentRef.current = intent;
   }, []);
 
+  const getAbortIntent = useCallback((): SteerAbortIntent => steerAbortIntentRef.current, []);
+
   return {
     isGenerating,
     setIsGenerating,
@@ -154,6 +156,7 @@ export function useSteerQueue() {
     enterGeneration,
     exitGeneration,
     clear,
-    setAbortIntent
+    setAbortIntent,
+    getAbortIntent
   };
 }

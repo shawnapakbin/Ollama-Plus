@@ -7,21 +7,38 @@ const MAX_PORT_TRIES = 30;
 const PORT_WAIT_TIMEOUT_MS = 30_000;
 
 function isPortReachable(port) {
+  const hosts = ['127.0.0.1', '::1', 'localhost'];
   return new Promise((resolve) => {
-    const socket = net.createConnection({ port, host: '127.0.0.1' });
-    socket.setTimeout(350);
-    socket.on('connect', () => {
-      socket.end();
-      resolve(true);
-    });
-    socket.on('timeout', () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.on('error', () => {
-      socket.destroy();
-      resolve(false);
-    });
+    let settled = false;
+    let pending = hosts.length;
+
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+
+    for (const host of hosts) {
+      const socket = net.createConnection({ port, host });
+      socket.setTimeout(350);
+      socket.on('connect', () => {
+        socket.end();
+        finish(true);
+      });
+      socket.on('timeout', () => {
+        socket.destroy();
+        pending -= 1;
+        if (pending === 0) finish(false);
+      });
+      socket.on('error', () => {
+        socket.destroy();
+        pending -= 1;
+        if (pending === 0) finish(false);
+      });
+      socket.on('close', () => {
+        if (settled) return;
+      });
+    }
   });
 }
 
@@ -31,7 +48,7 @@ async function checkPortAvailable(port) {
     const server = net.createServer();
     server.unref();
     server.on('error', () => resolve(false));
-    server.listen(port, () => {
+    server.listen({ port, host: '0.0.0.0', exclusive: true }, () => {
       server.close(() => resolve(true));
     });
   });
@@ -91,7 +108,9 @@ function spawnVite(port) {
 }
 
 function spawnElectron(devUrl) {
-  return spawn('npm exec electron .', {
+  const remoteDebugPort = String(process.env.ELECTRON_REMOTE_DEBUGGING_PORT || '').trim();
+  const remoteDebugArg = remoteDebugPort ? ` --remote-debugging-port=${remoteDebugPort}` : '';
+  return spawn(`npm exec -- electron .${remoteDebugArg}`, {
     stdio: 'inherit',
     shell: true,
     env: {

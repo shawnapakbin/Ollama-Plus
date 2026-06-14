@@ -306,6 +306,7 @@ export default function App() {
   const [systemMessageDraft, setSystemMessageDraft] = useState('');
   const [toast, setToast] = useState<AppToast | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+  const previousKeepAliveRef = useRef(keepAlive);
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState(localStorage.getItem('currentSessionId') || '');
@@ -820,6 +821,19 @@ export default function App() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [hostUrl, keepAlive, fetchModels, refreshSessions]);
+
+  useEffect(() => {
+    const wasKeepAlive = previousKeepAliveRef.current;
+    previousKeepAliveRef.current = keepAlive;
+
+    if (keepAlive || !wasKeepAlive) return;
+    const timer = window.setTimeout(() => {
+      void ipcService.unloadModels(hostUrl).catch((err) => {
+        console.warn('Failed to unload models after disabling keepAlive', err);
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [hostUrl, keepAlive]);
 
   useEffect(() => {
     localStorage.setItem('selectedModel', selectedModel);

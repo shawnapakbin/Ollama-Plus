@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  invokeOllama: (hostUrl, endpoint, data) => ipcRenderer.invoke('ollama-request', hostUrl, endpoint, data),
+  invokeOllama: (hostUrl, endpoint, data, timeoutMs) => ipcRenderer.invoke('ollama-request', hostUrl, endpoint, data, timeoutMs),
   invokeOllamaStream: (hostUrl, endpoint, data, onData, onEnd, onError) => {
     const streamId = Math.random().toString(36).substring(7);
     const dataChannel = `ollama-data-${streamId}`;

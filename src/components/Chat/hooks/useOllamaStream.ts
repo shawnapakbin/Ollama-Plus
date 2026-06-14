@@ -16,6 +16,14 @@ interface RunStreamOptions {
   onChunk?: (content: string) => void;
 }
 
+interface OllamaPsModel {
+  name?: string;
+}
+
+interface OllamaPsResponse {
+  models?: OllamaPsModel[];
+}
+
 interface StreamAccumulatorState {
   content: string;
   toolCalls: ToolCall[] | null;
@@ -24,6 +32,27 @@ interface StreamAccumulatorState {
   textContent: string;
   thinkingContent: string;
   thinkingOpen: boolean;
+}
+
+const STREAM_INACTIVITY_TIMEOUT_MS = 180_000;
+const STREAM_MAX_DURATION_MS = 3 * 60_000;
+
+function getPayloadModel(payload: unknown): string {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return '';
+  const model = (payload as { model?: unknown }).model;
+  return typeof model === 'string' ? model.trim() : '';
+}
+
+function modelAppearsLoaded(psRes: unknown, modelName: string): boolean {
+  if (!modelName) return false;
+  const models = Array.isArray((psRes as OllamaPsResponse | null | undefined)?.models)
+    ? (psRes as OllamaPsResponse).models
+    : [];
+  const expected = modelName.toLowerCase();
+  return models.some((entry) => {
+    const candidate = typeof entry?.name === 'string' ? entry.name.toLowerCase() : '';
+    return candidate === expected || expected.startsWith(candidate) || candidate.startsWith(expected);
+  });
 }
 
 function composeDisplayContent(state: StreamAccumulatorState): string {
@@ -137,11 +166,73 @@ export function useOllamaStream() {
       };
 
       return new Promise<StreamResult>((resolve, reject) => {
+        let settled = false;
+        let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+        let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const cleanupTimers = () => {
+          if (inactivityTimer) {
+            clearTimeout(inactivityTimer);
+            inactivityTimer = null;
+          }
+          if (maxDurationTimer) {
+            clearTimeout(maxDurationTimer);
+            maxDurationTimer = null;
+          }
+        };
+
+        const failStream = (message: string) => {
+          if (settled) return;
+          settled = true;
+          cleanupTimers();
+          const activeId = activeStreamIdRef.current;
+          if (activeId) ipcService.stopOllamaStream(activeId);
+          activeStreamIdRef.current = null;
+          setActiveStreamId(null);
+          reject(new Error(message));
+        };
+
+        const handleInactivityTimeout = async () => {
+          if (settled) return;
+
+          let message =
+            'Ollama stream timed out due to inactivity. Try a smaller model, shorter prompt, or lower context window.';
+          const requestedModel = getPayloadModel(payload);
+
+          if (requestedModel) {
+            try {
+              const psRes = await ipcService.invokeOllama(hostUrl, '/api/ps', undefined, 4_000);
+              if (!modelAppearsLoaded(psRes, requestedModel)) {
+                message =
+                  `Ollama stream stalled and model "${requestedModel}" appears to have been unloaded mid-generation. `
+                  + 'Disable Keep Alive auto-unload, avoid parallel app instances, and retry.';
+              }
+            } catch {
+              // Ignore diagnostics failures and fall back to the generic timeout message.
+            }
+          }
+
+          failStream(message);
+        };
+
+        const resetInactivityTimer = () => {
+          if (settled) return;
+          if (inactivityTimer) clearTimeout(inactivityTimer);
+          inactivityTimer = setTimeout(() => {
+            void handleInactivityTimeout();
+          }, STREAM_INACTIVITY_TIMEOUT_MS);
+        };
+
         const sId = ipcService.invokeOllamaStream(hostUrl, endpoint, payload, {
           onData: (chunkText: string) => {
+            if (settled) return;
+            resetInactivityTimer();
             applyOllamaStreamChunk(streamState, chunkText, onChunk);
           },
           onEnd: () => {
+            if (settled) return;
+            settled = true;
+            cleanupTimers();
             flushOllamaStreamChunkBuffer(streamState, onChunk);
             activeStreamIdRef.current = null;
             setActiveStreamId(null);
@@ -153,6 +244,9 @@ export function useOllamaStream() {
             });
           },
           onError: (err: string) => {
+            if (settled) return;
+            settled = true;
+            cleanupTimers();
             activeStreamIdRef.current = null;
             setActiveStreamId(null);
             reject(new Error(err));
@@ -160,6 +254,12 @@ export function useOllamaStream() {
         });
         activeStreamIdRef.current = sId;
         setActiveStreamId(sId);
+        resetInactivityTimer();
+        maxDurationTimer = setTimeout(() => {
+          failStream(
+            'Ollama stream exceeded the maximum generation time. Try a smaller model, shorter prompt, or lower context window.'
+          );
+        }, STREAM_MAX_DURATION_MS);
       });
     },
     []

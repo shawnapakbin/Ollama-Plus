@@ -64,6 +64,7 @@ let mainWindow;
 // Store active terminals and streams
 const terminals = {};
 const activeStreams = {};
+const DEFAULT_OLLAMA_REQUEST_TIMEOUT_MS = 20_000;
 const rateWindows = new Map();
 const pendingPolicyDecisions = new Map();
 const DISCOVERABLE_MODEL_EXTENSIONS = new Set(['.obj', '.stl', '.gltf', '.glb', '.scad']);
@@ -810,15 +811,27 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
     }
   });
-});
+
+  app.whenReady().then(() => {
+    createWindow();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -914,20 +927,47 @@ async function buildHttpError(response) {
 }
 
 // Ollama API Proxy (Bypasses CORS)
-ipcMain.handle('ollama-request', async (event, hostUrl, endpoint, data) => {
+ipcMain.handle('ollama-request', async (event, hostUrl, endpoint, data, timeoutMs) => {
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const requestedTimeout = Number(timeoutMs);
+  const effectiveTimeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0
+    ? Math.min(Math.max(Math.trunc(requestedTimeout), 1000), 120_000)
+    : DEFAULT_OLLAMA_REQUEST_TIMEOUT_MS;
+  const timeoutHandle = setTimeout(() => {
+    try {
+      controller.abort();
+    } catch {
+      /* ignore */
+    }
+  }, effectiveTimeoutMs);
+  timeoutHandle.unref?.();
+
+  console.log(`[ollama-request] start endpoint=${String(endpoint || '')} timeoutMs=${effectiveTimeoutMs}`);
   try {
     const url = buildOllamaUrl(hostUrl, endpoint);
     const response = await fetchOllama(url, {
       method: data ? 'POST' : 'GET',
       headers: { 'Content-Type': 'application/json' },
-      body: data ? JSON.stringify(data) : undefined
+      body: data ? JSON.stringify(data) : undefined,
+      signal: controller.signal
     });
 
     if (!response.ok) throw new Error(await buildHttpError(response));
-    return await response.json();
+    const json = await response.json();
+    const elapsedMs = Date.now() - startedAt;
+    console.log(`[ollama-request] ok endpoint=${String(endpoint || '')} elapsedMs=${elapsedMs}`);
+    return json;
   } catch (err) {
+    if (err && typeof err === 'object' && err.name === 'AbortError') {
+      const elapsedMs = Date.now() - startedAt;
+      console.warn(`[ollama-request] timeout endpoint=${String(endpoint || '')} elapsedMs=${elapsedMs}`);
+      throw new Error(`Ollama request timed out after ${effectiveTimeoutMs}ms.`);
+    }
     console.error('Ollama Error:', sanitizeError(err));
     throw new Error(formatOllamaFetchError(err, hostUrl));
+  } finally {
+    clearTimeout(timeoutHandle);
   }
 });
 

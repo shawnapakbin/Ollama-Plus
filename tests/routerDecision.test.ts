@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildRouterPayload,
+  hasPriorToolUsage,
   shouldSkipRouterForModel,
   shouldEnableToolsFromRouterResponse,
   shouldForceTools
@@ -25,9 +26,41 @@ describe('shouldForceTools', () => {
     expect(shouldForceTools('what is the latest news on oil prices today')).toBe(true);
   });
 
+  it('returns true for debug and terminal-execution prompts', () => {
+    expect(shouldForceTools('run a debug on this failing startup issue')).toBe(true);
+    expect(shouldForceTools('execute this test command in terminal and inspect logs')).toBe(true);
+  });
+
   it('returns false for non-tool prompts', () => {
     expect(shouldForceTools('Summarize this markdown file')).toBe(false);
     expect(shouldForceTools('')).toBe(false);
+  });
+});
+
+describe('hasPriorToolUsage', () => {
+  it('returns true when tool role messages exist', () => {
+    expect(hasPriorToolUsage([{ role: 'tool', content: 'ok' }])).toBe(true);
+  });
+
+  it('returns true when assistant emitted tool calls', () => {
+    expect(
+      hasPriorToolUsage([
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [{ function: { name: 'scene_3d', arguments: { action: 'list' } } }]
+        }
+      ])
+    ).toBe(true);
+  });
+
+  it('returns false for plain user/assistant history', () => {
+    expect(
+      hasPriorToolUsage([
+        { role: 'user', content: 'hello' },
+        { role: 'assistant', content: 'hi there' }
+      ])
+    ).toBe(false);
   });
 });
 
@@ -41,6 +74,8 @@ describe('buildRouterPayload', () => {
         { role: 'user', content: 'User request: "find the weather"\nDo you need tools for this?' }
       ],
       stream: false,
+      think: false,
+      keep_alive: 0,
       options: {
         temperature: 0,
         num_predict: 8
@@ -48,9 +83,9 @@ describe('buildRouterPayload', () => {
     });
   });
 
-  it('includes keep_alive when keepAlive is enabled', () => {
+  it('keeps router requests unload-safe even when keepAlive is enabled', () => {
     const payload = buildRouterPayload('llama3.2', 'find the weather', true);
-    expect(payload.keep_alive).toBe(-1);
+    expect(payload.keep_alive).toBe(0);
   });
 
   it('skips router calls for qwen-family models', () => {

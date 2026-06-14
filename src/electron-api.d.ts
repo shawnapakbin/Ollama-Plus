@@ -118,7 +118,7 @@ type McpWikiConfig = {
 };
 
 type ElectronAPI = {
-  invokeOllama: (hostUrl: string, endpoint: string, data?: unknown) => Promise<unknown>;
+  invokeOllama: (hostUrl: string, endpoint: string, data?: unknown, timeoutMs?: number) => Promise<unknown>;
   invokeOllamaStream: (
     hostUrl: string,
     endpoint: string,

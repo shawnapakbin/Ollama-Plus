@@ -41,9 +41,9 @@ function rejected(method: string): Promise<never> {
 }
 
 export const ipcService = {
-  invokeOllama(hostUrl: string, endpoint: string, data?: unknown) {
+  invokeOllama(hostUrl: string, endpoint: string, data?: unknown, timeoutMs?: number) {
     if (!isElectronAvailable()) return rejected('invokeOllama');
-    return getElectronApi().invokeOllama(hostUrl, endpoint, data);
+    return getElectronApi().invokeOllama(hostUrl, endpoint, data, timeoutMs);
   },
   invokeOllamaStream(hostUrl: string, endpoint: string, data: unknown, handlers: StreamHandlers) {
     if (!isElectronAvailable()) {

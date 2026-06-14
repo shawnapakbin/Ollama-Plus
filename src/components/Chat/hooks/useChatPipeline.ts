@@ -6,6 +6,7 @@ import { extractToolCallsFromContent } from '../pipeline/extractToolCalls';
 import { formatMetrics } from '../pipeline/formatMetrics';
 import {
   buildRouterPayload,
+  hasPriorToolUsage,
   shouldSkipRouterForModel,
   shouldEnableToolsFromRouterResponse,
   shouldForceTools
@@ -18,7 +19,7 @@ import {
 } from '../pipeline/toolRepair';
 import { TOOL_SCHEMAS } from '../tools/registry';
 import type { ChatMessage, ToolCall, OllamaFinalResponse } from '../types';
-import type { SteerPayload } from './useSteerQueue';
+import type { SteerAbortIntent, SteerPayload } from './useSteerQueue';
 import { useToolRunner } from './useToolRunner';
 
 type ChatMode = 'auto' | 'tools' | 'standard';
@@ -53,6 +54,7 @@ interface UseChatPipelineOptions {
   runStream: StreamRunner;
   refreshProcessor: () => Promise<void> | void;
   enterGeneration: () => boolean;
+  getAbortIntent: () => SteerAbortIntent;
   exitGeneration: () => { flush: SteerPayload | null; intent: 'stop-only' | 'interrupt-send' | null };
 }
 
@@ -68,6 +70,8 @@ interface UseChatPipelineOptions {
  */
 export function useChatPipeline(opts: UseChatPipelineOptions) {
   const MAX_INCOMPLETE_STREAM_RETRIES = 1;
+  const HARD_MAX_AUTONOMOUS_TURNS = 24;
+  const KEEP_ALIVE_SECONDS = 120;
   const optsRef = useRef(opts);
   useEffect(() => {
     optsRef.current = opts;
@@ -77,7 +81,7 @@ export function useChatPipeline(opts: UseChatPipelineOptions) {
   const { run: runToolCall } = useToolRunner();
 
   const runAutoRename = useCallback(async (currentMessages: ChatMessage[]) => {
-    const { selectedModel, modelContextWindow, hostUrl, keepAlive, renameSession } = optsRef.current;
+    const { selectedModel, modelContextWindow, hostUrl, renameSession } = optsRef.current;
     try {
       const prompt = `You are a helpful assistant. Based on the following conversation, provide a VERY concise (3-5 words) title for this chat session. Do not use quotes or special characters.
 Conversation:
@@ -93,9 +97,9 @@ Title:`;
       if (modelContextWindow && modelContextWindow > 0) {
         payload.options = { num_ctx: modelContextWindow };
       }
-      if (keepAlive) payload.keep_alive = -1;
+      payload.keep_alive = 0;
 
-      const res = await ipcService.invokeOllama(hostUrl, '/api/chat', payload);
+      const res = await ipcService.invokeOllama(hostUrl, '/api/chat', payload, 10_000);
       if (res && res.message && res.message.content) {
         await renameSession(res.message.content);
       }
@@ -128,7 +132,8 @@ Title:`;
       saveSession,
       runStream,
       refreshProcessor,
-      enterGeneration
+      enterGeneration,
+      getAbortIntent
     } = optsRef.current;
 
     const firstEntry = enterGeneration();
@@ -142,6 +147,19 @@ Title:`;
         memoryContext = formatMemoryContext(mem || '');
       } catch {
         /* ignore: memory is optional */
+      }
+
+      if (turnNumber > HARD_MAX_AUTONOMOUS_TURNS) {
+        const stopMessage = `Safety stop after ${HARD_MAX_AUTONOMOUS_TURNS} turns to prevent runaway loops. Refine the prompt or lower tool autonomy before retrying.`;
+        const stoppedMsgs: ChatMessage[] = [
+          ...currentMessages,
+          { role: 'assistant', model: selectedModel, content: stopMessage, metrics: null }
+        ];
+        setMessages(stoppedMsgs);
+        await saveSession(stoppedMsgs);
+        onTurnLimitReached(stopMessage);
+        if (taskId) taskRuntime.setState(taskId, 'failed', stopMessage);
+        return;
       }
 
       if (turnLimit > 0 && turnNumber > turnLimit) {
@@ -161,28 +179,42 @@ Title:`;
         model: selectedModel,
         messages: currentMessages,
         stream: true,
+        think: false,
         options: {
           num_predict: 8192,
           ...(modelContextWindow && modelContextWindow > 0 ? { num_ctx: modelContextWindow } : {})
         }
       };
-      if (keepAlive) payload.keep_alive = -1;
+      payload.keep_alive = keepAlive ? KEEP_ALIVE_SECONDS : 0;
 
       const skipRouterForModel = shouldSkipRouterForModel(selectedModel);
-      if (skipRouterForModel) payload.think = false;
 
       let useTools = false;
       if (chatMode === 'tools') {
         useTools = true;
       } else if (chatMode === 'auto') {
-        const userPrompt = currentMessages[currentMessages.length - 1].content;
-        if (shouldForceTools(userPrompt)) {
+        if (hasPriorToolUsage(currentMessages)) {
           useTools = true;
-        } else if (skipRouterForModel) {
+        }
+        const userPrompt = currentMessages[currentMessages.length - 1].content;
+        if (!useTools && shouldForceTools(userPrompt)) {
+          useTools = true;
+        } else if (!useTools && skipRouterForModel) {
           // Qwen-family models can spend a long reasoning pass on YES/NO routing.
           // Skip router LLM calls and reserve tools for clear force-intent paths.
           useTools = false;
-        } else {
+        } else if (!useTools) {
+          if (getAbortIntent()) {
+            const stoppedMsgs: ChatMessage[] = [
+              ...currentMessages,
+              { role: 'assistant', model: selectedModel, content: '_Generation stopped by user before routing._', metrics: null }
+            ];
+            setMessages(stoppedMsgs);
+            await saveSession(stoppedMsgs);
+            if (taskId) taskRuntime.setState(taskId, 'failed', 'Generation stopped by user before routing.');
+            return;
+          }
+
           setMessages(prev => {
             const updated = [...prev];
             updated[updated.length - 1] = { role: 'assistant', content: '🤔 *Evaluating tool usage...*' };
@@ -190,7 +222,7 @@ Title:`;
           });
           try {
             const routerPayload = buildRouterPayload(selectedModel, userPrompt, keepAlive, modelContextWindow || null);
-            const routerRes = await ipcService.invokeOllama(hostUrl, '/api/chat', routerPayload);
+            const routerRes = await ipcService.invokeOllama(hostUrl, '/api/chat', routerPayload, 8_000);
             if (shouldEnableToolsFromRouterResponse(routerRes)) {
               useTools = true;
             }
@@ -213,6 +245,17 @@ Title:`;
         customSystemMessage,
         injectDateTime
       });
+
+      if (getAbortIntent()) {
+        const stoppedMsgs: ChatMessage[] = [
+          ...currentMessages,
+          { role: 'assistant', model: selectedModel, content: '_Generation stopped by user._', metrics: null }
+        ];
+        setMessages(stoppedMsgs);
+        await saveSession(stoppedMsgs);
+        if (taskId) taskRuntime.setState(taskId, 'failed', 'Generation stopped by user.');
+        return;
+      }
 
       const { content: currentContent, toolCalls: streamedToolCalls, finalRes, completed } = await runStream({
         hostUrl,
@@ -253,12 +296,23 @@ Title:`;
 
         setMessages([...toolResults, { role: 'assistant', content: '', model: selectedModel }]);
         await saveSession(toolResults);
+        if (getAbortIntent()) {
+          const stoppedAfterTools: ChatMessage[] = [
+            ...toolResults,
+            { role: 'assistant', model: selectedModel, content: '_Generation stopped by user after tool execution._', metrics: null }
+          ];
+          setMessages(stoppedAfterTools);
+          await saveSession(stoppedAfterTools);
+          if (taskId) taskRuntime.setState(taskId, 'failed', 'Generation stopped by user after tool execution.');
+          return;
+        }
         await processOllamaRequestInner(toolResults, taskId, 0, '', turnNumber + 1, 0);
         return;
       }
 
       if (!completed) {
-        if (incompleteStreamRetryCount < MAX_INCOMPLETE_STREAM_RETRIES) {
+        const interruptedByUser = Boolean(getAbortIntent());
+        if (!interruptedByUser && incompleteStreamRetryCount < MAX_INCOMPLETE_STREAM_RETRIES) {
           if (taskId) taskRuntime.addLog(taskId, 'Stream ended without final done token; retrying once.');
           await processOllamaRequestInner(
             currentMessages,
@@ -272,15 +326,23 @@ Title:`;
         }
         const trimmed = currentContent.trim();
         const interruptedContent = trimmed
-          ? `${trimmed}\n\n_Generation interrupted before completion._`
-          : '_Generation interrupted before completion._';
+          ? `${trimmed}\n\n${interruptedByUser ? '_Generation stopped by user._' : '_Generation interrupted before completion._'}`
+          : interruptedByUser
+            ? '_Generation stopped by user._'
+            : '_Generation interrupted before completion._';
         const interruptedMsgs: ChatMessage[] = [
           ...currentMessages,
           { role: 'assistant', model: selectedModel, content: interruptedContent, metrics: null }
         ];
         setMessages(interruptedMsgs);
         await saveSession(interruptedMsgs);
-        if (taskId) taskRuntime.setState(taskId, 'failed', 'Generation interrupted before completion.');
+        if (taskId) {
+          taskRuntime.setState(
+            taskId,
+            'failed',
+            interruptedByUser ? 'Generation stopped by user.' : 'Generation interrupted before completion.'
+          );
+        }
         return;
       }
 
