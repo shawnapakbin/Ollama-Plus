@@ -99,6 +99,7 @@
 .wiki-content {
   flex: 1;
   position: relative;
+  min-height: 0;
 }
 
 .wiki-textarea {
