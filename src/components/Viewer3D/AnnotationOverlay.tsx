@@ -138,42 +138,44 @@ export default function AnnotationOverlay({ selectedId, onSelect }: AnnotationOv
           Annotations
           <span className="annotation-overlay__count">({list.length})</span>
         </span>
-        <button
-          type="button"
-          className="annotation-overlay__btn annotation-overlay__btn--primary"
-          onClick={handleSend}
-          disabled={list.length === 0}
-          title="Send annotations to the assistant"
-        >
-          <Send size={14} /> Send
-        </button>
-        <button
-          type="button"
-          className="annotation-overlay__btn"
-          onClick={() => selected && beginEdit(selected)}
-          disabled={!selected}
-          title="Edit selected annotation"
-        >
-          <Pencil size={14} /> Edit
-        </button>
-        <button
-          type="button"
-          className="annotation-overlay__btn annotation-overlay__btn--danger"
-          onClick={handleDelete}
-          disabled={!selected}
-          title="Delete selected annotation"
-        >
-          <Trash2 size={14} /> Delete
-        </button>
-        <button
-          type="button"
-          className="annotation-overlay__btn annotation-overlay__btn--danger"
-          onClick={handleClearAll}
-          disabled={list.length === 0}
-          title="Remove every annotation"
-        >
-          <Eraser size={14} /> Clear All
-        </button>
+        <div className="annotation-overlay__btn-group">
+          <button
+            type="button"
+            className="annotation-overlay__btn annotation-overlay__btn--primary"
+            onClick={handleSend}
+            disabled={list.length === 0}
+            title="Send annotations to the assistant"
+          >
+            <Send size={14} /> Send
+          </button>
+          <button
+            type="button"
+            className="annotation-overlay__btn"
+            onClick={() => selected && beginEdit(selected)}
+            disabled={!selected}
+            title="Edit selected annotation"
+          >
+            <Pencil size={14} /> Edit
+          </button>
+          <button
+            type="button"
+            className="annotation-overlay__btn annotation-overlay__btn--danger"
+            onClick={handleDelete}
+            disabled={!selected}
+            title="Delete selected annotation"
+          >
+            <Trash2 size={14} /> Delete
+          </button>
+          <button
+            type="button"
+            className="annotation-overlay__btn annotation-overlay__btn--danger"
+            onClick={handleClearAll}
+            disabled={list.length === 0}
+            title="Remove every annotation"
+          >
+            <Eraser size={14} /> Clear All
+          </button>
+        </div>
       </div>
 
       <div className="annotation-overlay__row annotation-overlay__grid">

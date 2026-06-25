@@ -97,6 +97,12 @@
   border-color: rgba(239, 68, 68, 0.55);
 }
 
+.annotation-overlay__btn-group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
 .annotation-overlay__grid {
   display: flex;
   align-items: center;
