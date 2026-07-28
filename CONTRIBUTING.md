@@ -27,6 +27,7 @@ Quality checks:
 ```bash
 npm run lint
 npm test
+npm run release:check -- --run
 ```
 
 ## Reporting bugs
@@ -57,6 +58,27 @@ Follow the private disclosure process documented in `SECURITY.md`.
 - Add or update tests for behavior changes.
 - Update documentation when behavior or workflows change.
 - Confirm lint and tests pass locally before requesting review.
+
+## Branch strategy
+
+The repository follows a two-branch baseline:
+
+- `main`: release-only branch.
+- `development`: active integration branch.
+
+Expected flow:
+
+1. Create feature branches from `development`.
+2. Open PRs into `development` for normal work.
+3. Promote tested release candidates from `development` into `main`.
+4. For urgent production fixes, patch `main` and back-merge into `development`.
+
+Do not push directly to `main` outside emergency hotfix workflows.
+
+Branch protection setup:
+
+- Apply the standard protection baseline using `scripts/set-branch-protection.ps1`.
+- See `docs/branch-protection.md` for dry-run/apply commands and validation steps.
 
 Pull request template:
 
