@@ -253,6 +253,8 @@ export function useOllamaStream() {
 
         const scheduleRetryOrFail = (message: string) => {
           if (settled) return;
+          if (retryTimer) return;
+          cleanupTimers();
           const manualStop = userStopRequestedRef.current;
           if (!manualStop && attempt < STREAM_MAX_TRANSIENT_RETRIES && isRetryableStreamError(message)) {
             const delayMs = computeRetryDelayMs(attempt);
