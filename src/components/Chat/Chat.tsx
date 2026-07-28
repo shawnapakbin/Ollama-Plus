@@ -21,6 +21,7 @@ interface AttachedFile {
   name: string;
   content: string | null;
   kind?: 'text' | 'image';
+  mimeType?: string;
   imageBase64?: string | null;
   imagePath?: string | null;
   meta?: string;
@@ -437,7 +438,9 @@ export default function Chat({
     for (const file of dropped) {
       const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
       const isImage = (file.type || '').toLowerCase().startsWith('image/') || IMAGE_EXTENSIONS.has(ext);
+      const attachmentId = crypto.randomUUID();
       const tempEntry: AttachedFile = {
+        id: attachmentId,
         name: file.name,
         content: null,
         kind: isImage ? 'image' : 'text',
@@ -456,8 +459,9 @@ export default function Chat({
           const kib = Math.max(1, Math.round(processed.bytes / 1024));
           const meta = `${processed.width}x${processed.height} • ${kib} KB${processed.optimized ? ' • optimized' : ''}`;
           setAttachedFiles(prev => prev.map(f =>
-            f.name === file.name && f.parsing
+            f.id === attachmentId
               ? {
+                  id: attachmentId,
                   name: file.name,
                   content: null,
                   kind: 'image',
@@ -475,7 +479,7 @@ export default function Chat({
         let parsedText = '';
         if (ext === 'pdf' || ext === 'csv') {
           const arrayBuffer = await file.arrayBuffer();
-          parsedText = await ipcService.parseFileBuffer(ext, Array.from(new Uint8Array(arrayBuffer)));
+          parsedText = String(await ipcService.parseFileBuffer(ext, Array.from(new Uint8Array(arrayBuffer))));
         } else {
           parsedText = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -486,12 +490,12 @@ export default function Chat({
         }
 
         setAttachedFiles(prev => prev.map(f =>
-          f.name === file.name && f.parsing
-            ? { name: file.name, content: parsedText, kind: 'text', parsing: false }
+          f.id === attachmentId
+            ? { id: attachmentId, name: file.name, content: parsedText, kind: 'text', parsing: false }
             : f
         ));
       } catch {
-        setAttachedFiles(prev => prev.filter(f => !(f.name === file.name && f.parsing)));
+        setAttachedFiles(prev => prev.filter(f => f.id !== attachmentId));
       }
     }
   };
@@ -572,13 +576,13 @@ export default function Chat({
         <div className="input-box glass-panel">
           {attachedFiles.length > 0 && (
             <div className="attached-files">
-              {attachedFiles.map((f, i) => (
-                <div key={i} className={`file-chip ${f.parsing ? 'parsing' : ''}`}>
+              {attachedFiles.map((f) => (
+                <div key={f.id} className={`file-chip ${f.parsing ? 'parsing' : ''}`}>
                   {f.kind === 'image' ? <ImageIcon size={12} /> : <FileText size={12} />}
                   <span>{f.name}{f.meta ? ` (${f.meta})` : ''}</span>
                   {f.parsing
                     ? <Loader2 size={12} className="spin" />
-                    : <button onClick={() => setAttachedFiles(prev => prev.filter((_, idx) => idx !== i))}>✕</button>
+                    : <button onClick={() => setAttachedFiles(prev => prev.filter(a => a.id !== f.id))}>✕</button>
                   }
                 </div>
               ))}
