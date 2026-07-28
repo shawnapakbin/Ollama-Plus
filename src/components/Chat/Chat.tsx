@@ -607,6 +607,7 @@ export default function Chat({
               className="wysiwyg-editor"
               contentEditable
               role="textbox"
+              aria-label="Chat message"
               aria-multiline="true"
               data-placeholder={isGenerating ? 'Queue a steer message... (Enter to queue)' : 'Send a message to Ollama... (Drag and drop images or files here)'}
               onInput={(e) => setComposerHtml((e.target as HTMLDivElement).innerHTML)}
