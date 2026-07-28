@@ -17,10 +17,10 @@ import '../Chat.css';
 type ChatMode = 'auto' | 'tools' | 'standard';
 
 interface AttachedFile {
+  id: string;
   name: string;
   content: string | null;
   kind?: 'text' | 'image';
-  mimeType?: string;
   imageBase64?: string | null;
   imagePath?: string | null;
   meta?: string;
