@@ -1,14 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Loader2, FileText, Square, Zap } from 'lucide-react';
+import { Send, Loader2, FileText, Square, Zap, Bold, Italic, Underline, List, ListOrdered, Image as ImageIcon } from 'lucide-react';
 import { ipcService } from '../../services/ipcService';
 import { taskRuntime } from '../../services/taskRuntime';
 import { MessageList } from './MessageList';
 import { buildSteerPayload } from './pipeline/buildSteerPayload';
+import { normalizeImageAttachmentMode } from './pipeline/imageTransport';
 import { useChatSession } from './hooks/useChatSession';
 import { useOllamaStream } from './hooks/useOllamaStream';
 import { useProcessorStatus } from './hooks/useProcessorStatus';
 import { useSteerQueue } from './hooks/useSteerQueue';
 import { useChatPipeline } from './hooks/useChatPipeline';
+import { isToolingEnabledInProfile } from './tools/toolPolicy';
 import type { ChatMessage } from './types';
 import '../Chat.css';
 
@@ -17,7 +19,213 @@ type ChatMode = 'auto' | 'tools' | 'standard';
 interface AttachedFile {
   name: string;
   content: string | null;
+  kind?: 'text' | 'image';
+  mimeType?: string;
+  imageBase64?: string | null;
+  imagePath?: string | null;
+  meta?: string;
   parsing?: boolean;
+}
+
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp']);
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const IMAGE_MAX_RENDER_DIMENSION = 2048;
+const IMAGE_RECOMPRESS_THRESHOLD_BYTES = 2 * 1024 * 1024;
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => resolve(String(ev.target?.result ?? ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+interface PreprocessedImagePayload {
+  base64: string;
+  mimeType: string;
+  bytes: number;
+  width: number;
+  height: number;
+  optimized: boolean;
+}
+
+function decodeImageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+function computeScaledSize(width: number, height: number, maxDimension: number): { width: number; height: number } {
+  const longest = Math.max(width, height);
+  if (longest <= maxDimension) return { width, height };
+  const scale = maxDimension / longest;
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale))
+  };
+}
+
+function estimateBase64Bytes(base64: string): number {
+  const padding = (base64.match(/=*$/)?.[0].length || 0);
+  return Math.floor((base64.length * 3) / 4) - padding;
+}
+
+function stripDataUrlPrefix(dataUrl: string): string {
+  const commaIdx = dataUrl.indexOf(',');
+  return commaIdx >= 0 ? dataUrl.slice(commaIdx + 1).trim() : '';
+}
+
+async function preprocessImageFile(file: File): Promise<PreprocessedImagePayload> {
+  const originalDataUrl = await readAsDataUrl(file);
+  const originalBase64 = stripDataUrlPrefix(originalDataUrl);
+  const originalBytes = estimateBase64Bytes(originalBase64);
+  const image = await decodeImageFromDataUrl(originalDataUrl);
+
+  const scaled = computeScaledSize(image.naturalWidth, image.naturalHeight, IMAGE_MAX_RENDER_DIMENSION);
+  const needsResize = scaled.width !== image.naturalWidth || scaled.height !== image.naturalHeight;
+  const shouldRecompress = needsResize || originalBytes > IMAGE_RECOMPRESS_THRESHOLD_BYTES;
+
+  if (!shouldRecompress) {
+    return {
+      base64: originalBase64,
+      mimeType: file.type || 'image/png',
+      bytes: originalBytes,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      optimized: false
+    };
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = scaled.width;
+  canvas.height = scaled.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return {
+      base64: originalBase64,
+      mimeType: file.type || 'image/png',
+      bytes: originalBytes,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      optimized: false
+    };
+  }
+
+  ctx.drawImage(image, 0, 0, scaled.width, scaled.height);
+
+  // Prefer webp for strong compression while preserving acceptable quality.
+  const candidates: Array<{ mimeType: string; quality?: number }> = [
+    { mimeType: 'image/webp', quality: 0.9 },
+    { mimeType: 'image/webp', quality: 0.82 },
+    { mimeType: 'image/jpeg', quality: 0.85 },
+    { mimeType: 'image/jpeg', quality: 0.75 }
+  ];
+
+  let bestBase64 = originalBase64;
+  let bestMimeType = file.type || 'image/png';
+  let bestBytes = originalBytes;
+
+  for (const candidate of candidates) {
+    const url = canvas.toDataURL(candidate.mimeType, candidate.quality);
+    const b64 = stripDataUrlPrefix(url);
+    if (!b64) continue;
+    const bytes = estimateBase64Bytes(b64);
+    if (bytes < bestBytes) {
+      bestBase64 = b64;
+      bestMimeType = candidate.mimeType;
+      bestBytes = bytes;
+    }
+  }
+
+  return {
+    base64: bestBase64,
+    mimeType: bestMimeType,
+    bytes: bestBytes,
+    width: scaled.width,
+    height: scaled.height,
+    optimized: bestBytes < originalBytes || needsResize
+  };
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function normalizeComposerText(value: string): string {
+  return value.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function markdownToEditorHtml(markdown: string): string {
+  if (!markdown.trim()) return '';
+  return escapeHtml(markdown)
+    .replace(/\n/g, '<br>');
+}
+
+function editorHtmlToMarkdown(html: string): string {
+  if (!html.trim()) return '';
+  const container = document.createElement('div');
+  container.innerHTML = html;
+
+  const walk = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return (node.textContent || '').replace(/\u00a0/g, ' ');
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+
+    const element = node as HTMLElement;
+    const tag = element.tagName.toLowerCase();
+    const children = Array.from(element.childNodes).map(walk).join('');
+
+    switch (tag) {
+      case 'strong':
+      case 'b':
+        return children ? `**${children}**` : '';
+      case 'em':
+      case 'i':
+        return children ? `*${children}*` : '';
+      case 'u':
+        return children ? `<u>${children}</u>` : '';
+      case 's':
+      case 'strike':
+        return children ? `~~${children}~~` : '';
+      case 'br':
+        return '\n';
+      case 'code':
+        return children ? `\`${children}\`` : '';
+      case 'p':
+      case 'div':
+        return children ? `${children}\n` : '\n';
+      case 'li':
+        return `${children}\n`;
+      case 'ul': {
+        const lines = Array.from(element.children).map((child) => `- ${walk(child).trim()}`).filter(Boolean);
+        return lines.length ? `${lines.join('\n')}\n` : '';
+      }
+      case 'ol': {
+        const lines = Array.from(element.children)
+          .map((child, idx) => `${idx + 1}. ${walk(child).trim()}`)
+          .filter(Boolean);
+        return lines.length ? `${lines.join('\n')}\n` : '';
+      }
+      default:
+        return children;
+    }
+  };
+
+  const raw = Array.from(container.childNodes).map(walk).join('');
+  return raw
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
 }
 
 interface ChatProps {
@@ -47,9 +255,12 @@ export default function Chat({
   researchTurnLimit,
   onResearchTurnLimitHit
 }: ChatProps) {
+  const toolingEnabled = isToolingEnabledInProfile();
+  const imageAttachmentMode = normalizeImageAttachmentMode(import.meta.env.VITE_IMAGE_ATTACHMENT_MODE as string | undefined);
   const { messages, setMessages, save: saveSession, rename: renameSession } = useChatSession({ sessionId, onSessionUpdate });
-  const [input, setInput] = useState('');
-  const [chatMode, setChatMode] = useState<ChatMode>('auto');
+  const [composerHtml, setComposerHtml] = useState('');
+  const [chatMode, setChatMode] = useState<ChatMode>(toolingEnabled ? 'auto' : 'standard');
+  const effectiveChatMode: ChatMode = toolingEnabled ? chatMode : 'standard';
   const { runStream, stop: stopStream, activeStreamId } = useOllamaStream();
   const { processor, refresh: refreshProcessor } = useProcessorStatus(hostUrl, selectedModel);
   const {
@@ -64,6 +275,7 @@ export default function Chat({
     getAbortIntent
   } = useSteerQueue();
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const messagesRef = useRef<ChatMessage[]>(messages);
@@ -77,7 +289,7 @@ export default function Chat({
     selectedModel,
     modelContextWindow: selectedModelContextWindow,
     keepAlive,
-    chatMode,
+    chatMode: effectiveChatMode,
     customSystemMessage: effectiveSystemMessage,
     injectDateTime: autoInjectDateTime,
     sessionTitle: sessionTitle ?? 'New Chat',
@@ -130,10 +342,30 @@ export default function Chat({
     await commitUserTurn(pending);
   };
 
+  const clearComposer = useCallback(() => {
+    setComposerHtml('');
+    if (editorRef.current) editorRef.current.innerHTML = '';
+  }, []);
+
+  const hasComposerContent = normalizeComposerText(
+    editorHtmlToMarkdown(composerHtml)
+  ).length > 0;
+
+  const applyEditorCommand = useCallback((command: string) => {
+    editorRef.current?.focus();
+    document.execCommand(command, false);
+    if (editorRef.current) setComposerHtml(editorRef.current.innerHTML);
+  }, []);
+
   const handleEdit = useCallback((index: number) => {
     const msg = messagesRef.current[index];
     if (!msg) return;
-    setInput(msg.content);
+    const html = markdownToEditorHtml(msg.content);
+    setComposerHtml(html);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = html;
+      editorRef.current.focus();
+    }
     setMessages(messagesRef.current.slice(0, index));
   }, [setMessages]);
 
@@ -173,16 +405,17 @@ export default function Chat({
   }, [sessionId, clearSteerQueue]);
 
   const handleSend = async () => {
-    if ((!input.trim() && attachedFiles.length === 0) || !selectedModel) return;
+    const html = (editorRef.current?.innerHTML || composerHtml || '').trim();
+    const textTrim = editorHtmlToMarkdown(html);
+    if ((!textTrim.trim() && attachedFiles.length === 0) || !selectedModel) return;
 
-    const textTrim = input.trim();
     const filesSnapshot = attachedFiles.map(f => ({ ...f }));
     const payload = buildSteerPayload(textTrim, filesSnapshot);
 
     if (isGenerating) {
       steerQueueRef.current = payload;
       setSteerQueue(payload);
-      setInput('');
+      clearComposer();
       setAttachedFiles([]);
       return;
     }
@@ -191,40 +424,75 @@ export default function Chat({
     const taskId = taskRuntime.createTask(taskTitle, 'chat');
     taskRuntime.setState(taskId, 'queued', 'Request captured from chat input.');
 
-    setInput('');
+    clearComposer();
     setAttachedFiles([]);
     await commitUserTurn(payload, taskId);
   };
 
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
+    const dropped = Array.from(e.dataTransfer.files || []);
+    if (dropped.length === 0) return;
 
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-    const tempEntry: AttachedFile = { name: file.name, content: null, parsing: true };
-    setAttachedFiles(prev => [...prev, tempEntry]);
+    for (const file of dropped) {
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+      const isImage = (file.type || '').toLowerCase().startsWith('image/') || IMAGE_EXTENSIONS.has(ext);
+      const tempEntry: AttachedFile = {
+        name: file.name,
+        content: null,
+        kind: isImage ? 'image' : 'text',
+        mimeType: file.type || undefined,
+        parsing: true
+      };
+      setAttachedFiles(prev => [...prev, tempEntry]);
 
-    try {
-      let parsedText = '';
+      try {
+        if (isImage) {
+          if (file.size > MAX_IMAGE_BYTES) {
+            throw new Error(`Image exceeds ${MAX_IMAGE_BYTES} bytes`);
+          }
+          const processed = await preprocessImageFile(file);
+          const imagePath = (file as File & { path?: string }).path || null;
+          const kib = Math.max(1, Math.round(processed.bytes / 1024));
+          const meta = `${processed.width}x${processed.height} • ${kib} KB${processed.optimized ? ' • optimized' : ''}`;
+          setAttachedFiles(prev => prev.map(f =>
+            f.name === file.name && f.parsing
+              ? {
+                  name: file.name,
+                  content: null,
+                  kind: 'image',
+                  mimeType: processed.mimeType,
+                  imageBase64: imageAttachmentMode === 'path' ? null : processed.base64,
+                  imagePath: imageAttachmentMode === 'base64' ? null : imagePath,
+                  meta,
+                  parsing: false
+                }
+              : f
+          ));
+          continue;
+        }
 
-      if (ext === 'pdf' || ext === 'csv') {
-        const arrayBuffer = await file.arrayBuffer();
-        parsedText = await ipcService.parseFileBuffer(ext, Array.from(new Uint8Array(arrayBuffer)));
-      } else {
-        parsedText = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = ev => resolve(String(ev.target?.result ?? ''));
-          reader.onerror = reject;
-          reader.readAsText(file);
-        });
+        let parsedText = '';
+        if (ext === 'pdf' || ext === 'csv') {
+          const arrayBuffer = await file.arrayBuffer();
+          parsedText = await ipcService.parseFileBuffer(ext, Array.from(new Uint8Array(arrayBuffer)));
+        } else {
+          parsedText = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = ev => resolve(String(ev.target?.result ?? ''));
+            reader.onerror = reject;
+            reader.readAsText(file);
+          });
+        }
+
+        setAttachedFiles(prev => prev.map(f =>
+          f.name === file.name && f.parsing
+            ? { name: file.name, content: parsedText, kind: 'text', parsing: false }
+            : f
+        ));
+      } catch {
+        setAttachedFiles(prev => prev.filter(f => !(f.name === file.name && f.parsing)));
       }
-
-      setAttachedFiles(prev => prev.map(f =>
-        f.name === file.name && f.parsing ? { name: file.name, content: parsedText, parsing: false } : f
-      ));
-    } catch {
-      setAttachedFiles(prev => prev.filter(f => !(f.name === file.name && f.parsing)));
     }
   };
 
@@ -260,14 +528,15 @@ export default function Chat({
           
           <select 
             aria-label="Select chat mode"
-            value={chatMode} 
+            value={effectiveChatMode} 
             onChange={(e) => setChatMode(e.target.value)}
             className="chat-mode-select"
-            disabled={isGenerating}
+            disabled={isGenerating || !toolingEnabled}
+            title={toolingEnabled ? 'Select chat mode' : 'Agent tools are disabled in this build profile'}
           >
-            <option value="auto">🤖 Auto (Smart Routing)</option>
             <option value="standard">🧠 Reasoning Mode (No Tools)</option>
-            <option value="tools">🛠️ Agent Mode (Force Tools)</option>
+            {toolingEnabled && <option value="auto">🤖 Auto (Smart Routing)</option>}
+            {toolingEnabled && <option value="tools">🛠️ Agent Mode (Force Tools)</option>}
           </select>
         </div>
         {steerQueue && (
@@ -305,8 +574,8 @@ export default function Chat({
             <div className="attached-files">
               {attachedFiles.map((f, i) => (
                 <div key={i} className={`file-chip ${f.parsing ? 'parsing' : ''}`}>
-                  <FileText size={12} />
-                  <span>{f.name}</span>
+                  {f.kind === 'image' ? <ImageIcon size={12} /> : <FileText size={12} />}
+                  <span>{f.name}{f.meta ? ` (${f.meta})` : ''}</span>
                   {f.parsing
                     ? <Loader2 size={12} className="spin" />
                     : <button onClick={() => setAttachedFiles(prev => prev.filter((_, idx) => idx !== i))}>✕</button>
@@ -315,19 +584,40 @@ export default function Chat({
               ))}
             </div>
           )}
-          <textarea 
-            value={input}
-            spellCheck={true}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            placeholder={isGenerating ? 'Queue a steer message… (Enter to queue)' : 'Send a message to Ollama... (Drag and drop files here)'}
-            rows={2}
-          />
+          <div className="composer-column">
+            <div className="composer-toolbar" aria-label="Rich text formatting toolbar">
+              <button type="button" className="composer-tool-btn" onClick={() => applyEditorCommand('bold')} title="Bold">
+                <Bold size={14} />
+              </button>
+              <button type="button" className="composer-tool-btn" onClick={() => applyEditorCommand('italic')} title="Italic">
+                <Italic size={14} />
+              </button>
+              <button type="button" className="composer-tool-btn" onClick={() => applyEditorCommand('underline')} title="Underline">
+                <Underline size={14} />
+              </button>
+              <button type="button" className="composer-tool-btn" onClick={() => applyEditorCommand('insertUnorderedList')} title="Bullet list">
+                <List size={14} />
+              </button>
+              <button type="button" className="composer-tool-btn" onClick={() => applyEditorCommand('insertOrderedList')} title="Numbered list">
+                <ListOrdered size={14} />
+              </button>
+            </div>
+            <div
+              ref={editorRef}
+              className="wysiwyg-editor"
+              contentEditable
+              role="textbox"
+              aria-multiline="true"
+              data-placeholder={isGenerating ? 'Queue a steer message... (Enter to queue)' : 'Send a message to Ollama... (Drag and drop images or files here)'}
+              onInput={(e) => setComposerHtml((e.target as HTMLDivElement).innerHTML)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleSend();
+                }
+              }}
+            />
+          </div>
           <div className="input-send-actions">
             {isGenerating && (
               <button className="stop-btn" onClick={handleStop} type="button" title="Stop generation (keeps queued steer for later)">
@@ -338,7 +628,7 @@ export default function Chat({
               type="button"
               className="primary send-btn"
               onClick={handleSend}
-              disabled={!input.trim() && attachedFiles.length === 0}
+              disabled={!hasComposerContent && attachedFiles.length === 0}
               title={isGenerating ? 'Queue steer message' : 'Send'}
             >
               <Send size={18} />

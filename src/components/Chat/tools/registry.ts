@@ -16,6 +16,7 @@ import {
   removeAnnotation
 } from '../../../services/annotationStore';
 import { requestOpenViewer3D } from '../../../services/workspaceEvents';
+import { isToolingEnabledInProfile, TOOLING_DISABLED_MESSAGE } from './toolPolicy';
 
 export interface ToolSchema {
   type: 'function';
@@ -1270,6 +1271,9 @@ const TOOL_HANDLERS: Record<string, (args: ToolArgs) => Promise<string>> = {
  * (search, calculator, math_eval, etc.) map to the canonical handler.
  */
 export async function runTool(fn: string, args: ToolArgs): Promise<string> {
+  if (!isToolingEnabledInProfile()) {
+    return TOOLING_DISABLED_MESSAGE;
+  }
   const handler = TOOL_HANDLERS[fn];
   if (!handler) return `Unknown tool: ${fn}`;
   try {

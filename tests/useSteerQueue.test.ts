@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   enterGenerationTransition,
   exitGenerationTransition,
+  sanitizeSteerPayload,
   type SteerPayload
 } from '../src/components/Chat/hooks/useSteerQueue';
 
@@ -9,6 +10,8 @@ const payload: SteerPayload = {
   displayContent: 'user visible',
   ollamaContent: 'llm content',
   attachmentNames: [],
+  imagePayloads: [],
+  imageReferences: [],
   preview: 'preview'
 };
 
@@ -77,5 +80,32 @@ describe('exitGenerationTransition', () => {
       intent: null,
       completed: true
     });
+  });
+});
+
+describe('sanitizeSteerPayload', () => {
+  it('accepts valid payload shape', () => {
+    const out = sanitizeSteerPayload({
+      displayContent: 'd',
+      ollamaContent: 'o',
+      attachmentNames: ['a.txt'],
+      imagePayloads: ['b64'],
+      imageReferences: ['C:/x.png'],
+      preview: 'p'
+    });
+    expect(out).toEqual({
+      displayContent: 'd',
+      ollamaContent: 'o',
+      attachmentNames: ['a.txt'],
+      imagePayloads: ['b64'],
+      imageReferences: ['C:/x.png'],
+      preview: 'p'
+    });
+  });
+
+  it('returns null for invalid objects', () => {
+    expect(sanitizeSteerPayload(null)).toBeNull();
+    expect(sanitizeSteerPayload({})).toBeNull();
+    expect(sanitizeSteerPayload({ displayContent: 'x' })).toBeNull();
   });
 });

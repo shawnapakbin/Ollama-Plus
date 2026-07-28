@@ -1,6 +1,7 @@
 import React from 'react';
 import { Bot, Loader2 } from 'lucide-react';
 import { MessageRow } from './MessageRow';
+import { isToolingEnabledInProfile } from './tools/toolPolicy';
 import type { ChatMessage } from './types';
 
 interface MessageListProps {
@@ -26,6 +27,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   onRegenerate,
   endRef
 }) => {
+  const toolingEnabled = isToolingEnabledInProfile();
   return (
     <div className="messages scrollable">
       {messages.length === 0 && (
@@ -33,8 +35,10 @@ export const MessageList: React.FC<MessageListProps> = ({
           <Bot size={48} className="empty-icon" />
           <h3>Ask anything</h3>
           <p>
-            Your local Ollama model is ready. Drag and drop CSV, MD, PDF, or TXT files here to analyze them. Use tools
-            to execute shell commands, fetch web pages, or read your wiki.
+            Your local Ollama model is ready. Drag and drop images, CSV, MD, PDF, or TXT files here.
+            {toolingEnabled
+              ? ' Agent tools are available when needed.'
+              : ' This build profile keeps tools disabled by default for core chat reliability.'}
           </p>
         </div>
       )}

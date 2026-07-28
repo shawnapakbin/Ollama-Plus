@@ -14,6 +14,8 @@ export interface ChatMessage {
   name?: string;
   tool_calls?: ToolCall[];
   attachments?: string[];
+  images?: string[];
+  imageReferences?: string[];
   metrics?: ChatMetrics | null;
 }
 

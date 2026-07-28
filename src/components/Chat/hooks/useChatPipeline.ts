@@ -5,6 +5,12 @@ import { buildSystemMessages, formatMemoryContext } from '../pipeline/buildPaylo
 import { extractToolCallsFromContent } from '../pipeline/extractToolCalls';
 import { formatMetrics } from '../pipeline/formatMetrics';
 import {
+  detectVisionCapabilityFromShow,
+  modelLikelySupportsVision,
+  normalizeImageAttachmentMode,
+  selectImageTransport
+} from '../pipeline/imageTransport';
+import {
   buildRouterPayload,
   hasPriorToolUsage,
   shouldSkipRouterForModel,
@@ -18,11 +24,64 @@ import {
   shouldRepairToolTurn
 } from '../pipeline/toolRepair';
 import { TOOL_SCHEMAS } from '../tools/registry';
+import {
+  filterToolSchemasByProfile,
+  isToolingEnabledInProfile,
+  TOOLING_DISABLED_MESSAGE
+} from '../tools/toolPolicy';
 import type { ChatMessage, ToolCall, OllamaFinalResponse } from '../types';
 import type { SteerAbortIntent, SteerPayload } from './useSteerQueue';
 import { useToolRunner } from './useToolRunner';
 
 type ChatMode = 'auto' | 'tools' | 'standard';
+
+const VISION_CAPABILITY_CACHE_TTL_MS = 10 * 60_000;
+const VISION_FALLBACK_PROBE_TIMEOUT_MS = 6_000;
+
+type VisionCacheEntry = {
+  supportsVision: boolean;
+  checkedAt: number;
+  source: 'heuristic' | 'show';
+};
+
+const visionCapabilityCache = new Map<string, VisionCacheEntry>();
+
+function buildVisionCacheKey(hostUrl: string, modelName: string): string {
+  return `${hostUrl}::${modelName}`;
+}
+
+async function resolveVisionSupport(hostUrl: string, modelName: string): Promise<VisionCacheEntry> {
+  const key = buildVisionCacheKey(hostUrl, modelName);
+  const now = Date.now();
+  const cached = visionCapabilityCache.get(key);
+  if (cached && now - cached.checkedAt < VISION_CAPABILITY_CACHE_TTL_MS) {
+    return cached;
+  }
+
+  const heuristic = modelLikelySupportsVision(modelName);
+  let resolved: VisionCacheEntry = {
+    supportsVision: heuristic,
+    checkedAt: now,
+    source: 'heuristic'
+  };
+
+  try {
+    const showRes = await ipcService.invokeOllama(hostUrl, '/api/show', { model: modelName }, VISION_FALLBACK_PROBE_TIMEOUT_MS);
+    const detected = detectVisionCapabilityFromShow(showRes);
+    if (detected !== null) {
+      resolved = {
+        supportsVision: detected,
+        checkedAt: now,
+        source: 'show'
+      };
+    }
+  } catch {
+    // Keep heuristic outcome when probing fails.
+  }
+
+  visionCapabilityCache.set(key, resolved);
+  return resolved;
+}
 
 type StreamRunner = (args: {
   hostUrl: string;
@@ -188,9 +247,13 @@ Title:`;
       payload.keep_alive = keepAlive ? KEEP_ALIVE_SECONDS : 0;
 
       const skipRouterForModel = shouldSkipRouterForModel(selectedModel);
+      const toolingEnabled = isToolingEnabledInProfile();
+      const availableToolSchemas = filterToolSchemasByProfile(TOOL_SCHEMAS);
 
       let useTools = false;
-      if (chatMode === 'tools') {
+      if (!toolingEnabled) {
+        useTools = false;
+      } else if (chatMode === 'tools') {
         useTools = true;
       } else if (chatMode === 'auto') {
         if (hasPriorToolUsage(currentMessages)) {
@@ -237,9 +300,11 @@ Title:`;
         }
       }
 
-      if (useTools) payload.tools = TOOL_SCHEMAS;
+      if (useTools && availableToolSchemas.length > 0) {
+        payload.tools = availableToolSchemas;
+      }
       payload.messages = buildSystemMessages(currentMessages, {
-        useTools,
+        useTools: useTools && availableToolSchemas.length > 0,
         memoryContext,
         repairContext,
         customSystemMessage,
@@ -279,6 +344,21 @@ Title:`;
       }
 
       if (toolCalls && toolCalls.length > 0) {
+        if (!toolingEnabled) {
+          const content = currentContent.trim();
+          const finalContent = content
+            ? `${content}\n\n_${TOOLING_DISABLED_MESSAGE}_`
+            : `_${TOOLING_DISABLED_MESSAGE}_`;
+          const finalMsgs: ChatMessage[] = [
+            ...currentMessages,
+            { role: 'assistant', model: selectedModel, content: finalContent, metrics: formatMetrics(finalRes) }
+          ];
+          setMessages(finalMsgs);
+          await saveSession(finalMsgs);
+          if (taskId) taskRuntime.setState(taskId, 'done', 'Completed with tool execution disabled by profile.');
+          return;
+        }
+
         const toolResults: ChatMessage[] = [
           ...currentMessages,
           { role: 'assistant', content: currentContent, tool_calls: toolCalls }
@@ -406,16 +486,48 @@ Title:`;
   }, [runAutoRename, runToolCall]);
 
   const commitUserTurn = useCallback(async (payload: SteerPayload, taskId: string | null = null): Promise<void> => {
-    const { messagesRef, setMessages, selectedModel } = optsRef.current;
+    const { messagesRef, setMessages, selectedModel, hostUrl } = optsRef.current;
     const base = messagesRef.current;
-    const { displayContent, ollamaContent, attachmentNames } = payload;
+    const { displayContent, ollamaContent, attachmentNames, imagePayloads, imageReferences } = payload;
+    const preferredImageMode = normalizeImageAttachmentMode(import.meta.env.VITE_IMAGE_ATTACHMENT_MODE as string | undefined);
+
+    let visionSupport: VisionCacheEntry = {
+      supportsVision: modelLikelySupportsVision(selectedModel),
+      checkedAt: Date.now(),
+      source: 'heuristic'
+    };
+    if (imagePayloads.length > 0 || imageReferences.length > 0) {
+      visionSupport = await resolveVisionSupport(hostUrl, selectedModel);
+    }
+
+    const transport = selectImageTransport({
+      preferredMode: preferredImageMode,
+      supportsVision: visionSupport.supportsVision,
+      imagePayloads,
+      imageReferences
+    });
+
+    if (taskId && (imagePayloads.length > 0 || imageReferences.length > 0)) {
+      taskRuntime.addLog(
+        taskId,
+        `Image transport=${transport.mode} (${transport.reason}); vision=${visionSupport.supportsVision ? 'yes' : 'no'} via ${visionSupport.source}.`
+      );
+    }
+
     const userMsg: ChatMessage = {
       role: 'user',
       content: displayContent,
-      ...(attachmentNames.length ? { attachments: attachmentNames } : {})
+      ...(attachmentNames.length ? { attachments: attachmentNames } : {}),
+      ...(imageReferences.length ? { imageReferences } : {})
     };
     const newMsgs = [...base, userMsg];
-    const ollamaMsgs: ChatMessage[] = [...base, { role: 'user', content: ollamaContent }];
+    const ollamaUserMessage: ChatMessage = {
+      role: 'user',
+      content: ollamaContent,
+      ...(transport.images.length ? { images: transport.images } : {}),
+      ...(transport.imageReferences.length ? { imageReferences: transport.imageReferences } : {})
+    };
+    const ollamaMsgs: ChatMessage[] = [...base, ollamaUserMessage];
     setMessages([...newMsgs, { role: 'assistant', content: '', model: selectedModel }]);
     await processOllamaRequest(ollamaMsgs, taskId, 0, '', 1, 0);
   }, [processOllamaRequest]);

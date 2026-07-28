@@ -2,6 +2,7 @@ import React, { Suspense, useRef, useState, useEffect, useCallback } from 'react
 import { Settings, MessageSquare, Terminal as TerminalIcon, Book, ListTodo, Box, Columns2, PanelLeftClose, PanelLeftOpen, Radar, FileText, ShieldCheck, RefreshCcw } from 'lucide-react';
 import ModelSelector, { type ModelEntry } from './components/ModelSelector';
 import ThemeSelector from './components/ThemeSelector';
+import { modelLikelySupportsVision, normalizeImageAttachmentMode } from './components/Chat/pipeline/imageTransport';
 import { ipcService, isElectronAvailable } from './services/ipcService';
 import { onOpenViewer3D } from './services/workspaceEvents';
 import logo from './assets/logo.png';
@@ -355,6 +356,8 @@ export default function App() {
 
   const activeLayout = layouts.find((layout) => layout.id === activeLayoutId) || layouts[0] || DEFAULT_LAYOUTS[0];
   const activeChatLayout = activeLayout.primary === 'chat' || activeLayout.secondary === 'chat';
+  const imageAttachmentMode = normalizeImageAttachmentMode(import.meta.env.VITE_IMAGE_ATTACHMENT_MODE as string | undefined);
+  const selectedModelLikelyVision = modelLikelySupportsVision(selectedModel);
   const activeHasSystemMessageOverride = Boolean(currentSessionId && Object.prototype.hasOwnProperty.call(chatSystemMessageOverrides, currentSessionId));
   const effectiveSystemMessage = activeHasSystemMessageOverride
     ? chatSystemMessageOverrides[currentSessionId] || ''
@@ -1255,6 +1258,14 @@ export default function App() {
               {selectedModel
                 ? `${shortHostLabel(selectedHost || hostUrl)}${selectedModelContextWindow ? ` • ctx ${selectedModelContextWindow.toLocaleString()}` : ''}`
                 : 'Choose a model from the dropdown'}
+            </span>
+          </div>
+          <div className="model-summary-host">
+            <span className={`mcp-status-chip ${selectedModelLikelyVision ? 'ready' : 'warn'}`}>
+              {selectedModelLikelyVision ? 'Vision Likely' : 'Text-Only Likely'}
+            </span>
+            <span>
+              image transport preference: {imageAttachmentMode}
             </span>
           </div>
         </section>

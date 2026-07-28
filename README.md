@@ -227,6 +227,25 @@ Run desktop app in development:
 npm run electron:dev
 ```
 
+### Release Profile Flags
+
+The production-focused chat profile can be controlled with Vite env vars:
+
+- `VITE_RELEASE_CORE_CHAT=true|false`
+	- Default behavior: `true` in production builds, `false` in dev builds.
+	- When `true`, advanced tool execution is disabled and chat runs in core mode.
+- `VITE_IMAGE_ATTACHMENT_MODE=both|base64|path`
+	- `both` (default): include both base64 payloads and local file path references for image attachments.
+	- `base64`: send only base64 image payloads.
+	- `path`: send only local file path references (when available from Electron drag-drop).
+
+Image transport runtime behavior:
+
+- The app probes `/api/show` per host/model (cached) to infer vision capability.
+- For vision-capable models, transport selection prefers base64 payloads unless `path` is explicitly preferred and available.
+- For non-vision models, the app falls back to path references when present; otherwise image payloads are omitted.
+- Chat task logs include the chosen image transport mode and probe source for easier troubleshooting.
+
 ## Build
 
 Build renderer bundle:

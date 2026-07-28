@@ -47,6 +47,22 @@ const STREAM_INACTIVITY_TIMEOUT_MS = 180_000;
 const STREAM_BASE_MAX_DURATION_MS = 3 * 60_000;
 const STREAM_BASE_CONTEXT_WINDOW = 8_192;
 const STREAM_MAX_DURATION_CAP_MS = 15 * 60_000;
+const STREAM_MAX_TRANSIENT_RETRIES = 2;
+const STREAM_RETRY_BASE_DELAY_MS = 400;
+const STREAM_RETRY_MAX_DELAY_MS = 2_000;
+
+export function computeRetryDelayMs(attemptIndex: number): number {
+  if (attemptIndex <= 0) return STREAM_RETRY_BASE_DELAY_MS;
+  const delay = STREAM_RETRY_BASE_DELAY_MS * (2 ** attemptIndex);
+  return Math.min(STREAM_RETRY_MAX_DELAY_MS, delay);
+}
+
+export function isRetryableStreamError(message: string): boolean {
+  const text = (message || '').toLowerCase();
+  if (!text) return false;
+  if (/\b(user|manual)\s*(stop|cancel)|stopped by user|interrupt-send\b/.test(text)) return false;
+  return /(timed out|timeout|econnreset|enetunreach|ehostunreach|socket hang up|network|connection|temporar|unavailable|reset by peer)/.test(text);
+}
 
 function getPayloadModel(payload: unknown): string {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return '';
@@ -88,6 +104,16 @@ function composeDisplayContent(state: StreamAccumulatorState): string {
   return thinkPart + state.textContent;
 }
 
+function emitIfChanged(
+  state: StreamAccumulatorState,
+  nextContent: string,
+  onChunk?: (content: string) => void
+) {
+  if (state.content === nextContent) return;
+  state.content = nextContent;
+  onChunk?.(nextContent);
+}
+
 function applyParsedLine(
   state: StreamAccumulatorState,
   line: string,
@@ -100,16 +126,14 @@ function applyParsedLine(
     if (typeof parsed.message.thinking === 'string' && parsed.message.thinking.length > 0) {
       state.thinkingContent += parsed.message.thinking;
       state.thinkingOpen = true;
-      state.content = composeDisplayContent(state);
-      onChunk?.(state.content);
+      emitIfChanged(state, composeDisplayContent(state), onChunk);
     }
 
     if (parsed.message.content) {
       // When content tokens begin, close any active thinking stream.
       if (state.thinkingOpen) state.thinkingOpen = false;
       state.textContent += parsed.message.content;
-      state.content = composeDisplayContent(state);
-      onChunk?.(state.content);
+      emitIfChanged(state, composeDisplayContent(state), onChunk);
     }
     if (parsed.message.tool_calls) {
       state.toolCalls = parsed.message.tool_calls;
@@ -154,8 +178,7 @@ export function flushOllamaStreamChunkBuffer(
 
   if (state.thinkingOpen) {
     state.thinkingOpen = false;
-    state.content = composeDisplayContent(state);
-    onChunk?.(state.content);
+    emitIfChanged(state, composeDisplayContent(state), onChunk);
   }
 }
 
@@ -168,9 +191,11 @@ export function flushOllamaStreamChunkBuffer(
  */
 export function useOllamaStream() {
   const activeStreamIdRef = useRef<string | null>(null);
+  const userStopRequestedRef = useRef(false);
   const [activeStreamId, setActiveStreamId] = useState<string | null>(null);
 
   const stop = useCallback(() => {
+    userStopRequestedRef.current = true;
     const id = activeStreamIdRef.current;
     if (id) {
       ipcService.stopOllamaStream(id);
@@ -181,6 +206,7 @@ export function useOllamaStream() {
 
   const runStream = useCallback(
     ({ hostUrl, endpoint, payload, onChunk }: RunStreamOptions): Promise<StreamResult> => {
+      userStopRequestedRef.current = false;
       const streamState: StreamAccumulatorState = {
         content: '',
         toolCalls: null,
@@ -192,9 +218,11 @@ export function useOllamaStream() {
       };
 
       return new Promise<StreamResult>((resolve, reject) => {
+        let attempt = 0;
         let settled = false;
         let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
         let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
+        let retryTimer: ReturnType<typeof setTimeout> | null = null;
         const maxDurationMs = computeStreamMaxDurationMs(payload);
 
         const cleanupTimers = () => {
@@ -206,9 +234,13 @@ export function useOllamaStream() {
             clearTimeout(maxDurationTimer);
             maxDurationTimer = null;
           }
+          if (retryTimer) {
+            clearTimeout(retryTimer);
+            retryTimer = null;
+          }
         };
 
-        const failStream = (message: string) => {
+        const finalizeError = (message: string) => {
           if (settled) return;
           settled = true;
           cleanupTimers();
@@ -217,6 +249,21 @@ export function useOllamaStream() {
           activeStreamIdRef.current = null;
           setActiveStreamId(null);
           reject(new Error(message));
+        };
+
+        const scheduleRetryOrFail = (message: string) => {
+          if (settled) return;
+          const manualStop = userStopRequestedRef.current;
+          if (!manualStop && attempt < STREAM_MAX_TRANSIENT_RETRIES && isRetryableStreamError(message)) {
+            const delayMs = computeRetryDelayMs(attempt);
+            attempt += 1;
+            retryTimer = setTimeout(() => {
+              if (settled) return;
+              startAttempt();
+            }, delayMs);
+            return;
+          }
+          finalizeError(message);
         };
 
         const handleInactivityTimeout = async () => {
@@ -239,7 +286,7 @@ export function useOllamaStream() {
             }
           }
 
-          failStream(message);
+          scheduleRetryOrFail(message);
         };
 
         const resetInactivityTimer = () => {
@@ -250,43 +297,53 @@ export function useOllamaStream() {
           }, STREAM_INACTIVITY_TIMEOUT_MS);
         };
 
-        const sId = ipcService.invokeOllamaStream(hostUrl, endpoint, payload, {
-          onData: (chunkText: string) => {
-            if (settled) return;
-            resetInactivityTimer();
-            applyOllamaStreamChunk(streamState, chunkText, onChunk);
-          },
-          onEnd: () => {
-            if (settled) return;
-            settled = true;
-            cleanupTimers();
-            flushOllamaStreamChunkBuffer(streamState, onChunk);
-            activeStreamIdRef.current = null;
-            setActiveStreamId(null);
-            resolve({
-              content: streamState.content,
-              toolCalls: streamState.toolCalls,
-              finalRes: streamState.finalRes,
-              completed: Boolean(streamState.finalRes?.done)
-            });
-          },
-          onError: (err: string) => {
-            if (settled) return;
-            settled = true;
-            cleanupTimers();
-            activeStreamIdRef.current = null;
-            setActiveStreamId(null);
-            reject(new Error(err));
-          }
-        });
-        activeStreamIdRef.current = sId;
-        setActiveStreamId(sId);
-        resetInactivityTimer();
-        maxDurationTimer = setTimeout(() => {
-          failStream(
-            'Ollama stream exceeded the maximum generation time for the active context window. Try a smaller model, shorter prompt, or lower context window.'
-          );
-        }, maxDurationMs);
+        const startAttempt = () => {
+          if (settled) return;
+          cleanupTimers();
+          const previousId = activeStreamIdRef.current;
+          if (previousId) ipcService.stopOllamaStream(previousId);
+
+          const sId = ipcService.invokeOllamaStream(hostUrl, endpoint, payload, {
+            onData: (chunkText: string) => {
+              if (settled) return;
+              resetInactivityTimer();
+              applyOllamaStreamChunk(streamState, chunkText, onChunk);
+            },
+            onEnd: () => {
+              if (settled) return;
+              settled = true;
+              cleanupTimers();
+              flushOllamaStreamChunkBuffer(streamState, onChunk);
+              activeStreamIdRef.current = null;
+              setActiveStreamId(null);
+              userStopRequestedRef.current = false;
+              resolve({
+                content: streamState.content,
+                toolCalls: streamState.toolCalls,
+                finalRes: streamState.finalRes,
+                completed: Boolean(streamState.finalRes?.done)
+              });
+            },
+            onError: (err: string) => {
+              if (settled) return;
+              cleanupTimers();
+              activeStreamIdRef.current = null;
+              setActiveStreamId(null);
+              scheduleRetryOrFail(err);
+            }
+          });
+
+          activeStreamIdRef.current = sId;
+          setActiveStreamId(sId);
+          resetInactivityTimer();
+          maxDurationTimer = setTimeout(() => {
+            scheduleRetryOrFail(
+              'Ollama stream exceeded the maximum generation time for the active context window. Try a smaller model, shorter prompt, or lower context window.'
+            );
+          }, maxDurationMs);
+        };
+
+        startAttempt();
       });
     },
     []

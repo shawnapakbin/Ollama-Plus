@@ -431,17 +431,64 @@
   cursor: not-allowed;
 }
 
-.input-box textarea {
+.composer-column {
   flex: 1;
-  background: transparent;
-  border: none;
-  resize: none;
-  min-height: 44px;
-  max-height: 200px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.input-box textarea:focus {
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-tool-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.composer-tool-btn:hover {
+  color: var(--text-main);
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.wysiwyg-editor {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-height: 44px;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-main);
+}
+
+.wysiwyg-editor:focus {
   outline: none;
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3);
+}
+
+.wysiwyg-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-muted);
+  opacity: 0.8;
 }
 
 .send-btn {
