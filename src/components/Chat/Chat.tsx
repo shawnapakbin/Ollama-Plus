@@ -529,7 +529,7 @@ export default function Chat({
           <select 
             aria-label="Select chat mode"
             value={effectiveChatMode} 
-            onChange={(e) => setChatMode(e.target.value)}
+            onChange={(e) => setChatMode(e.target.value as ChatMode)}
             className="chat-mode-select"
             disabled={isGenerating || !toolingEnabled}
             title={toolingEnabled ? 'Select chat mode' : 'Agent tools are disabled in this build profile'}
