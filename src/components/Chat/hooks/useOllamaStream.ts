@@ -302,9 +302,18 @@ export function useOllamaStream() {
         const startAttempt = () => {
           if (settled) return;
           cleanupTimers();
+          if (attempt > 0) {
+            streamState.content = '';
+            streamState.toolCalls = null;
+            streamState.finalRes = null;
+            streamState.lineBuffer = '';
+            streamState.textContent = '';
+            streamState.thinkingContent = '';
+            streamState.thinkingOpen = false;
+            onChunk?.('');
+          }
           const previousId = activeStreamIdRef.current;
           if (previousId) ipcService.stopOllamaStream(previousId);
-
           const sId = ipcService.invokeOllamaStream(hostUrl, endpoint, payload, {
             onData: (chunkText: string) => {
               if (settled) return;
