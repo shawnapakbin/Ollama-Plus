@@ -1,0 +1,32 @@
+.chat-rebuild-shell {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(56, 189, 248, 0.08), transparent 45%),
+    radial-gradient(120% 90% at 100% 0%, rgba(16, 185, 129, 0.08), transparent 45%);
+}
+
+.chat-rebuild-shell-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
+}
+
+.chat-rebuild-shell-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+
+.chat-rebuild-shell-header p {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.chat-rebuild-shell-body {
+  min-height: 0;
+  overflow: hidden;
+}

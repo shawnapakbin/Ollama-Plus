@@ -29,8 +29,8 @@ interface ModelSelectorProps {
 }
 
 const FAVORITES_KEY = 'modelFavorites.v1';
-const LAN_CACHE_KEY = 'lanOllamaHosts.v1';
-const LAN_SELECTED_KEY = 'lanOllamaSelectedModels.v1';
+const LAN_CACHE_KEY = 'lanModelsHosts.v1';
+const LAN_SELECTED_KEY = 'lanModelsSelected.v1';
 
 function modelKey(host: string, name: string): string {
   return `${host}|${name}`;
@@ -423,7 +423,7 @@ export default function ModelSelector({
                 className="model-scan-btn"
                 onClick={handleScan}
                 disabled={scanning}
-                title="Scan local network for Ollama hosts"
+                title="Scan local network for model hosts"
               >
                 {scanning ? <Loader2 size={14} className="spin" /> : <Radar size={14} />}
                 <span>{scanning ? 'Scanning LAN...' : 'Scan LAN'}</span>

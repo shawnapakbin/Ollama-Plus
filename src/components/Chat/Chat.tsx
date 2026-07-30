@@ -15,6 +15,7 @@ import type { ChatMessage } from './types';
 import '../Chat.css';
 
 type ChatMode = 'auto' | 'tools' | 'standard';
+type ChatUiVariant = 'classic' | 'rebuild';
 
 interface AttachedFile {
   name: string;
@@ -228,7 +229,7 @@ function editorHtmlToMarkdown(html: string): string {
     .trim();
 }
 
-interface ChatProps {
+export interface ChatProps {
   selectedModel: string;
   selectedModelContextWindow?: number | null;
   hostUrl: string;
@@ -240,6 +241,7 @@ interface ChatProps {
   autoInjectDateTime: boolean;
   researchTurnLimit: number;
   onResearchTurnLimitHit: (message: string) => void;
+  uiVariant?: ChatUiVariant;
 }
 
 export default function Chat({
@@ -253,7 +255,8 @@ export default function Chat({
   effectiveSystemMessage,
   autoInjectDateTime,
   researchTurnLimit,
-  onResearchTurnLimitHit
+  onResearchTurnLimitHit,
+  uiVariant = 'classic'
 }: ChatProps) {
   const toolingEnabled = isToolingEnabledInProfile();
   const imageAttachmentMode = normalizeImageAttachmentMode(import.meta.env.VITE_IMAGE_ATTACHMENT_MODE as string | undefined);
@@ -501,7 +504,7 @@ export default function Chat({
   };
 
   return (
-    <div className="chat-container" onDrop={handleDrop} onDragOver={handleDragOver}>
+    <div className={`chat-container chat-ui-${uiVariant}`} onDrop={handleDrop} onDragOver={handleDragOver}>
       <MessageList
         messages={messages}
         isGenerating={isGenerating}
@@ -514,7 +517,13 @@ export default function Chat({
         endRef={messagesEndRef}
       />
 
-      <div className="chat-footer">
+      <div className={`chat-footer ${uiVariant === 'rebuild' ? 'chat-footer-rebuild' : ''}`}>
+        {uiVariant === 'rebuild' && (
+          <div className="chat-rebuild-control-strip">
+            <span className="chat-rebuild-label">Compose</span>
+            <span className="chat-rebuild-hint">Enter sends, Shift+Enter adds a new line.</span>
+          </div>
+        )}
         <div className="chat-controls">
           <button 
             className="nav-item" 
@@ -569,7 +578,7 @@ export default function Chat({
             )}
           </div>
         )}
-        <div className="input-box glass-panel">
+        <div className={`input-box glass-panel ${uiVariant === 'rebuild' ? 'input-box-rebuild' : ''}`}>
           {attachedFiles.length > 0 && (
             <div className="attached-files">
               {attachedFiles.map((f, i) => (
@@ -608,7 +617,7 @@ export default function Chat({
               contentEditable
               role="textbox"
               aria-multiline="true"
-              data-placeholder={isGenerating ? 'Queue a steer message... (Enter to queue)' : 'Send a message to Ollama... (Drag and drop images or files here)'}
+              data-placeholder={isGenerating ? 'Queue a steer message... (Enter to queue)' : uiVariant === 'rebuild' ? 'Compose your request... (Drag images/files or type markdown)' : 'Send a message to the model server... (Drag and drop images or files here)'}
               onInput={(e) => setComposerHtml((e.target as HTMLDivElement).innerHTML)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {

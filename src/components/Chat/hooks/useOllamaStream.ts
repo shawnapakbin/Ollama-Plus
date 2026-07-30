@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { ipcService } from '../../../services/ipcService';
+import { llmService } from '../../../services/llmService';
 import type { OllamaFinalResponse, ToolCall } from '../types';
 
 interface StreamResult {
@@ -11,7 +11,6 @@ interface StreamResult {
 
 interface RunStreamOptions {
   hostUrl: string;
-  endpoint: string;
   payload: unknown;
   onChunk?: (content: string) => void;
 }
@@ -183,8 +182,8 @@ export function flushOllamaStreamChunkBuffer(
 }
 
 /**
- * Wraps `invokeOllamaStream` into a Promise-returning runner and exposes a
- * stable `stop()` that aborts the active stream. The streamed content is
+ * Wraps the model-stream transport into a Promise-returning runner and exposes
+ * a stable `stop()` that aborts the active stream. The streamed content is
  * surfaced incrementally via `onChunk` so the caller can update its message
  * list, and the full accumulated content + any tool_calls + final metrics are
  * returned when the stream ends.
@@ -198,14 +197,14 @@ export function useOllamaStream() {
     userStopRequestedRef.current = true;
     const id = activeStreamIdRef.current;
     if (id) {
-      ipcService.stopOllamaStream(id);
+      llmService.stopStream(id);
       activeStreamIdRef.current = null;
       setActiveStreamId(null);
     }
   }, []);
 
   const runStream = useCallback(
-    ({ hostUrl, endpoint, payload, onChunk }: RunStreamOptions): Promise<StreamResult> => {
+    ({ hostUrl, payload, onChunk }: RunStreamOptions): Promise<StreamResult> => {
       userStopRequestedRef.current = false;
       const streamState: StreamAccumulatorState = {
         content: '',
@@ -245,7 +244,7 @@ export function useOllamaStream() {
           settled = true;
           cleanupTimers();
           const activeId = activeStreamIdRef.current;
-          if (activeId) ipcService.stopOllamaStream(activeId);
+          if (activeId) llmService.stopStream(activeId);
           activeStreamIdRef.current = null;
           setActiveStreamId(null);
           reject(new Error(message));
@@ -270,15 +269,15 @@ export function useOllamaStream() {
           if (settled) return;
 
           let message =
-            'Ollama stream timed out due to inactivity. Try a smaller model, shorter prompt, or lower context window.';
+            'Model stream timed out due to inactivity. Try a smaller model, shorter prompt, or lower context window.';
           const requestedModel = getPayloadModel(payload);
 
           if (requestedModel) {
             try {
-              const psRes = await ipcService.invokeOllama(hostUrl, '/api/ps', undefined, 4_000);
+              const psRes = await llmService.listRunningModels(hostUrl, 4_000);
               if (!modelAppearsLoaded(psRes, requestedModel)) {
                 message =
-                  `Ollama stream stalled and model "${requestedModel}" appears to have been unloaded mid-generation. `
+                  `Model stream stalled and model "${requestedModel}" appears to have been unloaded mid-generation. `
                   + 'Disable Keep Alive auto-unload, avoid parallel app instances, and retry.';
               }
             } catch {
@@ -301,9 +300,9 @@ export function useOllamaStream() {
           if (settled) return;
           cleanupTimers();
           const previousId = activeStreamIdRef.current;
-          if (previousId) ipcService.stopOllamaStream(previousId);
+          if (previousId) llmService.stopStream(previousId);
 
-          const sId = ipcService.invokeOllamaStream(hostUrl, endpoint, payload, {
+          const sId = llmService.streamChat(hostUrl, payload, {
             onData: (chunkText: string) => {
               if (settled) return;
               resetInactivityTimer();
@@ -338,7 +337,7 @@ export function useOllamaStream() {
           resetInactivityTimer();
           maxDurationTimer = setTimeout(() => {
             scheduleRetryOrFail(
-              'Ollama stream exceeded the maximum generation time for the active context window. Try a smaller model, shorter prompt, or lower context window.'
+              'Model stream exceeded the maximum generation time for the active context window. Try a smaller model, shorter prompt, or lower context window.'
             );
           }, maxDurationMs);
         };

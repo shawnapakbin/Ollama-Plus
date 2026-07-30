@@ -35,7 +35,7 @@ export const MessageList: React.FC<MessageListProps> = ({
           <Bot size={48} className="empty-icon" />
           <h3>Ask anything</h3>
           <p>
-            Your local Ollama model is ready. Drag and drop images, CSV, MD, PDF, or TXT files here.
+            Your local model server is ready. Drag and drop images, CSV, MD, PDF, or TXT files here.
             {toolingEnabled
               ? ' Agent tools are available when needed.'
               : ' This build profile keeps tools disabled by default for core chat reliability.'}

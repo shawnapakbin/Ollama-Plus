@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ipcService } from '../../../services/ipcService';
+import { llmService } from '../../../services/llmService';
 
 interface ProcessorModel {
   name: string;
@@ -23,7 +23,7 @@ export function useProcessorStatus(hostUrl: string | undefined, selectedModel: s
   const refresh = useCallback(async () => {
     if (!hostUrl || !selectedModel) return;
     try {
-      const res = await ipcService.invokeOllama(hostUrl, '/api/ps', undefined, 4_000);
+      const res = await llmService.listRunningModels(hostUrl, 4_000);
       const models = Array.isArray((res as { models?: unknown }).models)
         ? (res as { models: unknown[] }).models.filter(isProcessorModel)
         : [];

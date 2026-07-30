@@ -1,0 +1,11 @@
+[Unit]
+Description=llama.cpp health and GPU sanity probe
+After=llama-server.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/llama-healthcheck.sh
+User=root
+Group=root
+StandardOutput=journal
+StandardError=journal

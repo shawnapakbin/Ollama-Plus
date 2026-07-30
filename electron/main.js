@@ -65,6 +65,7 @@ let mainWindow;
 const terminals = {};
 const activeStreams = {};
 const DEFAULT_OLLAMA_REQUEST_TIMEOUT_MS = 20_000;
+const DEFAULT_OLLAMA_HOST_URL = 'http://127.0.0.1:11434';
 const rateWindows = new Map();
 const pendingPolicyDecisions = new Map();
 const DISCOVERABLE_MODEL_EXTENSIONS = new Set(['.obj', '.stl', '.gltf', '.glb', '.scad']);
@@ -893,7 +894,7 @@ function formatOllamaFetchError(err, hostUrl) {
     return `Cannot resolve Ollama host ${hostUrl}. Check the host URL.`;
   }
   if (safe.toLowerCase().includes('fetch failed')) {
-    return `Cannot reach Ollama at ${hostUrl}. Start Ollama and verify the host URL (for local Windows setups, try http://127.0.0.1:11434).`;
+    return `Cannot reach Ollama at ${hostUrl}. Start Ollama and verify the host URL (for local Windows setups, try ${DEFAULT_OLLAMA_HOST_URL}).`;
   }
   return safe;
 }
@@ -985,7 +986,7 @@ ipcMain.on('ollama-stream', async (event, streamId, hostUrl, endpoint, data) => 
     });
 
     if (!response.ok) throw new Error(await buildHttpError(response));
-    
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
 
@@ -994,6 +995,7 @@ ipcMain.on('ollama-stream', async (event, streamId, hostUrl, endpoint, data) => 
       if (done) break;
       event.sender.send(`ollama-data-${streamId}`, decoder.decode(value, { stream: true }));
     }
+
     event.sender.send(`ollama-end-${streamId}`);
   } catch (err) {
     if (err.name === 'AbortError') {

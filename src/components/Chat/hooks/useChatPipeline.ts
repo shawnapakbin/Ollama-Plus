@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { ipcService } from '../../../services/ipcService';
+import { llmService } from '../../../services/llmService';
 import { taskRuntime } from '../../../services/taskRuntime';
 import { buildSystemMessages, formatMemoryContext } from '../pipeline/buildPayload';
 import { extractToolCallsFromContent } from '../pipeline/extractToolCalls';
@@ -66,7 +67,7 @@ async function resolveVisionSupport(hostUrl: string, modelName: string): Promise
   };
 
   try {
-    const showRes = await ipcService.invokeOllama(hostUrl, '/api/show', { model: modelName }, VISION_FALLBACK_PROBE_TIMEOUT_MS);
+    const showRes = await llmService.showModel(hostUrl, modelName, VISION_FALLBACK_PROBE_TIMEOUT_MS);
     const detected = detectVisionCapabilityFromShow(showRes);
     if (detected !== null) {
       resolved = {
@@ -85,7 +86,6 @@ async function resolveVisionSupport(hostUrl: string, modelName: string): Promise
 
 type StreamRunner = (args: {
   hostUrl: string;
-  endpoint: string;
   payload: unknown;
   onChunk?: (content: string) => void;
 }) => Promise<{
@@ -118,7 +118,7 @@ interface UseChatPipelineOptions {
 }
 
 /**
- * Encapsulates the recursive Ollama turn pipeline: optional router decision,
+ * Encapsulates the recursive model-turn pipeline: optional router decision,
  * streamed generation, tool-call dispatch (with one re-entry per tool round),
  * persistence, and post-turn bookkeeping (processor refresh, auto-rename,
  * queued steer flush).
@@ -158,7 +158,7 @@ Title:`;
       }
       payload.keep_alive = 0;
 
-      const res = await ipcService.invokeOllama(hostUrl, '/api/chat', payload, 10_000);
+      const res = await llmService.chat(hostUrl, payload, 10_000);
       if (res && res.message && res.message.content) {
         await renameSession(res.message.content);
       }
@@ -167,8 +167,8 @@ Title:`;
     }
   }, []);
 
-  const processOllamaRequest = useCallback(
-    async function processOllamaRequestInner(
+  const processModelRequest = useCallback(
+    async function processModelRequestInner(
     currentMessages: ChatMessage[],
     taskId: string | null = null,
     repairAttempt = 0,
@@ -285,7 +285,7 @@ Title:`;
           });
           try {
             const routerPayload = buildRouterPayload(selectedModel, userPrompt, keepAlive, modelContextWindow || null);
-            const routerRes = await ipcService.invokeOllama(hostUrl, '/api/chat', routerPayload, 8_000);
+            const routerRes = await llmService.chat(hostUrl, routerPayload, 8_000);
             if (shouldEnableToolsFromRouterResponse(routerRes)) {
               useTools = true;
             }
@@ -324,7 +324,6 @@ Title:`;
 
       const { content: currentContent, toolCalls: streamedToolCalls, finalRes, completed } = await runStream({
         hostUrl,
-        endpoint: '/api/chat',
         payload,
         onChunk: content => {
           setMessages(prev => {
@@ -386,7 +385,7 @@ Title:`;
           if (taskId) taskRuntime.setState(taskId, 'failed', 'Generation stopped by user after tool execution.');
           return;
         }
-        await processOllamaRequestInner(toolResults, taskId, 0, '', turnNumber + 1, 0);
+        await processModelRequestInner(toolResults, taskId, 0, '', turnNumber + 1, 0);
         return;
       }
 
@@ -394,7 +393,7 @@ Title:`;
         const interruptedByUser = Boolean(getAbortIntent());
         if (!interruptedByUser && incompleteStreamRetryCount < MAX_INCOMPLETE_STREAM_RETRIES) {
           if (taskId) taskRuntime.addLog(taskId, 'Stream ended without final done token; retrying once.');
-          await processOllamaRequestInner(
+          await processModelRequestInner(
             currentMessages,
             taskId,
             repairAttempt,
@@ -431,7 +430,7 @@ Title:`;
         if (nextRepairContext) {
           if (taskId) taskRuntime.addLog(taskId, 'Retrying with stricter tool-call guidance after narrated tool intent.');
           setMessages([...currentMessages, { role: 'assistant', content: '', model: selectedModel }]);
-          await processOllamaRequestInner(currentMessages, taskId, repairAttempt + 1, nextRepairContext, turnNumber, 0);
+          await processModelRequestInner(currentMessages, taskId, repairAttempt + 1, nextRepairContext, turnNumber, 0);
           return;
         }
       }
@@ -441,7 +440,7 @@ Title:`;
         if (nextRepairContext) {
           if (taskId) taskRuntime.addLog(taskId, 'Retrying after raw Blender script output; requesting strict tool JSON.');
           setMessages([...currentMessages, { role: 'assistant', content: '', model: selectedModel }]);
-          await processOllamaRequestInner(currentMessages, taskId, repairAttempt + 1, nextRepairContext, turnNumber, 0);
+          await processModelRequestInner(currentMessages, taskId, repairAttempt + 1, nextRepairContext, turnNumber, 0);
           return;
         }
       }
@@ -529,8 +528,8 @@ Title:`;
     };
     const ollamaMsgs: ChatMessage[] = [...base, ollamaUserMessage];
     setMessages([...newMsgs, { role: 'assistant', content: '', model: selectedModel }]);
-    await processOllamaRequest(ollamaMsgs, taskId, 0, '', 1, 0);
-  }, [processOllamaRequest]);
+    await processModelRequest(ollamaMsgs, taskId, 0, '', 1, 0);
+  }, [processModelRequest]);
 
   useEffect(() => {
     commitUserTurnRef.current = commitUserTurn;
@@ -540,8 +539,8 @@ Title:`;
     const { messagesRef, setMessages, selectedModel } = optsRef.current;
     const historyBefore = messagesRef.current.slice(0, index);
     setMessages([...historyBefore, { role: 'assistant', content: '', model: selectedModel }]);
-    await processOllamaRequest(historyBefore, null, 0, '', 1, 0);
-  }, [processOllamaRequest]);
+    await processModelRequest(historyBefore, null, 0, '', 1, 0);
+  }, [processModelRequest]);
 
   return { commitUserTurn, regenerate };
 }

@@ -4,12 +4,14 @@ import ModelSelector, { type ModelEntry } from './components/ModelSelector';
 import ThemeSelector from './components/ThemeSelector';
 import { modelLikelySupportsVision, normalizeImageAttachmentMode } from './components/Chat/pipeline/imageTransport';
 import { ipcService, isElectronAvailable } from './services/ipcService';
+import { llmService } from './services/llmService';
 import { onOpenViewer3D } from './services/workspaceEvents';
 import logo from './assets/logo.png';
 import { getStoredTheme, type ThemeName } from './theme';
 import './App.css';
 
 const Chat = React.lazy(() => import('./components/Chat/Chat'));
+const ChatRebuildShell = React.lazy(() => import('./components/Chat/ChatRebuildShell'));
 const Wiki = React.lazy(() => import('./components/Wiki'));
 const TaskBoard = React.lazy(() => import('./components/TaskBoard'));
 const Viewer3D = React.lazy(() => import('./components/Viewer3D'));
@@ -128,6 +130,17 @@ const CONTEXT_WINDOW_MIN = 1024;
 const CONTEXT_WINDOW_MAX = 131072;
 const CONTEXT_WINDOW_STEP = 1024;
 const CONTEXT_WINDOW_PRESETS = [2048, 4096, 8192, 12288, 16384, 24576, 32768, 65536, 131072];
+const DEFAULT_LLM_HOST = 'http://127.0.0.1:11434';
+const CHAT_UI_VARIANT_KEY = 'chatUiVariant';
+
+type ChatUiVariant = 'classic' | 'rebuild';
+
+function loadChatUiVariant(): ChatUiVariant {
+  const envValue = (import.meta.env.VITE_CHAT_UI_VARIANT as string | undefined)?.trim().toLowerCase();
+  if (envValue === 'rebuild') return 'rebuild';
+  const stored = localStorage.getItem(CHAT_UI_VARIANT_KEY);
+  return stored === 'rebuild' ? 'rebuild' : 'classic';
+}
 
 function loadResearchTurnLimit(): number {
   const raw = localStorage.getItem(RESEARCH_TURN_LIMIT_KEY);
@@ -283,16 +296,18 @@ function loadChatSystemMessageOverrides(): Record<string, string> {
 }
 
 export default function App() {
+  const initialHostUrl = localStorage.getItem('hostUrl') || DEFAULT_LLM_HOST;
   const [models, setModels] = useState<ModelTag[]>([]);
   const [modelContextByKey, setModelContextByKey] = useState<Record<string, number>>({});
   const [selectedModel, setSelectedModel] = useState(localStorage.getItem('selectedModel') || '');
-  const [selectedHost, setSelectedHost] = useState(localStorage.getItem('selectedHost') || localStorage.getItem('hostUrl') || 'http://127.0.0.1:11434');
-  const [status, setStatus] = useState('Checking Ollama...');
+  const [selectedHost, setSelectedHost] = useState(localStorage.getItem('selectedHost') || initialHostUrl);
+  const [status, setStatus] = useState('Checking LLM server...');
 
   const [showSettings, setShowSettings] = useState(false);
   const [lanPickerOpenSignal, setLanPickerOpenSignal] = useState(0);
   const [theme, setTheme] = useState<ThemeName>(() => getStoredTheme(localStorage.getItem('theme')));
-  const [hostUrl, setHostUrl] = useState(localStorage.getItem('hostUrl') || 'http://127.0.0.1:11434');
+  const [hostUrl, setHostUrl] = useState(initialHostUrl);
+  const [chatUiVariant, setChatUiVariant] = useState<ChatUiVariant>(() => loadChatUiVariant());
   const [keepAlive, setKeepAlive] = useState(localStorage.getItem('keepAlive') === 'true');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(localStorage.getItem('sidebarCollapsed') === 'true');
   const [autoCollapseSidebar, setAutoCollapseSidebar] = useState(localStorage.getItem('autoCollapseSidebar') === 'true');
@@ -662,14 +677,14 @@ export default function App() {
   const fetchModels = useCallback(async () => {
     setStatus('Loading models...');
     try {
-      const res = await ipcService.invokeOllama(hostUrl, '/api/tags');
+      const res = await llmService.listModels(hostUrl);
       const m = Array.isArray(res.models) ? res.models : [];
 
       const showResults = await Promise.allSettled(
         m
           .filter((model: ModelTag) => Boolean(model?.name))
           .map(async (model: ModelTag) => {
-            const showRes = await ipcService.invokeOllama(hostUrl, '/api/show', { model: model.name });
+            const showRes = await llmService.showModel(hostUrl, model.name);
             return {
               name: model.name,
               defaultContextWindow: extractDefaultContextWindow(showRes)
@@ -717,7 +732,7 @@ export default function App() {
       if (err instanceof Error && err.message.includes('Electron API')) {
         setStatus('Error: Open via Electron, not Browser');
       } else {
-        setStatus('Ollama offline (Check Host URL or start Ollama)');
+        setStatus('Server offline (Check Host URL or start your model server)');
       }
     }
   }, [hostUrl]);
@@ -732,7 +747,7 @@ export default function App() {
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
-          const showRes = await ipcService.invokeOllama(effectiveHost, '/api/show', { model: selectedModel });
+          const showRes = await llmService.showModel(effectiveHost, selectedModel);
           const ctx = extractDefaultContextWindow(showRes);
           if (cancelled || !ctx) return;
           setModelContextByKey((prev) => ({ ...prev, [key]: ctx }));
@@ -824,6 +839,10 @@ export default function App() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [hostUrl, keepAlive, fetchModels, refreshSessions]);
+
+  useEffect(() => {
+    localStorage.setItem(CHAT_UI_VARIANT_KEY, chatUiVariant);
+  }, [chatUiVariant]);
 
   useEffect(() => {
     const wasKeepAlive = previousKeepAliveRef.current;
@@ -1070,23 +1089,22 @@ export default function App() {
 
   const renderPanel = (panelId: PanelId) => {
     const effectiveHost = selectedHost || hostUrl;
+    const chatProps = {
+      selectedModel,
+      selectedModelContextWindow,
+      hostUrl: effectiveHost,
+      keepAlive,
+      sessionId: currentSessionId,
+      sessionTitle: sessions.find((s) => s.id === currentSessionId)?.title,
+      onSessionUpdate: refreshSessions,
+      effectiveSystemMessage,
+      autoInjectDateTime,
+      researchTurnLimit,
+      onResearchTurnLimitHit: showToast
+    };
     switch (panelId) {
       case 'chat':
-        return (
-          <Chat
-            selectedModel={selectedModel}
-            selectedModelContextWindow={selectedModelContextWindow}
-            hostUrl={effectiveHost}
-            keepAlive={keepAlive}
-            sessionId={currentSessionId}
-            sessionTitle={sessions.find((s) => s.id === currentSessionId)?.title}
-            onSessionUpdate={refreshSessions}
-            effectiveSystemMessage={effectiveSystemMessage}
-            autoInjectDateTime={autoInjectDateTime}
-            researchTurnLimit={researchTurnLimit}
-            onResearchTurnLimitHit={showToast}
-          />
-        );
+        return chatUiVariant === 'rebuild' ? <ChatRebuildShell {...chatProps} /> : <Chat {...chatProps} />;
       case 'wiki':
         return <Wiki />;
       case 'tasks':
@@ -1174,21 +1192,7 @@ export default function App() {
           </section>
         );
       default:
-        return (
-          <Chat
-            selectedModel={selectedModel}
-            selectedModelContextWindow={selectedModelContextWindow}
-            hostUrl={effectiveHost}
-            keepAlive={keepAlive}
-            sessionId={currentSessionId}
-            sessionTitle={sessions.find((s) => s.id === currentSessionId)?.title}
-            onSessionUpdate={refreshSessions}
-            effectiveSystemMessage={effectiveSystemMessage}
-            autoInjectDateTime={autoInjectDateTime}
-            researchTurnLimit={researchTurnLimit}
-            onResearchTurnLimitHit={showToast}
-          />
-        );
+        return chatUiVariant === 'rebuild' ? <ChatRebuildShell {...chatProps} /> : <Chat {...chatProps} />;
     }
   };
 
@@ -1576,13 +1580,25 @@ export default function App() {
 
               <div className="settings-divider" aria-hidden="true" />
 
+              <div className="setting-group setting-group-inline">
+                <input
+                  type="checkbox"
+                  id="chatUiVariantToggle"
+                  checked={chatUiVariant === 'rebuild'}
+                  onChange={(e) => setChatUiVariant(e.target.checked ? 'rebuild' : 'classic')}
+                />
+                <label htmlFor="chatUiVariantToggle" className="checkbox-label">Use rebuilt chat UI shell (experimental)</label>
+              </div>
+
+              <div className="settings-divider" aria-hidden="true" />
+
               <div className="setting-group">
-                <label>Ollama Host URL</label>
+                <label>Model Server URL</label>
                 <input 
                   type="text" 
                   value={hostUrl} 
                   onChange={(e) => setHostUrl(e.target.value)} 
-                  placeholder="http://127.0.0.1:11434"
+                  placeholder={DEFAULT_LLM_HOST}
                 />
               </div>
 

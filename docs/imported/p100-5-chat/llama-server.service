@@ -1,0 +1,24 @@
+[Unit]
+Description=llama.cpp LAN inference server
+Documentation=https://github.com/ggerganov/llama.cpp
+After=network-online.target
+After=nvidia-persistenced.service
+Wants=network-online.target
+Wants=nvidia-persistenced.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/llama.cpp/server.env
+ExecStart=/usr/local/sbin/llama-server-start.sh
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+User=llama
+Group=llama
+LimitNOFILE=1048576
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
