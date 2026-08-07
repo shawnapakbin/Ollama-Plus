@@ -40,3 +40,4 @@ Detected process: /opt/llama.cpp/bin/llama-server (systemd service)
 - New chat UI is configured for native Ollama API usage.
 - Electron proxy forwards existing renderer endpoints directly to Ollama endpoints without OpenAI translation.
 - Default model server URL in UI is http://127.0.0.1:11434.
+- The imported chat shell is now the default and only chat experience in this workspace.

@@ -1,6 +1,4 @@
-export {};
-
-type RuntimeStatus = {
+export type RuntimeStatus = {
   appVersion: string;
   electronVersion: string;
   chromeVersion: string;
@@ -25,7 +23,7 @@ type RuntimeStatus = {
   runCount: number;
 };
 
-type RuntimeBootstrapPlan = {
+export type RuntimeBootstrapPlan = {
   pillars: Array<{
     id: string;
     title: string;
@@ -34,7 +32,7 @@ type RuntimeBootstrapPlan = {
   milestones: string[];
 };
 
-type RuntimeSessionSummary = {
+export type RuntimeSessionSummary = {
   id: string;
   title: string;
   status: string;
@@ -43,7 +41,7 @@ type RuntimeSessionSummary = {
   lastRunSummary: string;
 };
 
-type RuntimeChatMessage = {
+export type RuntimeChatMessage = {
   id: string;
   sessionId: string;
   role: 'system' | 'user' | 'assistant';
@@ -53,7 +51,7 @@ type RuntimeChatMessage = {
   createdAt: string;
 };
 
-type RuntimeChatStreamEvent =
+export type RuntimeChatStreamEvent =
   | {
       type: 'started';
       requestId: string;
@@ -85,22 +83,22 @@ type RuntimeChatStreamEvent =
       message: string;
     };
 
-type RuntimeChatConfig = {
+export type RuntimeChatConfig = {
   endpoint: string;
   model: string;
 };
 
-type RuntimeOllamaModel = {
+export type RuntimeOllamaModel = {
   name: string;
   size: number | null;
   modifiedAt: string | null;
 };
 
-type RuntimeOllamaCatalog = RuntimeChatConfig & {
+export type RuntimeOllamaCatalog = RuntimeChatConfig & {
   availableModels: RuntimeOllamaModel[];
 };
 
-type RuntimeGraphSummary = {
+export type RuntimeGraphSummary = {
   id: string;
   name: string;
   summary: string;
@@ -108,7 +106,7 @@ type RuntimeGraphSummary = {
   stages: string[];
 };
 
-type RuntimeRunSummary = {
+export type RuntimeRunSummary = {
   id: string;
   sessionId: string;
   graphId: string;
@@ -149,52 +147,79 @@ type RuntimeRunSummary = {
   completedAt: string | null;
 };
 
-type ApprovalDecision = {
+export type ApprovalDecision = {
   operator?: string;
   operatorRole?: string;
   reason?: string;
 };
 
-type ElectronAPI = {
-  getRuntimeStatus: () => Promise<RuntimeStatus>;
-  getRuntimeBootstrapPlan: () => Promise<RuntimeBootstrapPlan>;
-  getGraphCatalog: () => Promise<RuntimeGraphSummary[]>;
-  listRuntimeSessions: () => Promise<RuntimeSessionSummary[]>;
-  createRuntimeSession: (title?: string) => Promise<RuntimeSessionSummary>;
-  getRuntimeChatConfig: () => Promise<RuntimeChatConfig>;
-  saveRuntimeChatConfig: (input: Partial<RuntimeChatConfig>) => Promise<RuntimeChatConfig>;
-  listRuntimeOllamaModels: (endpoint?: string) => Promise<RuntimeOllamaCatalog>;
-  listRuntimeMessages: (sessionId?: string) => Promise<RuntimeChatMessage[]>;
-  sendRuntimeChatMessage: (input: { sessionId?: string; content: string; endpoint?: string; model?: string }) => Promise<{
-    sessionId: string;
-    endpoint: string;
-    model: string;
-    userMessage: RuntimeChatMessage;
-    assistantMessage: RuntimeChatMessage;
-    messages: RuntimeChatMessage[];
-  }>;
-  sendRuntimeChatMessageStream: (input: { sessionId?: string; content: string; endpoint?: string; model?: string; requestId?: string }) => Promise<{
-    sessionId: string;
-    requestId: string;
-    endpoint: string;
-    model: string;
-    userMessage: RuntimeChatMessage;
-    assistantMessage: RuntimeChatMessage;
-    messages: RuntimeChatMessage[];
-  }>;
-  onRuntimeChatStream: (listener: (event: RuntimeChatStreamEvent) => void) => () => void;
-  listRuntimeRuns: (sessionId?: string) => Promise<RuntimeRunSummary[]>;
-  startRuntimeRun: (graphId: string, sessionId?: string) => Promise<RuntimeRunSummary>;
-  executeRuntimeRun: (runId: string) => Promise<RuntimeRunSummary>;
-  resumeRuntimeRun: (runId: string) => Promise<RuntimeRunSummary>;
-  stepRuntimeRun: (runId: string) => Promise<RuntimeRunSummary>;
-  cancelRuntimeRun: (runId: string) => Promise<RuntimeRunSummary>;
-  approveRuntimeRun: (runId: string, decision?: ApprovalDecision) => Promise<RuntimeRunSummary>;
-  denyRuntimeRun: (runId: string, decision?: ApprovalDecision) => Promise<RuntimeRunSummary>;
-};
-
-declare global {
-  interface Window {
-    electronAPI?: ElectronAPI;
+function getElectronApi() {
+  if (!window.electronAPI) {
+    throw new Error('Electron runtime bridge is unavailable. Launch the desktop shell to use the rebuild baseline.');
   }
+
+  return window.electronAPI;
 }
+
+export const runtimeClient = {
+  getStatus() {
+    return getElectronApi().getRuntimeStatus();
+  },
+  getBootstrapPlan() {
+    return getElectronApi().getRuntimeBootstrapPlan();
+  },
+  getGraphCatalog() {
+    return getElectronApi().getGraphCatalog();
+  },
+  listSessions() {
+    return getElectronApi().listRuntimeSessions();
+  },
+  createSession(title?: string) {
+    return getElectronApi().createRuntimeSession(title);
+  },
+  getChatConfig() {
+    return getElectronApi().getRuntimeChatConfig();
+  },
+  saveChatConfig(input: Partial<RuntimeChatConfig>) {
+    return getElectronApi().saveRuntimeChatConfig(input);
+  },
+  listOllamaModels(endpoint?: string) {
+    return getElectronApi().listRuntimeOllamaModels(endpoint);
+  },
+  listMessages(sessionId?: string) {
+    return getElectronApi().listRuntimeMessages(sessionId);
+  },
+  sendChatMessage(input: { sessionId?: string; content: string; endpoint?: string; model?: string }) {
+    return getElectronApi().sendRuntimeChatMessage(input);
+  },
+  sendChatMessageStream(input: { sessionId?: string; content: string; endpoint?: string; model?: string; requestId?: string }) {
+    return getElectronApi().sendRuntimeChatMessageStream(input);
+  },
+  onChatStream(listener: (event: RuntimeChatStreamEvent) => void) {
+    return getElectronApi().onRuntimeChatStream(listener);
+  },
+  listRuns(sessionId?: string) {
+    return getElectronApi().listRuntimeRuns(sessionId);
+  },
+  startRun(graphId: string, sessionId?: string) {
+    return getElectronApi().startRuntimeRun(graphId, sessionId);
+  },
+  executeRun(runId: string) {
+    return getElectronApi().executeRuntimeRun(runId);
+  },
+  resumeRun(runId: string) {
+    return getElectronApi().resumeRuntimeRun(runId);
+  },
+  stepRun(runId: string) {
+    return getElectronApi().stepRuntimeRun(runId);
+  },
+  cancelRun(runId: string) {
+    return getElectronApi().cancelRuntimeRun(runId);
+  },
+  approveRun(runId: string, decision?: ApprovalDecision) {
+    return getElectronApi().approveRuntimeRun(runId, decision);
+  },
+  denyRun(runId: string, decision?: ApprovalDecision) {
+    return getElectronApi().denyRuntimeRun(runId, decision);
+  }
+};

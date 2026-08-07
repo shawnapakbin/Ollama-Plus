@@ -54,6 +54,8 @@ Users can save and switch workspace presets with panel layouts.
 
 Ollama + uses two reusable in-app form patterns:
 
+The migrated chat shell is the default and only chat experience for this workspace, wired to the existing Ollama backend.
+
 - Markdown Decision Form: clickable multi-option decisions (Allow/Deny, Confirm/Cancel).
 - Markdown Input Form: guided text input flows (for example naming presets or files).
 

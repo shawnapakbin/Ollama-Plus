@@ -1,7 +1,7 @@
 {
   "name": "ollama-plus",
   "private": true,
-  "version": "0.0.1",
+  "version": "5.0.1",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -11,17 +11,11 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "release:check": "node scripts/release-readiness.mjs",
     "electron:dev": "node scripts/electron-dev.mjs",
     "electron:debug": "cross-env ELECTRON_REMOTE_DEBUGGING_PORT=9222 node scripts/electron-dev.mjs",
     "preflight:electron:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-electron-win-prereqs.ps1",
     "electron:build:checked": "npm run preflight:electron:win && npm run electron:build",
-    "electron:build": "npm run build && electron-builder",
-    "mcp:folder": "node mcp/folder-server.mjs",
-    "mcp:terminal": "node mcp/terminal-server.mjs",
-    "mcp:python": "node mcp/python-sandbox-server.mjs",
-    "mcp:datetime": "node mcp/datetime-server.mjs",
-    "mcp:calculator": "node mcp/calculator-server.mjs"
+    "electron:build": "npm run build && electron-builder"
   },
   "build": {
     "appId": "com.ollama.nativeapp",
@@ -38,20 +32,8 @@
     }
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.18.0",
-    "@types/three": "^0.184.1",
-    "csv-parse": "^6.2.1",
-    "lucide-react": "^1.14.0",
-    "mathjs": "^15.2.0",
-    "node-pty": "^1.0.0",
-    "pdf-parse": "^2.4.5",
-    "playwright-core": "^1.59.1",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
-    "three": "^0.184.0",
-    "xterm": "^5.3.0"
+    "react-dom": "^19.2.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -60,7 +42,6 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "@vitest/coverage-v8": "^3.2.4",
-    "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
     "electron": "^41.5.0",
     "electron-builder": "^26.8.1",
@@ -71,7 +52,6 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",
     "vite": "^8.0.10",
-      "vitest": "^3.2.4",
-    "wait-on": "^9.0.5"
+    "vitest": "^3.2.4"
   }
 }

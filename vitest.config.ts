@@ -7,7 +7,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      include: ['electron/lib/**', 'src/services/markdownSafety.ts']
+      include: ['electron/runtime/**']
     }
   }
 });

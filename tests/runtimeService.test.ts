@@ -1,0 +1,285 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createRuntimeService } from '../electron/runtime/runtimeService.js';
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop();
+    if (dir) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+function createTempStatePath() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ollama-plus-runtime-'));
+  tempDirs.push(dir);
+  return path.join(dir, 'state.json');
+}
+
+function createService(overrides: Record<string, unknown> = {}) {
+  return createRuntimeService({
+    statePath: createTempStatePath(),
+    appVersion: '0.0.1-test',
+    mode: 'development',
+    workspaceRoot: 'C:/workspace',
+    versions: {
+      electron: '41.0.0',
+      chrome: '141.0.0',
+      node: '24.0.0'
+    },
+    langsmithConfigured: false,
+    ...overrides
+  });
+}
+
+describe('runtimeService', () => {
+  it('creates sessions and tracks status counters', () => {
+    const service = createService();
+
+    const before = service.getStatus();
+    expect(before.sessionCount).toBe(0);
+
+    const session = service.createSession('First session');
+    const after = service.getStatus();
+
+    expect(session.title).toBe('First session');
+    expect(after.sessionCount).toBe(1);
+    expect(after.runCount).toBe(0);
+  });
+
+  it('starts a planned run and updates the owning session', () => {
+    const service = createService();
+    const session = service.createSession('Core session');
+
+    const run = service.startRun('core-chat', session.id);
+
+    expect(run.graphId).toBe('core-chat');
+    expect(run.status).toBe('planned');
+    expect(run.checkpoints).toHaveLength(6);
+    expect(service.listRuns()).toHaveLength(1);
+    expect(service.listSessions()[0]).toMatchObject({
+      id: session.id,
+      status: 'queued',
+      lastRunSummary: 'Prepared Core Chat Graph.'
+    });
+  });
+
+  it('executes until approval is required and then can complete after approval', () => {
+    const service = createService();
+    const session = service.createSession('Execution session');
+    const plannedRun = service.startRun('core-chat', session.id);
+
+    const waitingRun = service.executeRun(plannedRun.id);
+
+    expect(waitingRun.status).toBe('waiting_approval');
+    expect(waitingRun.pendingApproval).toBeTruthy();
+    expect(waitingRun.pendingApproval?.checkpointOrder).toBe(4);
+    expect(waitingRun.pendingApproval?.approvalPolicyId).toBe('human-tool-routing-v1');
+    expect(waitingRun.pendingApproval?.requiredApproverRole).toBe('runtime-reviewer');
+    expect(waitingRun.checkpoints[3].status).toBe('waiting_approval');
+
+    service.approveRun(plannedRun.id, {
+      operator: 'qa-lead',
+      operatorRole: 'runtime-reviewer',
+      reason: 'Tool intent matches policy and scope.'
+    });
+    const executedRun = service.executeRun(plannedRun.id);
+
+    expect(executedRun.status).toBe('completed');
+    expect(executedRun.startedAt).toBeTruthy();
+    expect(executedRun.completedAt).toBeTruthy();
+    expect(executedRun.events.length).toBe(7);
+    expect(executedRun.events.some((event) => event.includes('Approval requested at checkpoint 4'))).toBe(true);
+    expect(executedRun.events.some((event) => event.includes('operator=qa-lead'))).toBe(true);
+    expect(executedRun.events.some((event) => event.includes('role=runtime-reviewer'))).toBe(true);
+    expect(executedRun.events.some((event) => event.includes('reason=Tool intent matches policy and scope.'))).toBe(true);
+    expect(executedRun.error).toBe('');
+    expect(executedRun.output).toContain('completed in bootstrap executor mode');
+    expect(executedRun.checkpoints.every((checkpoint) => checkpoint.status === 'completed')).toBe(true);
+    expect(service.listSessions()[0]).toMatchObject({
+      id: session.id,
+      status: 'completed'
+    });
+  });
+
+  it('advances a run one checkpoint at a time', () => {
+    const service = createService();
+    const session = service.createSession('Stepping session');
+    const plannedRun = service.startRun('memory-ingest', session.id);
+
+    const firstStep = service.stepRun(plannedRun.id);
+    expect(firstStep.status).toBe('paused');
+    expect(firstStep.events).toHaveLength(1);
+    expect(firstStep.checkpoints[0].status).toBe('completed');
+    expect(firstStep.checkpoints[1].status).toBe('ready');
+
+    const secondStep = service.stepRun(plannedRun.id);
+    expect(secondStep.status).toBe('paused');
+    expect(secondStep.events).toHaveLength(2);
+
+    service.stepRun(plannedRun.id);
+    const finalStep = service.stepRun(plannedRun.id);
+    expect(finalStep.status).toBe('completed');
+    expect(finalStep.events).toHaveLength(4);
+    expect(finalStep.completedAt).toBeTruthy();
+  });
+
+  it('cancels an in-flight run', () => {
+    const service = createService();
+    const session = service.createSession('Cancel session');
+    const plannedRun = service.startRun('core-chat', session.id);
+
+    service.resumeRun(plannedRun.id);
+    const canceledRun = service.cancelRun(plannedRun.id);
+
+    expect(canceledRun.status).toBe('canceled');
+    expect(canceledRun.error).toBe('Canceled by operator.');
+    expect(canceledRun.completedAt).toBeTruthy();
+    expect(canceledRun.events[canceledRun.events.length - 1]).toContain('canceled');
+    expect(service.listSessions()[0]).toMatchObject({
+      id: session.id,
+      status: 'canceled'
+    });
+  });
+
+  it('fails a run when approval is denied', () => {
+    const service = createService();
+    const session = service.createSession('Denied approval session');
+    const plannedRun = service.startRun('core-chat', session.id);
+
+    const waitingRun = service.executeRun(plannedRun.id);
+    expect(waitingRun.status).toBe('waiting_approval');
+
+    const deniedRun = service.denyRun(plannedRun.id, {
+      operator: 'safety-reviewer',
+      operatorRole: 'runtime-reviewer',
+      reason: 'Insufficient evidence for tool execution.'
+    });
+    expect(deniedRun.status).toBe('failed');
+    expect(deniedRun.error).toContain('Approval denied');
+    expect(deniedRun.completedAt).toBeTruthy();
+    expect(deniedRun.checkpoints[3].status).toBe('failed');
+    expect(deniedRun.events.some((event) => event.includes('operator=safety-reviewer'))).toBe(true);
+    expect(deniedRun.events.some((event) => event.includes('role=runtime-reviewer'))).toBe(true);
+    expect(deniedRun.events.some((event) => event.includes('reason=Insufficient evidence for tool execution.'))).toBe(true);
+    expect(service.listSessions()[0]).toMatchObject({
+      id: session.id,
+      status: 'failed'
+    });
+  });
+
+  it('rejects approval when reviewer role does not satisfy policy', () => {
+    const service = createService();
+    const session = service.createSession('Role mismatch session');
+    const plannedRun = service.startRun('core-chat', session.id);
+
+    const waitingRun = service.executeRun(plannedRun.id);
+    expect(waitingRun.status).toBe('waiting_approval');
+
+    expect(() => service.approveRun(plannedRun.id, {
+      operator: 'developer-1',
+      operatorRole: 'developer',
+      reason: 'Looks okay to me.'
+    })).toThrow(/Approval role mismatch/);
+  });
+
+  it('creates a default session when planning a run without one', () => {
+    const service = createService();
+
+    const run = service.startRun('memory-ingest');
+
+    expect(run.graphId).toBe('memory-ingest');
+    expect(run.status).toBe('planned');
+    expect(service.listSessions()).toHaveLength(1);
+    expect(service.getStatus().runCount).toBe(1);
+  });
+
+  it('sends a chat message through Ollama and persists the transcript', async () => {
+    const fetchImpl = async (url: string) => {
+      if (url.endsWith('/api/chat')) {
+        return {
+          ok: true,
+          json: async () => ({
+            message: { content: 'Assistant reply from local Ollama.' },
+            done: true,
+            total_duration: 10,
+            eval_count: 5
+          })
+        };
+      }
+
+      if (url.endsWith('/api/tags')) {
+        return {
+          ok: true,
+          json: async () => ({
+            models: [{ name: 'llama3.1:8b', size: 1, modified_at: '2026-08-06T00:00:00.000Z' }]
+          })
+        };
+      }
+
+      throw new Error(`Unexpected URL ${url}`);
+    };
+
+    const service = createService({ fetchImpl, defaultOllamaEndpoint: 'http://127.0.0.1:11434' });
+    const session = service.createSession('Chat session');
+    await service.saveChatConfig({ endpoint: 'http://127.0.0.1:11434', model: 'llama3.1:8b' });
+
+    const result = await service.sendChatMessage({
+      sessionId: session.id,
+      content: 'Hello there',
+      endpoint: 'http://127.0.0.1:11434',
+      model: 'llama3.1:8b'
+    });
+
+    expect(result.sessionId).toBe(session.id);
+    expect(result.messages).toHaveLength(2);
+    expect(result.userMessage.role).toBe('user');
+    expect(result.assistantMessage.role).toBe('assistant');
+    expect(service.listMessages(session.id)).toHaveLength(2);
+  });
+
+  it('streams a chat message through Ollama and emits token events', async () => {
+    const encoder = new TextEncoder();
+    const fetchImpl = async (url: string) => {
+      if (url.endsWith('/api/chat')) {
+        return {
+          ok: true,
+          body: new ReadableStream({
+            start(controller) {
+              controller.enqueue(encoder.encode('{"message":{"content":"Hello"},"done":false}\n'));
+              controller.enqueue(encoder.encode('{"message":{"content":" stream"},"done":false}\n'));
+              controller.enqueue(encoder.encode('{"message":{"content":"ed"},"done":true}\n'));
+              controller.close();
+            }
+          })
+        };
+      }
+
+      throw new Error(`Unexpected URL ${url}`);
+    };
+
+    const service = createService({ fetchImpl, defaultOllamaEndpoint: 'http://127.0.0.1:11434' });
+    const session = service.createSession('Streaming chat');
+    await service.saveChatConfig({ endpoint: 'http://127.0.0.1:11434', model: 'llama3.1:8b' });
+
+    const events: Array<Record<string, unknown>> = [];
+    const result = await service.sendChatMessageStream({
+      sessionId: session.id,
+      content: 'Stream this',
+      endpoint: 'http://127.0.0.1:11434',
+      model: 'llama3.1:8b',
+      requestId: 'req-1'
+    }, (event) => {
+      events.push(event);
+    });
+
+    expect(result.assistantMessage.content).toBe('Hello streamed');
+    expect(events.map((event) => event.type)).toEqual(['started', 'token', 'token', 'token', 'completed']);
+    expect(service.listMessages(session.id)).toHaveLength(2);
+  });
+});
