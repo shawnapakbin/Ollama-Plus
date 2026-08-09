@@ -1,4 +1,3 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot,
   BrainCircuit,
@@ -42,8 +41,7 @@ import {
   type RuntimeSessionSummary,
   type RuntimeStatus
 } from './services/runtimeClient';
-import { useOllamaStream } from './components/Chat/hooks/useOllamaStream';
-import { MessageContent } from './components/Chat/MessageContent';
+import { useMemo, useEffect, useRef, useState } from 'react';
 
 const NAV_PREFERENCE_KEY = 'ollama-plus.nav-open';
 const INSPECTOR_PREFERENCE_KEY = 'ollama-plus.inspector-sections';
@@ -482,7 +480,6 @@ function App() {
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [actionRunId, setActionRunId] = useState<string | null>(null);
   const [approvalDrafts, setApprovalDrafts] = useState<Record<string, { operator: string; operatorRole: string; reason: string }>>({});
-  const { runStream, stop: stopActiveStream, activeStreamId } = useOllamaStream();
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState('');
   const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([]);
@@ -491,6 +488,7 @@ function App() {
 
   const streamRequestIdRef = useRef<string | null>(null);
   const requestCounterRef = useRef(0);
+  const activeStreamId = streamRequestIdRef.current;
 
   const createRequestId = () => {
     requestCounterRef.current += 1;
@@ -959,29 +957,25 @@ function App() {
       }
     }));
 
-    await runStream({
-      hostUrl: chatConfig.endpoint,
-      payload: {
-        sessionId,
-        content: prompt,
-        endpoint: chatConfig.endpoint,
-        model: chatConfig.model,
-        requestId
-      },
-      onChunk: (content) => {
-        setStreamDrafts((current) => {
-          const existing = current[requestId];
-          if (!existing) return current;
+    const response = await runtimeClient.sendChatMessageStream({
+      sessionId,
+      content: prompt,
+      endpoint: chatConfig.endpoint,
+      model: chatConfig.model,
+      requestId
+    });
 
-          return {
-            ...current,
-            [requestId]: {
-              ...existing,
-              content
-            }
-          };
-        });
-      }
+    setStreamDrafts((current) => {
+      const existing = current[requestId];
+      if (!existing) return current;
+
+      return {
+        ...current,
+        [requestId]: {
+          ...existing,
+          content: response.assistantMessage.content
+        }
+      };
     });
 
     setStreamDrafts((current) => {
@@ -1592,7 +1586,9 @@ function App() {
                     </div>
                   </div>
                 ) : (
-                  <MessageContent content={isThinkingProcessVisible ? message.content : stripThinkingProcess(message.content)} />
+                  <div className="message-content">
+                    {isThinkingProcessVisible ? message.content : stripThinkingProcess(message.content)}
+                  </div>
                 )}
                 {message.role === 'assistant' ? (
                   <div className="message-metrics" aria-label="System metrics">
@@ -1664,9 +1660,9 @@ function App() {
                   <strong>{draft.model || 'Assistant'}</strong>
                   <span>Streaming...</span>
                 </div>
-                <MessageContent
-                  content={(isThinkingProcessVisible ? draft.content : stripThinkingProcess(draft.content)) || 'Waiting for first token...'}
-                />
+                <div className="message-content">
+                  {(isThinkingProcessVisible ? draft.content : stripThinkingProcess(draft.content)) || 'Waiting for first token...'}
+                </div>
               </article>
             ))}
           </div>
@@ -1715,7 +1711,7 @@ function App() {
                 <button
                   className="icon-action run-action-icon danger-icon"
                   type="button"
-                  onClick={stopActiveStream}
+                  onClick={() => { streamRequestIdRef.current = null; }}
                   title="Stop streaming"
                   aria-label="Stop streaming"
                   data-tooltip="Stop"
