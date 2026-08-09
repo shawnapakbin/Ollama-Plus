@@ -16,8 +16,7 @@
     "electron:debug": "cross-env ELECTRON_REMOTE_DEBUGGING_PORT=9222 node scripts/electron-dev.mjs",
     "preflight:electron:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-electron-win-prereqs.ps1",
     "electron:build:checked": "npm run preflight:electron:win && npm run electron:build",
-    "electron:build": "npm run build && electron-builder",
-    "release:check": "node scripts/release-readiness.mjs"
+    "electron:build": "npm run build && electron-builder"
   },
   "build": {
     "appId": "com.ollama.nativeapp",
