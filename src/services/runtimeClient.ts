@@ -207,15 +207,37 @@ export type RuntimeBridgeHealth = {
 
 const REQUIRED_RUNTIME_BRIDGE_METHODS = [
   'getRuntimeStatus',
+  'getRuntimeBootstrapPlan',
+  'getGraphCatalog',
   'listRuntimeSessions',
   'createRuntimeSession',
   'renameRuntimeSession',
   'renameRuntimeSessionWithAi',
   'deleteRuntimeSession',
+  'getRuntimeChatConfig',
+  'saveRuntimeChatConfig',
+  'listRuntimeOllamaModels',
+  'listRuntimeOllamaServers',
+  'saveRuntimeOllamaServer',
+  'removeRuntimeOllamaServer',
+  'checkRuntimeOllamaServer',
   'listRuntimeMessages',
   'updateRuntimeMessage',
   'deleteRuntimeMessage',
-  'sendRuntimeChatMessageStream'
+  'sendRuntimeChatMessage',
+  'sendRuntimeChatMessageStream',
+  'onRuntimeChatStream',
+  'listRuntimeRuns',
+  'listRuntimeMemoryRecords',
+  'startRuntimeRun',
+  'executeRuntimeRun',
+  'resumeRuntimeRun',
+  'stepRuntimeRun',
+  'cancelRuntimeRun',
+  'approveRuntimeRun',
+  'denyRuntimeRun',
+  'mcpGatewayCall',
+  'mcpGatewayStatus'
 ] as const;
 
 function getElectronApi() {
