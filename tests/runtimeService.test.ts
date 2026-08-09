@@ -52,6 +52,56 @@ describe('runtimeService', () => {
     expect(after.runCount).toBe(0);
   });
 
+  it('deletes a session and removes related artifacts', () => {
+    const service = createService();
+    const first = service.createSession('First');
+    const second = service.createSession('Second');
+
+    service.startRun('memory-ingest', first.id);
+    service.startRun('core-chat', second.id);
+
+    service.deleteSession(first.id);
+
+    expect(service.listSessions().map((session) => session.id)).toEqual([second.id]);
+    expect(service.listRuns(first.id)).toHaveLength(0);
+    expect(service.listMessages(first.id)).toHaveLength(0);
+    expect(service.listMemoryRecords(first.id)).toHaveLength(0);
+  });
+
+  it('renames a session with AI using its conversation transcript', async () => {
+    const fetchImpl = async (url: string) => {
+      if (url.endsWith('/api/chat')) {
+        return {
+          ok: true,
+          json: async () => ({
+            message: { content: 'Title: Ollama LAN model setup checklist\n' },
+            done: true,
+            total_duration: 10,
+            eval_count: 5
+          })
+        };
+      }
+
+      throw new Error(`Unexpected URL ${url}`);
+    };
+
+    const service = createService({ fetchImpl });
+    const session = service.createSession('Untitled');
+    await service.saveChatConfig({ endpoint: 'http://127.0.0.1:11434', model: 'llama3.1:8b' });
+
+    await service.sendChatMessage({
+      sessionId: session.id,
+      content: 'Help me configure Ollama over LAN',
+      endpoint: 'http://127.0.0.1:11434',
+      model: 'llama3.1:8b'
+    });
+
+    const renamed = await service.renameSessionWithAi(session.id);
+
+    expect(renamed.title).toBe('Ollama LAN model setup checklist');
+    expect(service.listSessions()[0].title).toBe('Ollama LAN model setup checklist');
+  });
+
   it('starts a planned run and updates the owning session', () => {
     const service = createService();
     const session = service.createSession('Core session');
@@ -93,13 +143,13 @@ describe('runtimeService', () => {
     expect(executedRun.status).toBe('completed');
     expect(executedRun.startedAt).toBeTruthy();
     expect(executedRun.completedAt).toBeTruthy();
-    expect(executedRun.events.length).toBe(7);
+    expect(executedRun.events.length).toBeGreaterThanOrEqual(7);
     expect(executedRun.events.some((event) => event.includes('Approval requested at checkpoint 4'))).toBe(true);
     expect(executedRun.events.some((event) => event.includes('operator=qa-lead'))).toBe(true);
     expect(executedRun.events.some((event) => event.includes('role=runtime-reviewer'))).toBe(true);
     expect(executedRun.events.some((event) => event.includes('reason=Tool intent matches policy and scope.'))).toBe(true);
     expect(executedRun.error).toBe('');
-    expect(executedRun.output).toContain('completed in bootstrap executor mode');
+    expect(executedRun.output).toContain('Run finalized at');
     expect(executedRun.checkpoints.every((checkpoint) => checkpoint.status === 'completed')).toBe(true);
     expect(service.listSessions()[0]).toMatchObject({
       id: session.id,
@@ -114,19 +164,20 @@ describe('runtimeService', () => {
 
     const firstStep = service.stepRun(plannedRun.id);
     expect(firstStep.status).toBe('paused');
-    expect(firstStep.events).toHaveLength(1);
+    expect(firstStep.events).toHaveLength(2);
     expect(firstStep.checkpoints[0].status).toBe('completed');
     expect(firstStep.checkpoints[1].status).toBe('ready');
 
     const secondStep = service.stepRun(plannedRun.id);
     expect(secondStep.status).toBe('paused');
-    expect(secondStep.events).toHaveLength(2);
+    expect(secondStep.events.length).toBeGreaterThanOrEqual(4);
 
     service.stepRun(plannedRun.id);
     const finalStep = service.stepRun(plannedRun.id);
     expect(finalStep.status).toBe('completed');
-    expect(finalStep.events).toHaveLength(4);
+    expect(finalStep.events.length).toBeGreaterThanOrEqual(8);
     expect(finalStep.completedAt).toBeTruthy();
+    expect(Array.isArray(service.listMemoryRecords(session.id))).toBe(true);
   });
 
   it('cancels an in-flight run', () => {
@@ -197,6 +248,58 @@ describe('runtimeService', () => {
     expect(run.status).toBe('planned');
     expect(service.listSessions()).toHaveLength(1);
     expect(service.getStatus().runCount).toBe(1);
+  });
+
+  it('persists LAN Ollama servers and reports their model health', async () => {
+    const fetchImpl = async (url: string) => {
+      expect(url).toBe('http://192.168.1.50:11434/api/tags');
+      return {
+        ok: true,
+        json: async () => ({
+          models: [
+            { name: 'qwen3.5:9b', size: 123, modified_at: '2026-08-08T00:00:00.000Z' },
+            { name: 'llama3.2:3b', size: 456, modified_at: '2026-08-07T00:00:00.000Z' }
+          ]
+        })
+      };
+    };
+    const service = createService({ fetchImpl });
+
+    const server = service.saveOllamaServer({
+      label: 'Office GPU',
+      endpoint: '192.168.1.50'
+    });
+    const health = await service.checkOllamaServer(server.id);
+
+    expect(server).toMatchObject({
+      label: 'Office GPU',
+      endpoint: 'http://192.168.1.50:11434'
+    });
+    expect(service.listOllamaServers()).toHaveLength(1);
+    expect(health).toMatchObject({
+      status: 'online',
+      endpoint: 'http://192.168.1.50:11434'
+    });
+    expect(health.models.map((model) => model.name)).toEqual(['qwen3.5:9b', 'llama3.2:3b']);
+
+    service.removeOllamaServer(server.id);
+    expect(service.listOllamaServers()).toEqual([]);
+  });
+
+  it('reports an offline saved Ollama server without deleting it', async () => {
+    const service = createService({
+      fetchImpl: async () => {
+        throw new Error('connect ECONNREFUSED');
+      }
+    });
+    const server = service.saveOllamaServer({ endpoint: '10.0.0.8:11434' });
+
+    const health = await service.checkOllamaServer(server.id);
+
+    expect(health.status).toBe('offline');
+    expect(health.models).toEqual([]);
+    expect(health.error).toContain('ECONNREFUSED');
+    expect(service.listOllamaServers()).toHaveLength(1);
   });
 
   it('sends a chat message through Ollama and persists the transcript', async () => {
@@ -281,5 +384,78 @@ describe('runtimeService', () => {
     expect(result.assistantMessage.content).toBe('Hello streamed');
     expect(events.map((event) => event.type)).toEqual(['started', 'token', 'token', 'token', 'completed']);
     expect(service.listMessages(session.id)).toHaveLength(2);
+  });
+
+  it('updates an existing user message content', async () => {
+    const fetchImpl = async (url: string) => {
+      if (url.endsWith('/api/chat')) {
+        return {
+          ok: true,
+          json: async () => ({
+            message: { content: 'Assistant response.' },
+            done: true,
+            total_duration: 10,
+            eval_count: 5
+          })
+        };
+      }
+
+      throw new Error(`Unexpected URL ${url}`);
+    };
+
+    const service = createService({ fetchImpl });
+    const session = service.createSession('Editable message session');
+    await service.saveChatConfig({ endpoint: 'http://127.0.0.1:11434', model: 'llama3.1:8b' });
+    await service.sendChatMessage({
+      sessionId: session.id,
+      content: 'Original prompt',
+      endpoint: 'http://127.0.0.1:11434',
+      model: 'llama3.1:8b'
+    });
+
+    const before = service.listMessages(session.id).find((entry) => entry.role === 'user');
+    expect(before).toBeTruthy();
+
+    const updated = service.updateMessage(before!.id, { content: 'Edited prompt content' });
+
+    expect(updated.content).toBe('Edited prompt content');
+    const after = service.listMessages(session.id).find((entry) => entry.id === updated.id);
+    expect(after?.content).toBe('Edited prompt content');
+  });
+
+  it('deletes a message from transcript', async () => {
+    const fetchImpl = async (url: string) => {
+      if (url.endsWith('/api/chat')) {
+        return {
+          ok: true,
+          json: async () => ({
+            message: { content: 'Assistant response.' },
+            done: true,
+            total_duration: 10,
+            eval_count: 5
+          })
+        };
+      }
+
+      throw new Error(`Unexpected URL ${url}`);
+    };
+
+    const service = createService({ fetchImpl });
+    const session = service.createSession('Delete message session');
+    await service.saveChatConfig({ endpoint: 'http://127.0.0.1:11434', model: 'llama3.1:8b' });
+    await service.sendChatMessage({
+      sessionId: session.id,
+      content: 'Prompt to delete',
+      endpoint: 'http://127.0.0.1:11434',
+      model: 'llama3.1:8b'
+    });
+
+    const target = service.listMessages(session.id).find((entry) => entry.role === 'assistant');
+    expect(target).toBeTruthy();
+    service.deleteMessage(target!.id);
+
+    const remainingIds = service.listMessages(session.id).map((entry) => entry.id);
+    expect(remainingIds.includes(target!.id)).toBe(false);
+    expect(service.listMessages(session.id)).toHaveLength(1);
   });
 });

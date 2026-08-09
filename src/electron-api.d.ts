@@ -43,6 +43,13 @@ type RuntimeSessionSummary = {
   lastRunSummary: string;
 };
 
+type RuntimeSessionRenameResult = {
+  session: RuntimeSessionSummary;
+  title: string;
+  endpoint: string;
+  model: string;
+};
+
 type RuntimeChatMessage = {
   id: string;
   sessionId: string;
@@ -51,6 +58,16 @@ type RuntimeChatMessage = {
   model: string | null;
   endpoint: string | null;
   createdAt: string;
+  metrics: RuntimeChatMetrics | null;
+};
+
+type RuntimeChatMetrics = {
+  totalDuration: number | null;
+  loadDuration: number | null;
+  promptEvalCount: number | null;
+  promptEvalDuration: number | null;
+  evalCount: number | null;
+  evalDuration: number | null;
 };
 
 type RuntimeChatStreamEvent =
@@ -77,6 +94,7 @@ type RuntimeChatStreamEvent =
       model: string;
       endpoint: string;
       assistantMessage: RuntimeChatMessage;
+      metrics?: RuntimeChatMetrics;
     }
   | {
       type: 'error';
@@ -98,6 +116,21 @@ type RuntimeOllamaModel = {
 
 type RuntimeOllamaCatalog = RuntimeChatConfig & {
   availableModels: RuntimeOllamaModel[];
+};
+
+type RuntimeOllamaServer = {
+  id: string;
+  label: string;
+  endpoint: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type RuntimeOllamaServerHealth = RuntimeOllamaServer & {
+  status: 'online' | 'offline';
+  models: RuntimeOllamaModel[];
+  checkedAt: string;
+  error: string | null;
 };
 
 type RuntimeGraphSummary = {
@@ -149,6 +182,19 @@ type RuntimeRunSummary = {
   completedAt: string | null;
 };
 
+type RuntimeMemoryRecord = {
+  id: string;
+  sessionId: string;
+  runId: string;
+  fact: string;
+  importanceScore: number;
+  retention: string;
+  tags: string[];
+  sourceMessageIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 type ApprovalDecision = {
   operator?: string;
   operatorRole?: string;
@@ -161,10 +207,19 @@ type ElectronAPI = {
   getGraphCatalog: () => Promise<RuntimeGraphSummary[]>;
   listRuntimeSessions: () => Promise<RuntimeSessionSummary[]>;
   createRuntimeSession: (title?: string) => Promise<RuntimeSessionSummary>;
+  renameRuntimeSession: (sessionId: string, title: string) => Promise<RuntimeSessionSummary>;
+  renameRuntimeSessionWithAi: (sessionId: string, input?: { endpoint?: string; model?: string }) => Promise<RuntimeSessionRenameResult>;
+  deleteRuntimeSession: (sessionId: string) => Promise<RuntimeSessionSummary>;
   getRuntimeChatConfig: () => Promise<RuntimeChatConfig>;
   saveRuntimeChatConfig: (input: Partial<RuntimeChatConfig>) => Promise<RuntimeChatConfig>;
   listRuntimeOllamaModels: (endpoint?: string) => Promise<RuntimeOllamaCatalog>;
+  listRuntimeOllamaServers: () => Promise<RuntimeOllamaServer[]>;
+  saveRuntimeOllamaServer: (input: { id?: string; label?: string; endpoint: string }) => Promise<RuntimeOllamaServer>;
+  removeRuntimeOllamaServer: (serverId: string) => Promise<RuntimeOllamaServer>;
+  checkRuntimeOllamaServer: (serverId: string) => Promise<RuntimeOllamaServerHealth>;
   listRuntimeMessages: (sessionId?: string) => Promise<RuntimeChatMessage[]>;
+  updateRuntimeMessage: (messageId: string, input: { content?: string }) => Promise<RuntimeChatMessage>;
+  deleteRuntimeMessage: (messageId: string) => Promise<RuntimeChatMessage>;
   sendRuntimeChatMessage: (input: { sessionId?: string; content: string; endpoint?: string; model?: string }) => Promise<{
     sessionId: string;
     endpoint: string;
@@ -184,6 +239,7 @@ type ElectronAPI = {
   }>;
   onRuntimeChatStream: (listener: (event: RuntimeChatStreamEvent) => void) => () => void;
   listRuntimeRuns: (sessionId?: string) => Promise<RuntimeRunSummary[]>;
+  listRuntimeMemoryRecords: (sessionId?: string) => Promise<RuntimeMemoryRecord[]>;
   startRuntimeRun: (graphId: string, sessionId?: string) => Promise<RuntimeRunSummary>;
   executeRuntimeRun: (runId: string) => Promise<RuntimeRunSummary>;
   resumeRuntimeRun: (runId: string) => Promise<RuntimeRunSummary>;
@@ -191,6 +247,8 @@ type ElectronAPI = {
   cancelRuntimeRun: (runId: string) => Promise<RuntimeRunSummary>;
   approveRuntimeRun: (runId: string, decision?: ApprovalDecision) => Promise<RuntimeRunSummary>;
   denyRuntimeRun: (runId: string, decision?: ApprovalDecision) => Promise<RuntimeRunSummary>;
+  mcpGatewayCall: (request: { server: string; action: string; payload?: unknown }) => Promise<{ ok: boolean; data?: unknown; error?: string }>;
+  mcpGatewayStatus: () => Promise<{ ok: boolean; data?: unknown; error?: string }>;
 };
 
 declare global {

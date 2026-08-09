@@ -212,6 +212,10 @@ Create a local MCP config in your client:
         "MCP_PY_SANDBOX_ROOT": ".sandbox/python-runs",
         "MCP_PY_IMAGE": "python:3.11-slim"
       }
+    },
+    "playwright-browser": {
+      "command": "node",
+      "args": ["node_modules/@playwright/mcp/cli.js", "--headless", "--isolated"]
     }
   }
 }

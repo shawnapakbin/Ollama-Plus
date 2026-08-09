@@ -41,6 +41,13 @@ export type RuntimeSessionSummary = {
   lastRunSummary: string;
 };
 
+export type RuntimeSessionRenameResult = {
+  session: RuntimeSessionSummary;
+  title: string;
+  endpoint: string;
+  model: string;
+};
+
 export type RuntimeChatMessage = {
   id: string;
   sessionId: string;
@@ -49,6 +56,16 @@ export type RuntimeChatMessage = {
   model: string | null;
   endpoint: string | null;
   createdAt: string;
+  metrics: RuntimeChatMetrics | null;
+};
+
+export type RuntimeChatMetrics = {
+  totalDuration: number | null;
+  loadDuration: number | null;
+  promptEvalCount: number | null;
+  promptEvalDuration: number | null;
+  evalCount: number | null;
+  evalDuration: number | null;
 };
 
 export type RuntimeChatStreamEvent =
@@ -75,6 +92,7 @@ export type RuntimeChatStreamEvent =
       model: string;
       endpoint: string;
       assistantMessage: RuntimeChatMessage;
+      metrics?: RuntimeChatMetrics;
     }
   | {
       type: 'error';
@@ -96,6 +114,21 @@ export type RuntimeOllamaModel = {
 
 export type RuntimeOllamaCatalog = RuntimeChatConfig & {
   availableModels: RuntimeOllamaModel[];
+};
+
+export type RuntimeOllamaServer = {
+  id: string;
+  label: string;
+  endpoint: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RuntimeOllamaServerHealth = RuntimeOllamaServer & {
+  status: 'online' | 'offline';
+  models: RuntimeOllamaModel[];
+  checkedAt: string;
+  error: string | null;
 };
 
 export type RuntimeGraphSummary = {
@@ -147,11 +180,43 @@ export type RuntimeRunSummary = {
   completedAt: string | null;
 };
 
+export type RuntimeMemoryRecord = {
+  id: string;
+  sessionId: string;
+  runId: string;
+  fact: string;
+  importanceScore: number;
+  retention: string;
+  tags: string[];
+  sourceMessageIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ApprovalDecision = {
   operator?: string;
   operatorRole?: string;
   reason?: string;
 };
+
+export type RuntimeBridgeHealth = {
+  ok: boolean;
+  missingMethods: string[];
+  availableMethods: string[];
+};
+
+const REQUIRED_RUNTIME_BRIDGE_METHODS = [
+  'getRuntimeStatus',
+  'listRuntimeSessions',
+  'createRuntimeSession',
+  'renameRuntimeSession',
+  'renameRuntimeSessionWithAi',
+  'deleteRuntimeSession',
+  'listRuntimeMessages',
+  'updateRuntimeMessage',
+  'deleteRuntimeMessage',
+  'sendRuntimeChatMessageStream'
+] as const;
 
 function getElectronApi() {
   if (!window.electronAPI) {
@@ -162,6 +227,25 @@ function getElectronApi() {
 }
 
 export const runtimeClient = {
+  getBridgeHealth(): RuntimeBridgeHealth {
+    const api = window.electronAPI as Record<string, unknown> | undefined;
+    if (!api) {
+      return {
+        ok: false,
+        missingMethods: [...REQUIRED_RUNTIME_BRIDGE_METHODS],
+        availableMethods: []
+      };
+    }
+
+    const availableMethods = Object.keys(api).filter((key) => typeof api[key] === 'function').sort();
+    const missingMethods = REQUIRED_RUNTIME_BRIDGE_METHODS.filter((methodName) => typeof api[methodName] !== 'function');
+
+    return {
+      ok: missingMethods.length === 0,
+      missingMethods,
+      availableMethods
+    };
+  },
   getStatus() {
     return getElectronApi().getRuntimeStatus();
   },
@@ -177,6 +261,20 @@ export const runtimeClient = {
   createSession(title?: string) {
     return getElectronApi().createRuntimeSession(title);
   },
+  renameSession(sessionId: string, title: string) {
+    return getElectronApi().renameRuntimeSession(sessionId, title);
+  },
+  renameSessionWithAi(sessionId: string, input?: { endpoint?: string; model?: string }): Promise<RuntimeSessionRenameResult> {
+    return getElectronApi().renameRuntimeSessionWithAi(sessionId, input);
+  },
+  deleteSession(sessionId: string) {
+    const api = getElectronApi();
+    if (typeof api.deleteRuntimeSession !== 'function') {
+      throw new Error('Delete chat is unavailable in the active Electron bridge. Fully restart the desktop app to load the latest preload API.');
+    }
+
+    return api.deleteRuntimeSession(sessionId);
+  },
   getChatConfig() {
     return getElectronApi().getRuntimeChatConfig();
   },
@@ -186,8 +284,26 @@ export const runtimeClient = {
   listOllamaModels(endpoint?: string) {
     return getElectronApi().listRuntimeOllamaModels(endpoint);
   },
+  listOllamaServers() {
+    return getElectronApi().listRuntimeOllamaServers();
+  },
+  saveOllamaServer(input: { id?: string; label?: string; endpoint: string }) {
+    return getElectronApi().saveRuntimeOllamaServer(input);
+  },
+  removeOllamaServer(serverId: string) {
+    return getElectronApi().removeRuntimeOllamaServer(serverId);
+  },
+  checkOllamaServer(serverId: string) {
+    return getElectronApi().checkRuntimeOllamaServer(serverId);
+  },
   listMessages(sessionId?: string) {
     return getElectronApi().listRuntimeMessages(sessionId);
+  },
+  updateMessage(messageId: string, input: { content?: string }) {
+    return getElectronApi().updateRuntimeMessage(messageId, input);
+  },
+  deleteMessage(messageId: string) {
+    return getElectronApi().deleteRuntimeMessage(messageId);
   },
   sendChatMessage(input: { sessionId?: string; content: string; endpoint?: string; model?: string }) {
     return getElectronApi().sendRuntimeChatMessage(input);
@@ -200,6 +316,9 @@ export const runtimeClient = {
   },
   listRuns(sessionId?: string) {
     return getElectronApi().listRuntimeRuns(sessionId);
+  },
+  listMemoryRecords(sessionId?: string) {
+    return getElectronApi().listRuntimeMemoryRecords(sessionId);
   },
   startRun(graphId: string, sessionId?: string) {
     return getElectronApi().startRuntimeRun(graphId, sessionId);
@@ -221,5 +340,21 @@ export const runtimeClient = {
   },
   denyRun(runId: string, decision?: ApprovalDecision) {
     return getElectronApi().denyRuntimeRun(runId, decision);
+  },
+  mcpGatewayCall(request: { server: string; action: string; payload?: unknown }) {
+    const api = getElectronApi();
+    if (typeof api.mcpGatewayCall !== 'function') {
+      throw new Error('MCP gateway bridge is unavailable in the active Electron preload API.');
+    }
+
+    return api.mcpGatewayCall(request);
+  },
+  mcpGatewayStatus() {
+    const api = getElectronApi();
+    if (typeof api.mcpGatewayStatus !== 'function') {
+      throw new Error('MCP gateway status bridge is unavailable in the active Electron preload API.');
+    }
+
+    return api.mcpGatewayStatus();
   }
 };
