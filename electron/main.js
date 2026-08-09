@@ -56,24 +56,32 @@ function checkRootPath(rootPath) {
 }
 
 function checkDockerHealth() {
+  const now = Date.now();
+  const cache = checkDockerHealth.cache;
+  if (cache && now - cache.checkedAt < 60_000) {
+    return cache.result;
+  }
+
   const probe = spawnSync('docker', ['--version'], {
     encoding: 'utf8',
-    windowsHide: true
+    windowsHide: true,
+    timeout: 1_500
   });
 
-  if (!probe.error && probe.status === 0) {
-    return {
-      ok: true,
-      note: String(probe.stdout || probe.stderr || 'Docker available').trim()
-    };
-  }
-
-  return {
-    ok: false,
-    note: probe.error
-      ? (probe.error.message || 'Docker CLI unavailable.')
-      : String(probe.stderr || probe.stdout || 'Docker CLI unavailable.').trim()
-  };
+  const result = (!probe.error && probe.status === 0)
+    ? {
+        ok: true,
+        note: String(probe.stdout || probe.stderr || 'Docker available').trim()
+      }
+    : {
+        ok: false,
+        note: probe.error
+          ? (probe.error.message || 'Docker CLI unavailable.')
+          : String(probe.stderr || probe.stdout || 'Docker CLI unavailable.').trim()
+      };
+
+  checkDockerHealth.cache = { checkedAt: now, result };
+  return result;
 }
 
 function probeMcpServices() {
