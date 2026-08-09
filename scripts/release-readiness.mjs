@@ -8,13 +8,14 @@ const shouldRun = args.has('--run');
 const requiredFiles = [
   'README.md',
   'CONTRIBUTING.md',
-  'src/App.tsx',
-  'src/components/Chat/MessageContent.tsx',
-  'src/components/Chat/hooks/useOllamaStream.ts',
-  'src/services/runtimeClient.ts',
   'electron/main.js',
+  'electron/preload.cjs',
   'electron/runtime/runtimeService.js',
   'electron/runtime/runtimeStore.js',
+  'src/App.tsx',
+  'src/services/runtimeClient.ts',
+  'tests/graphCatalog.test.ts',
+  'tests/ollamaClient.test.ts',
   'tests/runtimeClient.test.ts',
   'tests/runtimeService.test.ts'
 ];
