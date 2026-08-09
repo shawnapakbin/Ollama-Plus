@@ -9,6 +9,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "release:check": "node scripts/release-readiness.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "electron:dev": "node scripts/electron-dev.mjs",
