@@ -250,7 +250,8 @@ const REQUIRED_RUNTIME_BRIDGE_METHODS = [
   'resumeRuntimeRun',
 
   'stepRuntimeRun',
-    const api = (globalThis as typeof globalThis & { window?: { electronAPI?: unknown } }).window?.electronAPI as Record<string, unknown> | undefined;
+    const api = (globalThis as typeof globalThis & { window?: { electronAPI?: unknown } }).window?.electronAPI as Record<string, unknown> | undefined;
+
   'cancelRuntimeRun',
 
   'approveRuntimeRun',
@@ -311,10 +312,8 @@ export const runtimeClient = {
   },
   renameSessionWithAi(sessionId: string, input?: { endpoint?: string; model?: string }): Promise<RuntimeSessionRenameResult> {
     return getElectronApi().renameRuntimeSessionWithAi(sessionId, input);
-  },
-  deleteSession(sessionId: string) {
     const api = getElectronApi();
-    if (typeof api.deleteRuntimeSession !== 'function') {
+      throw new Error('Delete session is unavailable in the active Electron bridge. Fully restart the desktop app to load the latest preload API.');
       throw new Error('Delete chat is unavailable in the active Electron bridge. Fully restart the desktop app to load the latest preload API.');
     }
 
