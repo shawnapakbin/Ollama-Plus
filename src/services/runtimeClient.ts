@@ -207,37 +207,60 @@ export type RuntimeBridgeHealth = {
 
 const REQUIRED_RUNTIME_BRIDGE_METHODS = [
   'getRuntimeStatus',
-  'getRuntimeBootstrapPlan',
-  'getGraphCatalog',
+  'getRuntimeBootstrapPlan',
+
+  'getGraphCatalog',
+
   'listRuntimeSessions',
   'createRuntimeSession',
   'renameRuntimeSession',
   'renameRuntimeSessionWithAi',
   'deleteRuntimeSession',
-  'getRuntimeChatConfig',
-  'saveRuntimeChatConfig',
-  'listRuntimeOllamaModels',
-  'listRuntimeOllamaServers',
-  'saveRuntimeOllamaServer',
-  'removeRuntimeOllamaServer',
-  'checkRuntimeOllamaServer',
+  'getRuntimeChatConfig',
+
+  'saveRuntimeChatConfig',
+
+  'listRuntimeOllamaModels',
+
+  'listRuntimeOllamaServers',
+
+  'saveRuntimeOllamaServer',
+
+  'removeRuntimeOllamaServer',
+
+  'checkRuntimeOllamaServer',
+
   'listRuntimeMessages',
   'updateRuntimeMessage',
   'deleteRuntimeMessage',
-  'sendRuntimeChatMessage',
-  'sendRuntimeChatMessageStream',
-  'onRuntimeChatStream',
-  'listRuntimeRuns',
-  'listRuntimeMemoryRecords',
-  'startRuntimeRun',
-  'executeRuntimeRun',
-  'resumeRuntimeRun',
-  'stepRuntimeRun',
-  'cancelRuntimeRun',
-  'approveRuntimeRun',
-  'denyRuntimeRun',
-  'mcpGatewayCall',
-  'mcpGatewayStatus'
+  'sendRuntimeChatMessage',
+
+  'sendRuntimeChatMessageStream',
+
+  'onRuntimeChatStream',
+
+  'listRuntimeRuns',
+
+  'listRuntimeMemoryRecords',
+
+  'startRuntimeRun',
+
+  'executeRuntimeRun',
+
+  'resumeRuntimeRun',
+
+  'stepRuntimeRun',
+    const api = (globalThis as typeof globalThis & { window?: { electronAPI?: unknown } }).window?.electronAPI as Record<string, unknown> | undefined;
+  'cancelRuntimeRun',
+
+  'approveRuntimeRun',
+
+  'denyRuntimeRun',
+
+  'mcpGatewayCall',
+
+  'mcpGatewayStatus'
+
 ] as const;
 
 function getElectronApi() {
