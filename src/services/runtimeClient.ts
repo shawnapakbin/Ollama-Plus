@@ -250,7 +250,6 @@ const REQUIRED_RUNTIME_BRIDGE_METHODS = [
   'resumeRuntimeRun',
 
   'stepRuntimeRun',
-    const api = (globalThis as typeof globalThis & { window?: { electronAPI?: unknown } }).window?.electronAPI as Record<string, unknown> | undefined;
 
   'cancelRuntimeRun',
 
@@ -312,9 +311,11 @@ export const runtimeClient = {
   },
   renameSessionWithAi(sessionId: string, input?: { endpoint?: string; model?: string }): Promise<RuntimeSessionRenameResult> {
     return getElectronApi().renameRuntimeSessionWithAi(sessionId, input);
+  },
+  deleteSession(sessionId: string) {
     const api = getElectronApi();
-      throw new Error('Delete session is unavailable in the active Electron bridge. Fully restart the desktop app to load the latest preload API.');
-      throw new Error('Delete chat is unavailable in the active Electron bridge. Fully restart the desktop app to load the latest preload API.');
+    if (typeof api.deleteRuntimeSession !== 'function') {
+      throw new Error('Delete session is unavailable in the active Electron bridge. Fully restart the desktop app to load the latest preload API.');
     }
 
     return api.deleteRuntimeSession(sessionId);
@@ -347,7 +348,12 @@ export const runtimeClient = {
     return getElectronApi().updateRuntimeMessage(messageId, input);
   },
   deleteMessage(messageId: string) {
-    return getElectronApi().deleteRuntimeMessage(messageId);
+    const api = getElectronApi();
+    if (typeof api.deleteRuntimeMessage !== 'function') {
+      throw new Error('Delete chat is unavailable in the active Electron bridge. Fully restart the desktop app to load the latest preload API.');
+    }
+
+    return api.deleteRuntimeMessage(messageId);
   },
   sendChatMessage(input: { sessionId?: string; content: string; endpoint?: string; model?: string }) {
     return getElectronApi().sendRuntimeChatMessage(input);
