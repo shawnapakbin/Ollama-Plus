@@ -1,13 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { normalizeChatConfig, normalizeMessage, normalizeRun, normalizeSession } from './stateSchema.js';
+import {
+  normalizeChatConfig,
+  normalizeMemoryRecord,
+  normalizeMessage,
+  normalizeOllamaServer,
+  normalizeRun,
+  normalizeSession
+} from './stateSchema.js';
 
 function emptyState() {
   return {
     sessions: [],
     runs: [],
     messages: [],
+    ollamaServers: [],
+    memoryRecords: [],
     chatConfig: normalizeChatConfig()
   };
 }
@@ -24,6 +33,12 @@ function normalizeState(state) {
     messages: (Array.isArray(state.messages) ? state.messages : [])
       .map((message) => normalizeMessage(message, nowIso))
       .filter((message) => Boolean(message.id) && Boolean(message.sessionId)),
+    ollamaServers: (Array.isArray(state.ollamaServers) ? state.ollamaServers : [])
+      .map((server) => normalizeOllamaServer(server, nowIso))
+      .filter((server) => Boolean(server.id) && Boolean(server.endpoint)),
+    memoryRecords: (Array.isArray(state.memoryRecords) ? state.memoryRecords : [])
+      .map((record) => normalizeMemoryRecord(record, nowIso))
+      .filter((record) => Boolean(record.id) && Boolean(record.sessionId) && Boolean(record.runId)),
     chatConfig: normalizeChatConfig(state.chatConfig)
   };
 }
@@ -48,6 +63,8 @@ export function readRuntimeState(statePath) {
       sessions: Array.isArray(parsed?.sessions) ? parsed.sessions : [],
       runs: Array.isArray(parsed?.runs) ? parsed.runs : [],
       messages: Array.isArray(parsed?.messages) ? parsed.messages : [],
+      ollamaServers: Array.isArray(parsed?.ollamaServers) ? parsed.ollamaServers : [],
+      memoryRecords: Array.isArray(parsed?.memoryRecords) ? parsed.memoryRecords : [],
       chatConfig: parsed?.chatConfig
     });
   } catch {
@@ -81,6 +98,18 @@ export function listMessages(statePath, sessionId) {
   return filtered.slice().sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
+export function listOllamaServers(statePath) {
+  return sortByUpdatedAt(readRuntimeState(statePath).ollamaServers);
+}
+
+export function listMemoryRecords(statePath, sessionId) {
+  const allRecords = readRuntimeState(statePath).memoryRecords;
+  const filtered = typeof sessionId === 'string' && sessionId
+    ? allRecords.filter((record) => record.sessionId === sessionId)
+    : allRecords;
+  return sortByUpdatedAt(filtered);
+}
+
 export function getChatConfig(statePath) {
   return readRuntimeState(statePath).chatConfig;
 }
@@ -111,6 +140,37 @@ export function createSession(statePath, title, options = {}) {
   return session;
 }
 
+export function renameSession(statePath, sessionId, title, options = {}) {
+  const state = readRuntimeState(statePath);
+  const sessionIndex = state.sessions.findIndex((session) => session.id === sessionId);
+  if (sessionIndex === -1) {
+    throw new Error(`Cannot rename unknown session: ${sessionId}`);
+  }
+
+  const now = options.now ?? new Date().toISOString();
+  state.sessions[sessionIndex] = normalizeSession({
+    ...state.sessions[sessionIndex],
+    title,
+    updatedAt: now
+  }, now);
+  writeRuntimeState(statePath, state);
+  return state.sessions[sessionIndex];
+}
+
+export function deleteSession(statePath, sessionId) {
+  const state = readRuntimeState(statePath);
+  const sessionExists = state.sessions.some((session) => session.id === sessionId);
+  if (!sessionExists) {
+    throw new Error(`Cannot delete unknown session: ${sessionId}`);
+  }
+
+  state.sessions = state.sessions.filter((session) => session.id !== sessionId);
+  state.runs = state.runs.filter((run) => run.sessionId !== sessionId);
+  state.messages = state.messages.filter((message) => message.sessionId !== sessionId);
+  state.memoryRecords = state.memoryRecords.filter((record) => record.sessionId !== sessionId);
+  writeRuntimeState(statePath, state);
+}
+
 export function appendMessage(statePath, input, options = {}) {
   const state = readRuntimeState(statePath);
   const targetSession = state.sessions.find((session) => session.id === input.sessionId);
@@ -138,6 +198,71 @@ export function appendMessage(statePath, input, options = {}) {
     : 'Assistant replied.';
   writeRuntimeState(statePath, state);
   return message;
+}
+
+export function getMessageById(statePath, messageId) {
+  return readRuntimeState(statePath).messages.find((message) => message.id === messageId) ?? null;
+}
+
+export function updateMessage(statePath, messageId, input, options = {}) {
+  const state = readRuntimeState(statePath);
+  const messageIndex = state.messages.findIndex((message) => message.id === messageId);
+  if (messageIndex === -1) {
+    throw new Error(`Cannot update unknown message: ${messageId}`);
+  }
+  const existing = state.messages[messageIndex];
+  const content = typeof input?.content === 'string' ? input.content.trim() : '';
+  if (!content) {
+    throw new Error('Message content cannot be empty.');
+  }
+
+  const now = options.now ?? new Date().toISOString();
+  state.messages[messageIndex] = normalizeMessage({
+    ...existing,
+    content,
+    createdAt: now
+  }, now);
+
+  const sessionIndex = state.sessions.findIndex((session) => session.id === existing.sessionId);
+  if (sessionIndex >= 0) {
+    state.sessions[sessionIndex] = normalizeSession({
+      ...state.sessions[sessionIndex],
+      updatedAt: now
+    }, now);
+  }
+
+  writeRuntimeState(statePath, state);
+  return state.messages[messageIndex];
+}
+
+export function deleteMessage(statePath, messageId, options = {}) {
+  const state = readRuntimeState(statePath);
+  const target = state.messages.find((message) => message.id === messageId);
+  if (!target) {
+    throw new Error(`Cannot delete unknown message: ${messageId}`);
+  }
+  state.messages = state.messages.filter((message) => message.id !== messageId);
+
+  const now = options.now ?? new Date().toISOString();
+  const sessionIndex = state.sessions.findIndex((session) => session.id === target.sessionId);
+  if (sessionIndex >= 0) {
+    const remaining = state.messages
+      .filter((message) => message.sessionId === target.sessionId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    const latest = remaining[remaining.length - 1];
+    state.sessions[sessionIndex] = normalizeSession({
+      ...state.sessions[sessionIndex],
+      updatedAt: now,
+      lastRunSummary: latest?.content?.trim()?.slice(0, 120) || 'No graph runs yet.',
+      status: latest?.role === 'assistant'
+        ? 'completed'
+        : latest?.role === 'user'
+          ? 'running'
+          : 'draft'
+    }, now);
+  }
+
+  writeRuntimeState(statePath, state);
 }
 
 export function createRun(statePath, input, options = {}) {
@@ -171,6 +296,67 @@ export function createRun(statePath, input, options = {}) {
   targetSession.lastRunSummary = `Prepared ${input.graphName}.`;
   writeRuntimeState(statePath, state);
   return run;
+}
+
+export function appendMemoryRecord(statePath, input, options = {}) {
+  const state = readRuntimeState(statePath);
+  const now = options.now ?? new Date().toISOString();
+  const idFactory = options.idFactory ?? randomUUID;
+  const record = normalizeMemoryRecord({
+    id: idFactory(),
+    sessionId: input.sessionId,
+    runId: input.runId,
+    fact: input.fact ?? '',
+    importanceScore: input.importanceScore ?? 1,
+    retention: input.retention ?? 'short-term',
+    tags: input.tags ?? [],
+    sourceMessageIds: input.sourceMessageIds ?? [],
+    createdAt: now,
+    updatedAt: now
+  }, now);
+
+  state.memoryRecords.unshift(record);
+  writeRuntimeState(statePath, state);
+  return record;
+}
+
+export function getOllamaServerById(statePath, serverId) {
+  return readRuntimeState(statePath).ollamaServers.find((server) => server.id === serverId) ?? null;
+}
+
+export function saveOllamaServer(statePath, input, options = {}) {
+  const state = readRuntimeState(statePath);
+  const now = options.now ?? new Date().toISOString();
+  const idFactory = options.idFactory ?? randomUUID;
+  const serverId = typeof input?.id === 'string' && input.id.trim() ? input.id.trim() : idFactory();
+  const index = state.ollamaServers.findIndex((server) => server.id === serverId);
+  const existing = index >= 0 ? state.ollamaServers[index] : null;
+  const next = normalizeOllamaServer({
+    ...existing,
+    id: serverId,
+    label: input?.label ?? existing?.label,
+    endpoint: input?.endpoint ?? existing?.endpoint,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now
+  }, now);
+
+  if (index >= 0) {
+    state.ollamaServers[index] = next;
+  } else {
+    state.ollamaServers.unshift(next);
+  }
+  writeRuntimeState(statePath, state);
+  return next;
+}
+
+export function removeOllamaServer(statePath, serverId) {
+  const state = readRuntimeState(statePath);
+  const exists = state.ollamaServers.some((server) => server.id === serverId);
+  if (!exists) {
+    throw new Error(`Cannot remove unknown Ollama server: ${serverId}`);
+  }
+  state.ollamaServers = state.ollamaServers.filter((server) => server.id !== serverId);
+  writeRuntimeState(statePath, state);
 }
 
 export function updateRun(statePath, runId, updater, options = {}) {
