@@ -351,7 +351,7 @@ export const runtimeClient = {
   deleteMessage(messageId: string) {
     const api = getElectronApi();
     if (typeof api.deleteRuntimeMessage !== 'function') {
-      throw new Error('Delete chat is unavailable in the active Electron bridge. Fully restart the desktop app to load the latest preload API.');
+      throw new Error('Delete message is unavailable in the active Electron bridge. Fully restart the desktop app to load the latest preload API.');
     }
 
     return api.deleteRuntimeMessage(messageId);

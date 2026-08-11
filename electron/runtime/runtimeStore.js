@@ -159,8 +159,8 @@ export function renameSession(statePath, sessionId, title, options = {}) {
 
 export function deleteSession(statePath, sessionId) {
   const state = readRuntimeState(statePath);
-  const sessionExists = state.sessions.some((session) => session.id === sessionId);
-  if (!sessionExists) {
+  const existing = state.sessions.find((session) => session.id === sessionId);
+  if (!existing) {
     throw new Error(`Cannot delete unknown session: ${sessionId}`);
   }
 
@@ -169,6 +169,7 @@ export function deleteSession(statePath, sessionId) {
   state.messages = state.messages.filter((message) => message.sessionId !== sessionId);
   state.memoryRecords = state.memoryRecords.filter((record) => record.sessionId !== sessionId);
   writeRuntimeState(statePath, state);
+  return existing;
 }
 
 export function appendMessage(statePath, input, options = {}) {
@@ -220,7 +221,8 @@ export function updateMessage(statePath, messageId, input, options = {}) {
   state.messages[messageIndex] = normalizeMessage({
     ...existing,
     content,
-    createdAt: now
+    createdAt: existing.createdAt,
+    updatedAt: now
   }, now);
 
   const sessionIndex = state.sessions.findIndex((session) => session.id === existing.sessionId);
@@ -263,6 +265,7 @@ export function deleteMessage(statePath, messageId, options = {}) {
   }
 
   writeRuntimeState(statePath, state);
+  return target;
 }
 
 export function createRun(statePath, input, options = {}) {

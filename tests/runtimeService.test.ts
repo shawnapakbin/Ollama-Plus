@@ -60,8 +60,9 @@ describe('runtimeService', () => {
     service.startRun('memory-ingest', first.id);
     service.startRun('core-chat', second.id);
 
-    service.deleteSession(first.id);
+    const deleted = service.deleteSession(first.id);
 
+    expect(deleted).toMatchObject({ id: first.id, title: 'First' });
     expect(service.listSessions().map((session) => session.id)).toEqual([second.id]);
     expect(service.listRuns(first.id)).toHaveLength(0);
     expect(service.listMessages(first.id)).toHaveLength(0);
@@ -282,7 +283,9 @@ describe('runtimeService', () => {
     });
     expect(health.models.map((model) => model.name)).toEqual(['qwen3.5:9b', 'llama3.2:3b']);
 
-    service.removeOllamaServer(server.id);
+    const removed = service.removeOllamaServer(server.id);
+
+    expect(removed).toMatchObject({ id: server.id, endpoint: 'http://192.168.1.50:11434' });
     expect(service.listOllamaServers()).toEqual([]);
   });
 
@@ -452,8 +455,9 @@ describe('runtimeService', () => {
 
     const target = service.listMessages(session.id).find((entry) => entry.role === 'assistant');
     expect(target).toBeTruthy();
-    service.deleteMessage(target!.id);
+    const deleted = service.deleteMessage(target!.id);
 
+    expect(deleted).toMatchObject({ id: target!.id, role: 'assistant' });
     const remainingIds = service.listMessages(session.id).map((entry) => entry.id);
     expect(remainingIds.includes(target!.id)).toBe(false);
     expect(service.listMessages(session.id)).toHaveLength(1);

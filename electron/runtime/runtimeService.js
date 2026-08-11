@@ -10,7 +10,6 @@ import {
   deleteMessage as deleteStoredMessage,
   deleteSession as deleteStoredSession,
   getChatConfig,
-  getMessageById,
   getOllamaServerById,
   getRunById,
   getSessionById,
@@ -209,8 +208,7 @@ export function createRuntimeService(config) {
     },
 
     deleteSession(sessionId) {
-      deleteStoredSession(statePath, sessionId);
-      return { ok: true };
+      return deleteStoredSession(statePath, sessionId);
     },
 
     listRuns(sessionId) {
@@ -226,12 +224,7 @@ export function createRuntimeService(config) {
     },
 
     deleteMessage(messageId) {
-      const existing = getMessageById(statePath, messageId);
-      if (!existing) {
-        throw new Error(`Cannot delete unknown message: ${messageId}`);
-      }
-      deleteStoredMessage(statePath, messageId);
-      return { id: existing.id, sessionId: existing.sessionId };
+      return deleteStoredMessage(statePath, messageId);
     },
 
     listOllamaServers() {
