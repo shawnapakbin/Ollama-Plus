@@ -264,11 +264,12 @@ const REQUIRED_RUNTIME_BRIDGE_METHODS = [
 ] as const;
 
 function getElectronApi() {
-  if (!window.electronAPI) {
+  const api = (globalThis as typeof globalThis & { window?: { electronAPI?: unknown } }).window?.electronAPI;
+  if (!api) {
     throw new Error('Electron runtime bridge is unavailable. Launch the desktop shell to use the rebuild baseline.');
   }
 
-  return window.electronAPI;
+  return api as NonNullable<typeof window.electronAPI>;
 }
 
 export const runtimeClient = {
