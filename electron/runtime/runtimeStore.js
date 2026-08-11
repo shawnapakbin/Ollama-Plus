@@ -351,12 +351,13 @@ export function saveOllamaServer(statePath, input, options = {}) {
 
 export function removeOllamaServer(statePath, serverId) {
   const state = readRuntimeState(statePath);
-  const exists = state.ollamaServers.some((server) => server.id === serverId);
-  if (!exists) {
+  const removed = state.ollamaServers.find((server) => server.id === serverId);
+  if (!removed) {
     throw new Error(`Cannot remove unknown Ollama server: ${serverId}`);
   }
   state.ollamaServers = state.ollamaServers.filter((server) => server.id !== serverId);
   writeRuntimeState(statePath, state);
+  return removed;
 }
 
 export function updateRun(statePath, runId, updater, options = {}) {

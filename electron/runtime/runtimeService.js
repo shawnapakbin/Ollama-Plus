@@ -248,8 +248,7 @@ export function createRuntimeService(config) {
     },
 
     removeOllamaServer(serverId) {
-      removeStoredOllamaServer(statePath, serverId);
-      return { ok: true };
+      return removeStoredOllamaServer(statePath, serverId);
     },
 
     async checkOllamaServer(serverId) {
