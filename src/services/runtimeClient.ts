@@ -273,7 +273,7 @@ function getElectronApi() {
 
 export const runtimeClient = {
   getBridgeHealth(): RuntimeBridgeHealth {
-    const api = window.electronAPI as Record<string, unknown> | undefined;
+    const api = (globalThis as typeof globalThis & { window?: { electronAPI?: unknown } }).window?.electronAPI as Record<string, unknown> | undefined;
     if (!api) {
       return {
         ok: false,
