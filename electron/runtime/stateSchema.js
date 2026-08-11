@@ -128,6 +128,17 @@ export function normalizeMessage(message, nowIso) {
     ? message.role
     : 'assistant';
 
+  const metrics = message?.metrics && typeof message.metrics === 'object'
+    ? {
+        totalDuration: Number.isFinite(Number(message.metrics.totalDuration)) ? Number(message.metrics.totalDuration) : null,
+        loadDuration: Number.isFinite(Number(message.metrics.loadDuration)) ? Number(message.metrics.loadDuration) : null,
+        promptEvalCount: Number.isFinite(Number(message.metrics.promptEvalCount)) ? Number(message.metrics.promptEvalCount) : null,
+        promptEvalDuration: Number.isFinite(Number(message.metrics.promptEvalDuration)) ? Number(message.metrics.promptEvalDuration) : null,
+        evalCount: Number.isFinite(Number(message.metrics.evalCount)) ? Number(message.metrics.evalCount) : null,
+        evalDuration: Number.isFinite(Number(message.metrics.evalDuration)) ? Number(message.metrics.evalDuration) : null
+      }
+    : null;
+
   return {
     id: String(message?.id ?? ''),
     sessionId: String(message?.sessionId ?? ''),
@@ -135,7 +146,8 @@ export function normalizeMessage(message, nowIso) {
     content: typeof message?.content === 'string' ? message.content : '',
     model: typeof message?.model === 'string' && message.model.trim() ? message.model : null,
     endpoint: typeof message?.endpoint === 'string' && message.endpoint.trim() ? message.endpoint : null,
-    createdAt: toIsoString(message?.createdAt, nowIso)
+    createdAt: toIsoString(message?.createdAt, nowIso),
+    metrics
   };
 }
 
@@ -145,5 +157,45 @@ export function normalizeChatConfig(config) {
       ? config.endpoint.trim()
       : 'http://127.0.0.1:11434',
     model: typeof config?.model === 'string' ? config.model.trim() : ''
+  };
+}
+
+export function normalizeOllamaServer(server, nowIso) {
+  return {
+    id: String(server?.id ?? ''),
+    label: typeof server?.label === 'string' && server.label.trim()
+      ? server.label.trim().slice(0, 80)
+      : 'Ollama server',
+    endpoint: typeof server?.endpoint === 'string' ? server.endpoint.trim() : '',
+    createdAt: toIsoString(server?.createdAt, nowIso),
+    updatedAt: toIsoString(server?.updatedAt, nowIso)
+  };
+}
+
+export function normalizeMemoryRecord(record, nowIso) {
+  const fact = typeof record?.fact === 'string' ? record.fact.trim() : '';
+  const retention = typeof record?.retention === 'string' && record.retention.trim()
+    ? record.retention.trim()
+    : 'short-term';
+  const tags = Array.isArray(record?.tags)
+    ? record.tags.filter((tag) => typeof tag === 'string' && tag.trim()).map((tag) => tag.trim().toLowerCase()).slice(0, 16)
+    : [];
+  const sourceMessageIds = Array.isArray(record?.sourceMessageIds)
+    ? record.sourceMessageIds.filter((id) => typeof id === 'string' && id.trim()).slice(0, 16)
+    : [];
+
+  return {
+    id: String(record?.id ?? ''),
+    sessionId: String(record?.sessionId ?? ''),
+    runId: String(record?.runId ?? ''),
+    fact,
+    importanceScore: Number.isFinite(Number(record?.importanceScore))
+      ? Math.max(1, Math.min(100, Math.floor(Number(record.importanceScore))))
+      : 1,
+    retention,
+    tags,
+    sourceMessageIds,
+    createdAt: toIsoString(record?.createdAt, nowIso),
+    updatedAt: toIsoString(record?.updatedAt, nowIso)
   };
 }

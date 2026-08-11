@@ -3,6 +3,7 @@ function renderOutput(run, completedCheckpointCount) {
     `Graph ${run.graphName} completed in bootstrap executor mode.`,
     `Graph ID: ${run.graphId}`,
     `Checkpoints completed: ${completedCheckpointCount}`,
+    `Run finalized at ${new Date().toISOString()}`,
     'Next milestone: replace bootstrap executor with compiled LangGraph nodes and stream callbacks.'
   ].join('\n');
 }

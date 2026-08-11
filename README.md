@@ -33,10 +33,11 @@ done
 
 ## MCP Servers (Local)
 
-The repository now includes two MCP servers under `mcp/`:
+The repository includes local MCP server/runtime options:
 
 - `mcp/terminal-server.mjs` for persistent terminal (punchout) sessions with guardrails.
 - `mcp/python-sandbox-server.mjs` for isolated Python execution suitable for 3D scripting pipelines.
+- Dedicated Playwright MCP browser server via local CLI: `node node_modules/@playwright/mcp/cli.js --headless --isolated`.
 
 See `mcp/README.md` for setup and environment controls.
 

@@ -8,15 +8,16 @@ const shouldRun = args.has('--run');
 const requiredFiles = [
   'README.md',
   'CONTRIBUTING.md',
-  'src/components/Chat/Chat.tsx',
-  'src/components/Chat/hooks/useChatPipeline.ts',
-  'src/components/Chat/hooks/useOllamaStream.ts',
-  'src/components/Chat/hooks/useSteerQueue.ts',
-  'src/components/Chat/pipeline/imageTransport.ts',
-  'tests/useChatPipeline.test.ts',
-  'tests/useOllamaStream.test.ts',
-  'tests/useSteerQueue.test.ts',
-  'tests/imageTransport.test.ts'
+  'electron/main.js',
+  'electron/preload.cjs',
+  'electron/runtime/runtimeService.js',
+  'electron/runtime/runtimeStore.js',
+  'src/App.tsx',
+  'src/services/runtimeClient.ts',
+  'tests/graphCatalog.test.ts',
+  'tests/ollamaClient.test.ts',
+  'tests/runtimeClient.test.ts',
+  'tests/runtimeService.test.ts'
 ];
 
 const requiredChecks = [

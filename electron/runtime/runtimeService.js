@@ -3,16 +3,26 @@ import { buildRunBlueprint, getGraphCatalog } from './graphCatalog.js';
 import { executeRunLifecycle } from './graphExecutor.js';
 import { DEFAULT_OLLAMA_BASE_URL, listOllamaModels, normalizeOllamaBaseUrl, requestOllamaChat, requestOllamaChatStream } from './ollamaClient.js';
 import {
+  appendMemoryRecord,
   appendMessage,
   createRun,
   createSession,
+  deleteMessage as deleteStoredMessage,
+  deleteSession as deleteStoredSession,
   getChatConfig,
+  getOllamaServerById,
   getRunById,
   getSessionById,
+  listMemoryRecords as listStoredMemoryRecords,
   listMessages,
+  listOllamaServers as listStoredOllamaServers,
   listRuns,
   listSessions,
+  removeOllamaServer as removeStoredOllamaServer,
+  renameSession as renameStoredSession,
   readRuntimeState,
+  saveOllamaServer as saveStoredOllamaServer,
+  updateMessage as updateStoredMessage,
   updateChatConfig,
   updateRun
 } from './runtimeStore.js';
@@ -66,6 +76,24 @@ function normalizeApprovalDecision(decision) {
     operatorRole,
     reason
   };
+}
+
+function pickTitleCandidate(content) {
+  if (typeof content !== 'string') return '';
+  const lines = content.split('\n').map((line) => line.trim()).filter(Boolean);
+  if (lines.length === 0) return '';
+  const labeled = lines.find((line) => /^title\s*:/i.test(line));
+  const raw = labeled ? labeled.replace(/^title\s*:/i, '').trim() : lines[0];
+  return raw.replace(/^["']|["']$/g, '').trim().slice(0, 80);
+}
+
+function ensureRunFinalizedFooter(output, completedAt) {
+  const footer = `Run finalized at ${completedAt}`;
+  if (typeof output === 'string' && output.includes('Run finalized at')) {
+    return output;
+  }
+  const base = typeof output === 'string' && output.trim() ? output.trim() : '';
+  return base ? `${base}\n${footer}` : footer;
 }
 
 export function createRuntimeService(config) {
@@ -124,12 +152,128 @@ export function createRuntimeService(config) {
       return createSession(statePath, title);
     },
 
+    renameSession(sessionId, title) {
+      return renameStoredSession(statePath, sessionId, title);
+    },
+
+    async renameSessionWithAi(sessionId, input = {}) {
+      const session = getSessionById(statePath, sessionId);
+      if (!session) {
+        throw new Error(`Cannot rename unknown session: ${sessionId}`);
+      }
+
+      const transcript = listMessages(statePath, session.id)
+        .filter((message) => message.role === 'user' || message.role === 'assistant')
+        .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+        .join('\n');
+
+      const currentConfig = getChatConfig(statePath);
+      const endpoint = normalizeOllamaBaseUrl(input?.endpoint ?? currentConfig.endpoint ?? defaultOllamaEndpoint);
+      const model = typeof input?.model === 'string' && input.model.trim()
+        ? input.model.trim()
+        : currentConfig.model;
+      if (!model) {
+        throw new Error('No Ollama model selected. Refresh models and choose one before renaming a session.');
+      }
+
+      const response = await requestOllamaChat(fetchImpl, {
+        endpoint,
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: 'Return a concise title for this chat. Output exactly one line in the format: Title: <title>'
+          },
+          {
+            role: 'user',
+            content: transcript || session.title
+          }
+        ]
+      });
+
+      const title = pickTitleCandidate(response.content) || session.title;
+      const renamed = renameStoredSession(statePath, session.id, title);
+
+      updateChatConfig(statePath, {
+        endpoint: response.endpoint,
+        model: response.model
+      });
+
+      return {
+        session: renamed,
+        title: renamed.title,
+        endpoint: response.endpoint,
+        model: response.model
+      };
+    },
+
+    deleteSession(sessionId) {
+      return deleteStoredSession(statePath, sessionId);
+    },
+
     listRuns(sessionId) {
       return listRuns(statePath, sessionId);
     },
 
     listMessages(sessionId) {
       return listMessages(statePath, sessionId);
+    },
+
+    updateMessage(messageId, input = {}) {
+      return updateStoredMessage(statePath, messageId, input);
+    },
+
+    deleteMessage(messageId) {
+      return deleteStoredMessage(statePath, messageId);
+    },
+
+    listOllamaServers() {
+      return listStoredOllamaServers(statePath);
+    },
+
+    saveOllamaServer(input = {}) {
+      const endpoint = normalizeOllamaBaseUrl(input.endpoint ?? '');
+      return saveStoredOllamaServer(statePath, {
+        id: input.id,
+        label: input.label,
+        endpoint
+      });
+    },
+
+    removeOllamaServer(serverId) {
+      return removeStoredOllamaServer(statePath, serverId);
+    },
+
+    async checkOllamaServer(serverId) {
+      const server = getOllamaServerById(statePath, serverId);
+      if (!server) {
+        throw new Error(`Cannot check unknown Ollama server: ${serverId}`);
+      }
+
+      const checkedAt = new Date().toISOString();
+      try {
+        const result = await listOllamaModels(fetchImpl, server.endpoint);
+        return {
+          ...server,
+          endpoint: result.endpoint,
+          status: 'online',
+          models: result.models,
+          checkedAt,
+          error: null
+        };
+      } catch (error) {
+        return {
+          ...server,
+          status: 'offline',
+          models: [],
+          checkedAt,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    },
+
+    listMemoryRecords(sessionId) {
+      return listStoredMemoryRecords(statePath, sessionId);
     },
 
     getChatConfig() {
@@ -358,10 +502,12 @@ export function createRuntimeService(config) {
 
       return updateRun(statePath, runId, (run) => {
         const startedAt = run.startedAt ?? new Date().toISOString();
+        const events = Array.isArray(run.events) ? run.events.slice() : [];
         const runningIndex = run.checkpoints.findIndex((checkpoint) => checkpoint.status === 'running');
         if (runningIndex >= 0) {
           return {
             status: 'running',
+            events,
             nextAction: `Advance checkpoint ${run.checkpoints[runningIndex].order} to continue execution.`,
             startedAt
           };
@@ -390,10 +536,12 @@ export function createRuntimeService(config) {
           }
           return checkpoint;
         });
+        events.push(`Started checkpoint ${checkpoints[activateIndex].order}: ${checkpoints[activateIndex].title}`);
 
         return {
           status: 'running',
           checkpoints,
+          events,
           pendingApproval: null,
           nextAction: `Checkpoint ${checkpoints[activateIndex].order} is running. Advance when ready.`,
           startedAt
@@ -483,6 +631,16 @@ export function createRuntimeService(config) {
           ...run,
           checkpoints
         }, { now: completedAt });
+        const output = ensureRunFinalizedFooter(result.output, completedAt);
+        events.push(`Run finalized at ${completedAt}`);
+        appendMemoryRecord(statePath, {
+          sessionId: run.sessionId,
+          runId: run.id,
+          fact: `${run.graphName} completed.`,
+          importanceScore: 20,
+          retention: 'short-term',
+          tags: [run.graphId, 'run-completed']
+        });
 
         return {
           status: 'completed',
@@ -491,7 +649,7 @@ export function createRuntimeService(config) {
           pendingApproval: null,
           summary: result.summary,
           nextAction: result.nextAction,
-          output: result.output,
+          output,
           error: '',
           completedAt
         };
@@ -553,6 +711,16 @@ export function createRuntimeService(config) {
           ...run,
           checkpoints
         }, { now: completedAt });
+        const output = ensureRunFinalizedFooter(result.output, completedAt);
+        events.push(`Run finalized at ${completedAt}`);
+        appendMemoryRecord(statePath, {
+          sessionId: run.sessionId,
+          runId: run.id,
+          fact: `${run.graphName} completed.`,
+          importanceScore: 20,
+          retention: 'short-term',
+          tags: [run.graphId, 'run-completed']
+        });
 
         return {
           status: 'completed',
@@ -561,7 +729,7 @@ export function createRuntimeService(config) {
           pendingApproval: null,
           summary: result.summary,
           nextAction: result.nextAction,
-          output: result.output,
+          output,
           error: '',
           completedAt
         };
