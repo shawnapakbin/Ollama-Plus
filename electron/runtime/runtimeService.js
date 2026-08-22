@@ -359,7 +359,8 @@ export function createRuntimeService(config) {
         role: 'assistant',
         content: response.content,
         model: response.model,
-        endpoint: response.endpoint
+        endpoint: response.endpoint,
+        metrics: response.metrics
       });
 
       updateChatConfig(statePath, {
@@ -447,7 +448,8 @@ export function createRuntimeService(config) {
           role: 'assistant',
           content: response.content,
           model: response.model,
-          endpoint: response.endpoint
+          endpoint: response.endpoint,
+          metrics: response.metrics
         });
 
         updateChatConfig(statePath, {
@@ -471,7 +473,8 @@ export function createRuntimeService(config) {
           sessionId: session.id,
           assistantMessage,
           model: response.model,
-          endpoint: response.endpoint
+          endpoint: response.endpoint,
+          metrics: response.metrics
         });
 
         return result;
