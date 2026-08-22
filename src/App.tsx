@@ -41,6 +41,7 @@ import {
   type RuntimeSessionSummary,
   type RuntimeStatus
 } from './services/runtimeClient';
+import { evaluateRenameGuard } from './services/renameGuard';
 import { useMemo, useEffect, useRef, useState } from 'react';
 
 const NAV_PREFERENCE_KEY = 'ollama-plus.nav-open';
@@ -48,6 +49,7 @@ const INSPECTOR_PREFERENCE_KEY = 'ollama-plus.inspector-sections';
 const AUTO_SCROLL_PREFERENCE_KEY = 'ollama-plus.auto-scroll';
 const SHOW_THINKING_PREFERENCE_KEY = 'ollama-plus.show-thinking';
 const SEND_ON_ENTER_ONLY_PREFERENCE_KEY = 'ollama-plus.send-on-enter-only';
+
 
 type InspectorSectionKey = 'runtime' | 'graphs' | 'runs' | 'policies' | 'events' | 'milestones';
 type AppPage = 'chats' | 'settings' | 'models' | 'mcp' | 'agent';
@@ -432,7 +434,7 @@ function App() {
   const [runs, setRuns] = useState<RuntimeRunSummary[]>([]);
   const [memoryRecords, setMemoryRecords] = useState<RuntimeMemoryRecord[]>([]);
   const [messages, setMessages] = useState<RuntimeChatMessage[]>([]);
-  const [chatConfig, setChatConfig] = useState<RuntimeChatConfig>({ endpoint: 'http://127.0.0.1:11434', model: '' });
+  const [chatConfig, setChatConfig] = useState<RuntimeChatConfig>({ endpoint: 'http://127.0.0.1:11434', model: '', autoRenameEnabled: true });
   const [availableModels, setAvailableModels] = useState<RuntimeOllamaModel[]>([]);
   const [ollamaServers, setOllamaServers] = useState<RuntimeOllamaServer[]>([]);
   const [ollamaServerHealth, setOllamaServerHealth] = useState<Record<string, RuntimeOllamaServerHealth>>({});
@@ -488,6 +490,7 @@ function App() {
 
   const streamRequestIdRef = useRef<string | null>(null);
   const requestCounterRef = useRef(0);
+  const autoRenameInProgressRef = useRef<Set<string>>(new Set());
   const activeStreamId = streamRequestIdRef.current;
 
   const createRequestId = () => {
@@ -726,6 +729,7 @@ function App() {
   async function handleDeleteSession(sessionId: string) {
     setDeletingSessionId(sessionId);
     setError('');
+    autoRenameInProgressRef.current.delete(sessionId);
 
     try {
       await runtimeClient.deleteSession(sessionId);
@@ -920,6 +924,31 @@ function App() {
     }
   }
 
+  async function autoRenameAfterCompletion(sessionId: string): Promise<void> {
+    try {
+      const session = sessions.find(s => s.id === sessionId);
+      if (!session) return;
+
+      if (!evaluateRenameGuard(session, chatConfig, messages, autoRenameInProgressRef.current)) {
+        return;
+      }
+
+      autoRenameInProgressRef.current.add(sessionId);
+
+      const result = await runtimeClient.renameSessionWithAi(sessionId, {
+        endpoint: chatConfig.endpoint,
+        model: chatConfig.model
+      });
+
+      setSessions(current => current.map(s => s.id === sessionId ? result.session : s));
+      setChatConfig(current => ({ ...current, endpoint: result.endpoint, model: result.model }));
+    } catch (error) {
+      console.warn('[auto-rename] Failed for session', sessionId, error);
+    } finally {
+      autoRenameInProgressRef.current.delete(sessionId);
+    }
+  }
+
   async function sendPromptWithStreaming(promptInput: string, preferredSessionId?: string) {
     const prompt = promptInput.trim();
     if (!prompt) {
@@ -991,6 +1020,10 @@ function App() {
       refreshSessionData(sessionId),
       handleSaveConfig({ endpoint: savedConfig.endpoint, model: savedConfig.model })
     ]);
+
+    // Fire-and-forget auto-rename check
+    void autoRenameAfterCompletion(sessionId);
+
     return sessionId;
   }
 
@@ -2149,6 +2182,18 @@ function App() {
                   type="checkbox"
                   checked={isSendOnEnterOnly}
                   onChange={(event) => setIsSendOnEnterOnly(event.target.checked)}
+                />
+              </label>
+              <label className="toggle-field">
+                <span>Auto-rename sessions</span>
+                <input
+                  type="checkbox"
+                  checked={chatConfig.autoRenameEnabled}
+                  onChange={(event) => {
+                    const autoRenameEnabled = event.target.checked;
+                    setChatConfig(current => ({ ...current, autoRenameEnabled }));
+                    void handleSaveConfig({ autoRenameEnabled });
+                  }}
                 />
               </label>
             </div>

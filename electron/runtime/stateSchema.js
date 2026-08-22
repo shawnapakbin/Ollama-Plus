@@ -156,7 +156,10 @@ export function normalizeChatConfig(config) {
     endpoint: typeof config?.endpoint === 'string' && config.endpoint.trim()
       ? config.endpoint.trim()
       : 'http://127.0.0.1:11434',
-    model: typeof config?.model === 'string' ? config.model.trim() : ''
+    model: typeof config?.model === 'string' ? config.model.trim() : '',
+    autoRenameEnabled: typeof config?.autoRenameEnabled === 'boolean'
+      ? config.autoRenameEnabled
+      : true
   };
 }
 
