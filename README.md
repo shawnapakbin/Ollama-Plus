@@ -29,7 +29,6 @@ done
 - Supports built-in tools (shell, browser automation, wiki, search, time, engineering calculator).
 - Enforces policy checks for risky tool actions.
 - Uses in-app markdown forms for user interactions that require decisions or guided input.
-- Automatically renames chat sessions with AI-generated titles after the first meaningful exchange.
 - Includes optional local MCP servers for guarded terminal sessions and Docker-isolated Python execution.
 
 ## MCP Servers (Local)
@@ -41,23 +40,6 @@ The repository includes local MCP server/runtime options:
 - Dedicated Playwright MCP browser server via local CLI: `node node_modules/@playwright/mcp/cli.js --headless --isolated`.
 
 See `mcp/README.md` for setup and environment controls.
-
-## Auto-Session Naming
-
-Sessions are automatically renamed with a concise AI-generated title after the first meaningful chat exchange completes. The feature uses the configured Ollama model to replace the default "Untitled runtime session" title with a descriptive summary.
-
-**When it triggers:** After stream completion, the auto-rename fires when all guard conditions pass:
-
-- Auto-rename is enabled in settings (`autoRenameEnabled` is `true`).
-- The session still has its default title (not manually renamed or previously AI-renamed).
-- The session contains at least one user message and one assistant message.
-- No rename operation is already in progress for that session.
-
-If any condition is not met, the rename is silently skipped.
-
-**How to disable:** Open Settings > Chat settings and turn off the "Auto-rename sessions" toggle. The preference persists across app restarts.
-
-**Error handling:** Rename failures (network issues, model unavailable) are caught silently and logged to the developer console. They do not interrupt the chat workflow or display error UI to the user. Failed renames are not retried.
 
 ## Workspace Panels
 
