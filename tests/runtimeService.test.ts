@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import fc from 'fast-check';
 import { createRuntimeService } from '../electron/runtime/runtimeService.js';
+import { getChatConfig, updateChatConfig } from '../electron/runtime/runtimeStore.js';
 
 const tempDirs: string[] = [];
 
@@ -461,5 +463,81 @@ describe('runtimeService', () => {
     const remainingIds = service.listMessages(session.id).map((entry) => entry.id);
     expect(remainingIds.includes(target!.id)).toBe(false);
     expect(service.listMessages(session.id)).toHaveLength(1);
+  });
+});
+
+// Feature: auto-session-naming, Property 2: Config Persistence Round-Trip
+describe('normalizeChatConfig – Property 2: Config Persistence Round-Trip', () => {
+  /**
+   * Validates: Requirements 1.4, 8.3
+   *
+   * For any valid RuntimeChatConfig object (with autoRenameEnabled set to either
+   * true or false), saving the config via updateChatConfig and immediately reading
+   * it back via getChatConfig SHALL produce an object where autoRenameEnabled
+   * equals the original value.
+   */
+
+  it('preserves autoRenameEnabled boolean through save and read cycle', () => {
+    fc.assert(
+      fc.property(
+        fc.boolean(),
+        (autoRenameEnabled) => {
+          const statePath = createTempStatePath();
+
+          updateChatConfig(statePath, {
+            endpoint: 'http://127.0.0.1:11434',
+            model: 'llama3.2',
+            autoRenameEnabled
+          });
+
+          const readBack = getChatConfig(statePath);
+          expect(readBack.autoRenameEnabled).toBe(autoRenameEnabled);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  it('preserves autoRenameEnabled through updater function pattern', () => {
+    fc.assert(
+      fc.property(
+        fc.boolean(),
+        (autoRenameEnabled) => {
+          const statePath = createTempStatePath();
+
+          updateChatConfig(statePath, (current) => ({
+            ...current,
+            autoRenameEnabled
+          }));
+
+          const readBack = getChatConfig(statePath);
+          expect(readBack.autoRenameEnabled).toBe(autoRenameEnabled);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  it('preserves autoRenameEnabled across multiple save/read cycles', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.boolean(), { minLength: 1, maxLength: 10 }),
+        (booleans) => {
+          const statePath = createTempStatePath();
+
+          for (const value of booleans) {
+            updateChatConfig(statePath, (current) => ({
+              ...current,
+              autoRenameEnabled: value
+            }));
+          }
+
+          const readBack = getChatConfig(statePath);
+          const lastValue = booleans[booleans.length - 1];
+          expect(readBack.autoRenameEnabled).toBe(lastValue);
+        }
+      ),
+      { numRuns: 100 }
+    );
   });
 });

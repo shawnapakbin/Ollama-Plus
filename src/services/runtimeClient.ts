@@ -104,6 +104,7 @@ export type RuntimeChatStreamEvent =
 export type RuntimeChatConfig = {
   endpoint: string;
   model: string;
+  autoRenameEnabled: boolean;
 };
 
 export type RuntimeOllamaModel = {

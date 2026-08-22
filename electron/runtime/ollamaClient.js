@@ -1,5 +1,33 @@
 const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 
+/**
+ * Normalizes a single metric field value.
+ * Returns null for undefined, null, non-numeric (NaN, Infinity), or negative values.
+ * Preserves zero and positive finite numbers.
+ */
+export function normalizeMetricField(value) {
+  if (value === undefined || value === null) return null;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  if (num < 0) return null;
+  return num;
+}
+
+/**
+ * Extracts all 6 metric fields from an Ollama response payload (final chunk or non-streaming response).
+ * Maps snake_case Ollama fields to camelCase Metrics_Object properties.
+ */
+export function extractMetrics(payload) {
+  return {
+    totalDuration: normalizeMetricField(payload?.total_duration),
+    loadDuration: normalizeMetricField(payload?.load_duration),
+    promptEvalCount: normalizeMetricField(payload?.prompt_eval_count),
+    promptEvalDuration: normalizeMetricField(payload?.prompt_eval_duration),
+    evalCount: normalizeMetricField(payload?.eval_count),
+    evalDuration: normalizeMetricField(payload?.eval_duration),
+  };
+}
+
 function ensureProtocol(value) {
   if (/^https?:\/\//i.test(value)) return value;
   return `http://${value}`;
@@ -85,13 +113,20 @@ export async function requestOllamaChat(fetchImpl, input) {
     throw new Error('Ollama returned an empty assistant message.');
   }
 
+  const metrics = extractMetrics(payload);
+
   return {
     endpoint,
     model,
     content,
     done: Boolean(payload?.done),
-    totalDuration: Number.isFinite(Number(payload?.total_duration)) ? Number(payload.total_duration) : null,
-    evalCount: Number.isFinite(Number(payload?.eval_count)) ? Number(payload.eval_count) : null
+    totalDuration: metrics.totalDuration,
+    loadDuration: metrics.loadDuration,
+    promptEvalCount: metrics.promptEvalCount,
+    promptEvalDuration: metrics.promptEvalDuration,
+    evalCount: metrics.evalCount,
+    evalDuration: metrics.evalDuration,
+    metrics
   };
 }
 
@@ -131,8 +166,7 @@ export async function requestOllamaChatStream(fetchImpl, input, callbacks = {}) 
   const reader = response.body.getReader();
   let buffer = '';
   let content = '';
-  let totalDuration = null;
-  let evalCount = null;
+  let metrics = null;
 
   const consumeLine = (line) => {
     if (!line.trim()) return;
@@ -144,8 +178,7 @@ export async function requestOllamaChatStream(fetchImpl, input, callbacks = {}) 
     }
 
     if (payload?.done) {
-      totalDuration = Number.isFinite(Number(payload?.total_duration)) ? Number(payload.total_duration) : totalDuration;
-      evalCount = Number.isFinite(Number(payload?.eval_count)) ? Number(payload.eval_count) : evalCount;
+      metrics = extractMetrics(payload);
     }
   };
 
@@ -174,8 +207,13 @@ export async function requestOllamaChatStream(fetchImpl, input, callbacks = {}) 
     model,
     content,
     done: true,
-    totalDuration,
-    evalCount
+    totalDuration: metrics?.totalDuration ?? null,
+    loadDuration: metrics?.loadDuration ?? null,
+    promptEvalCount: metrics?.promptEvalCount ?? null,
+    promptEvalDuration: metrics?.promptEvalDuration ?? null,
+    evalCount: metrics?.evalCount ?? null,
+    evalDuration: metrics?.evalDuration ?? null,
+    metrics
   };
 }
 

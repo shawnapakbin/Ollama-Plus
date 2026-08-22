@@ -41,13 +41,17 @@ import {
   type RuntimeSessionSummary,
   type RuntimeStatus
 } from './services/runtimeClient';
+import { evaluateRenameGuard } from './services/renameGuard';
+import { MessageContent } from './components/Chat/MessageContent';
+import { useChatStreamListener } from './hooks/useChatStreamListener';
 import { useMemo, useEffect, useRef, useState } from 'react';
 
 const NAV_PREFERENCE_KEY = 'ollama-plus.nav-open';
 const INSPECTOR_PREFERENCE_KEY = 'ollama-plus.inspector-sections';
 const AUTO_SCROLL_PREFERENCE_KEY = 'ollama-plus.auto-scroll';
 const SHOW_THINKING_PREFERENCE_KEY = 'ollama-plus.show-thinking';
-const SEND_ON_ENTER_ONLY_PREFERENCE_KEY = 'ollama-plus.send-on-enter-only';
+
+
 
 type InspectorSectionKey = 'runtime' | 'graphs' | 'runs' | 'policies' | 'events' | 'milestones';
 type AppPage = 'chats' | 'settings' | 'models' | 'mcp' | 'agent';
@@ -432,7 +436,7 @@ function App() {
   const [runs, setRuns] = useState<RuntimeRunSummary[]>([]);
   const [memoryRecords, setMemoryRecords] = useState<RuntimeMemoryRecord[]>([]);
   const [messages, setMessages] = useState<RuntimeChatMessage[]>([]);
-  const [chatConfig, setChatConfig] = useState<RuntimeChatConfig>({ endpoint: 'http://127.0.0.1:11434', model: '' });
+  const [chatConfig, setChatConfig] = useState<RuntimeChatConfig>({ endpoint: 'http://127.0.0.1:11434', model: '', autoRenameEnabled: true });
   const [availableModels, setAvailableModels] = useState<RuntimeOllamaModel[]>([]);
   const [ollamaServers, setOllamaServers] = useState<RuntimeOllamaServer[]>([]);
   const [ollamaServerHealth, setOllamaServerHealth] = useState<Record<string, RuntimeOllamaServerHealth>>({});
@@ -453,11 +457,7 @@ function App() {
     if (saved === 'false') return false;
     return true;
   });
-  const [isSendOnEnterOnly, setIsSendOnEnterOnly] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    const saved = window.localStorage.getItem(SEND_ON_ENTER_ONLY_PREFERENCE_KEY);
-    return saved === 'true';
-  });
+
   const [error, setError] = useState('');
   const bridgeHealth = useMemo(() => runtimeClient.getBridgeHealth(), []);
   const bridgeWarning = useMemo(() => {
@@ -488,7 +488,54 @@ function App() {
 
   const streamRequestIdRef = useRef<string | null>(null);
   const requestCounterRef = useRef(0);
+  const autoRenameInProgressRef = useRef<Set<string>>(new Set());
   const activeStreamId = streamRequestIdRef.current;
+
+  useChatStreamListener({
+    onStarted: (event) => {
+      setMessages((current) =>
+        current.map((msg) =>
+          msg.id === `pending-user:${event.requestId}` ? event.userMessage : msg
+        )
+      );
+    },
+    onToken: (event) => {
+      setStreamDrafts((current) => {
+        const existing = current[event.requestId];
+        if (!existing) return current;
+        return {
+          ...current,
+          [event.requestId]: {
+            ...existing,
+            content: existing.content + event.delta
+          }
+        };
+      });
+    },
+    onCompleted: (event) => {
+      setStreamDrafts((current) => {
+        const next = { ...current };
+        delete next[event.requestId];
+        return next;
+      });
+      // Append finalized assistant message immediately so it appears in the same
+      // render batch as the draft removal — prevents a gap where neither is visible.
+      if (event.assistantMessage) {
+        setMessages((current) => [...current, event.assistantMessage]);
+      }
+      streamRequestIdRef.current = null;
+      void refreshSessionData(event.sessionId);
+    },
+    onError: (event) => {
+      setStreamDrafts((current) => {
+        const next = { ...current };
+        delete next[event.requestId];
+        return next;
+      });
+      streamRequestIdRef.current = null;
+      setError(event.message);
+    }
+  });
 
   const createRequestId = () => {
     requestCounterRef.current += 1;
@@ -543,10 +590,7 @@ function App() {
     window.localStorage.setItem(SHOW_THINKING_PREFERENCE_KEY, String(isThinkingProcessVisible));
   }, [isThinkingProcessVisible]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(SEND_ON_ENTER_ONLY_PREFERENCE_KEY, String(isSendOnEnterOnly));
-  }, [isSendOnEnterOnly]);
+
 
   useEffect(() => {
     if (activePage !== 'chats' || !isNarrowLayout || !isNavOpen) return;
@@ -726,6 +770,7 @@ function App() {
   async function handleDeleteSession(sessionId: string) {
     setDeletingSessionId(sessionId);
     setError('');
+    autoRenameInProgressRef.current.delete(sessionId);
 
     try {
       await runtimeClient.deleteSession(sessionId);
@@ -920,6 +965,31 @@ function App() {
     }
   }
 
+  async function autoRenameAfterCompletion(sessionId: string): Promise<void> {
+    try {
+      const session = sessions.find(s => s.id === sessionId);
+      if (!session) return;
+
+      if (!evaluateRenameGuard(session, chatConfig, messages, autoRenameInProgressRef.current)) {
+        return;
+      }
+
+      autoRenameInProgressRef.current.add(sessionId);
+
+      const result = await runtimeClient.renameSessionWithAi(sessionId, {
+        endpoint: chatConfig.endpoint,
+        model: chatConfig.model
+      });
+
+      setSessions(current => current.map(s => s.id === sessionId ? result.session : s));
+      setChatConfig(current => ({ ...current, endpoint: result.endpoint, model: result.model }));
+    } catch (error) {
+      console.warn('[auto-rename] Failed for session', sessionId, error);
+    } finally {
+      autoRenameInProgressRef.current.delete(sessionId);
+    }
+  }
+
   async function sendPromptWithStreaming(promptInput: string, preferredSessionId?: string) {
     const prompt = promptInput.trim();
     if (!prompt) {
@@ -991,6 +1061,10 @@ function App() {
       refreshSessionData(sessionId),
       handleSaveConfig({ endpoint: savedConfig.endpoint, model: savedConfig.model })
     ]);
+
+    // Fire-and-forget auto-rename check
+    void autoRenameAfterCompletion(sessionId);
+
     return sessionId;
   }
 
@@ -1242,7 +1316,11 @@ function App() {
 
     const listEl = messageListRef.current;
     if (!listEl) return;
-    listEl.scrollTop = listEl.scrollHeight;
+
+    const isNearBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 80;
+    if (isNearBottom) {
+      listEl.scrollTop = listEl.scrollHeight;
+    }
   }, [messages, activeDrafts, activeSessionId, activePage, isAutoScrollEnabled]);
 
   const latestRun = activeRuns[0] ?? null;
@@ -1333,20 +1411,13 @@ function App() {
   const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.isComposing || event.key !== 'Enter') return;
 
-    if (isSendOnEnterOnly) {
-      if (event.shiftKey) return;
-      event.preventDefault();
-      if (!isSendingMessage && canSendMessage) {
-        void handleSendMessage();
-      }
-      return;
-    }
+    // Shift+Enter or Ctrl/Cmd+Enter inserts newline (default textarea behavior)
+    if (event.shiftKey || event.ctrlKey || event.metaKey) return;
 
-    if (event.ctrlKey || event.metaKey) {
-      event.preventDefault();
-      if (!isSendingMessage && canSendMessage) {
-        void handleSendMessage();
-      }
+    // Enter without modifiers: submit if non-empty
+    event.preventDefault();
+    if (!isSendingMessage && canSendMessage) {
+      void handleSendMessage();
     }
   };
 
@@ -1586,9 +1657,7 @@ function App() {
                     </div>
                   </div>
                 ) : (
-                  <div className="message-content">
-                    {isThinkingProcessVisible ? message.content : stripThinkingProcess(message.content)}
-                  </div>
+                  <MessageContent content={isThinkingProcessVisible ? message.content : stripThinkingProcess(message.content)} />
                 )}
                 {message.role === 'assistant' ? (
                   <div className="message-metrics" aria-label="System metrics">
@@ -1660,9 +1729,7 @@ function App() {
                   <strong>{draft.model || 'Assistant'}</strong>
                   <span>Streaming...</span>
                 </div>
-                <div className="message-content">
-                  {(isThinkingProcessVisible ? draft.content : stripThinkingProcess(draft.content)) || 'Waiting for first token...'}
-                </div>
+                <MessageContent content={(isThinkingProcessVisible ? draft.content : stripThinkingProcess(draft.content)) || 'Waiting for first token...'} />
               </article>
             ))}
           </div>
@@ -1704,14 +1771,25 @@ function App() {
             ) : null}
             <div className="composer-actions">
               <small>
-                {chatConfig.endpoint} | {isSendOnEnterOnly ? 'Enter sends, Shift+Enter adds a new line' : 'Ctrl+Enter sends'}
+                {chatConfig.endpoint} | Enter sends, Shift+Enter adds a new line
                 {composerAttachments.length > 0 ? ` | ${composerAttachments.length} attachment${composerAttachments.length === 1 ? '' : 's'}` : ''}
               </small>
               {isSendingMessage && activeStreamId ? (
                 <button
                   className="icon-action run-action-icon danger-icon"
                   type="button"
-                  onClick={() => { streamRequestIdRef.current = null; }}
+                  onClick={() => {
+                    const cancelledRequestId = streamRequestIdRef.current;
+                    streamRequestIdRef.current = null;
+                    if (cancelledRequestId) {
+                      setStreamDrafts((current) => {
+                        const next = { ...current };
+                        delete next[cancelledRequestId];
+                        return next;
+                      });
+                    }
+                    setIsSendingMessage(false);
+                  }}
                   title="Stop streaming"
                   aria-label="Stop streaming"
                   data-tooltip="Stop"
@@ -2143,12 +2221,17 @@ function App() {
                   onChange={(event) => setIsThinkingProcessVisible(event.target.checked)}
                 />
               </label>
+
               <label className="toggle-field">
-                <span>Send message on Enter only</span>
+                <span>Auto-rename sessions</span>
                 <input
                   type="checkbox"
-                  checked={isSendOnEnterOnly}
-                  onChange={(event) => setIsSendOnEnterOnly(event.target.checked)}
+                  checked={chatConfig.autoRenameEnabled}
+                  onChange={(event) => {
+                    const autoRenameEnabled = event.target.checked;
+                    setChatConfig(current => ({ ...current, autoRenameEnabled }));
+                    void handleSaveConfig({ autoRenameEnabled });
+                  }}
                 />
               </label>
             </div>

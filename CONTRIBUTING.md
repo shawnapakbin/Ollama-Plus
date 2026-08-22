@@ -89,6 +89,56 @@ Issue lifecycle:
 - Inactive issues may be auto-marked stale after 30 days and auto-closed 7 days later.
 - Priority and active-work labels are exempt from stale auto-close.
 
+## Auto-Session-Naming
+
+The auto-session-naming feature automatically generates descriptive titles for chat sessions using the configured Ollama model. It is opt-in by default (enabled on fresh installs) and controlled via a toggle in the Settings page.
+
+### Configuration
+
+The `autoRenameEnabled` boolean field lives in `chatConfig` within `state.json`:
+
+```json
+{
+  "chatConfig": {
+    "endpoint": "http://127.0.0.1:11434",
+    "model": "llama3.2",
+    "autoRenameEnabled": true
+  }
+}
+```
+
+- Defaults to `true` when the field is missing, `null`, or a non-boolean value.
+- Normalized by `normalizeChatConfig` in `electron/runtime/stateSchema.js`.
+- Persisted through the existing `saveChatConfig` IPC bridge method.
+
+### Trigger Flow
+
+The auto-rename runs after a successful chat stream completes:
+
+1. `sendPromptWithStreaming` resolves → fires `autoRenameAfterCompletion(sessionId)` as fire-and-forget (`void`).
+2. `autoRenameAfterCompletion` calls `evaluateRenameGuard` to check preconditions.
+3. Guard conditions (all must pass):
+   - `autoRenameEnabled` is `true` in chat config
+   - Session title equals the default (`'Untitled runtime session'`)
+   - Messages contain at least one user message and one assistant message
+   - Session ID is not already in the in-progress tracking set
+4. If all conditions pass: session ID is added to the in-progress set → `renameSessionWithAi` is called → session list and config are updated → lock is released in `finally`.
+5. Errors are caught silently and logged via `console.warn`. No retry is attempted.
+
+### Key Files
+
+| File | Responsibility |
+|------|----------------|
+| `src/services/renameGuard.ts` | `evaluateRenameGuard` function and `DEFAULT_SESSION_TITLE` constant |
+| `src/App.tsx` | `autoRenameAfterCompletion`, in-progress ref, settings toggle integration |
+| `electron/runtime/stateSchema.js` | `normalizeChatConfig` with `autoRenameEnabled` field handling |
+
+### Working with Auto-Rename
+
+- To disable auto-rename during development, set `autoRenameEnabled: false` in `state.json` or use the Settings toggle.
+- The in-progress tracking uses a `useRef<Set<string>>` (not state) to avoid unnecessary re-renders.
+- Manual renames change the session title away from the default, which prevents future auto-renames via the guard.
+
 ## Blender Plate Contribution Notes
 
 When contributing to 3D workspace behavior:

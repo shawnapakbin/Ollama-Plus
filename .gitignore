@@ -6,7 +6,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-
 node_modules
 dist
 dist-ssr
@@ -21,6 +20,9 @@ graphify-out/
 
 # Editor directories and files
 .vs/
+.github/
+.kiro/
+.venv/
 .vscode/*
 !.vscode/extensions.json
 .idea
