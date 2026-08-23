@@ -290,7 +290,6 @@ describe('Bug 3 Exploration: Steering While Streaming', () => {
     );
 
     // Find the send button JSX
-    const sendButtonPattern = /disabled=\{([^}]+)\}/g;
     const primaryActionRegion = appSource.indexOf('className="primary-action"');
     expect(primaryActionRegion).toBeGreaterThan(-1);
 

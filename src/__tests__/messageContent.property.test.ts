@@ -11,6 +11,7 @@
 
 // @vitest-environment jsdom
 
+import React from 'react';
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { render } from '@testing-library/react';
@@ -30,7 +31,7 @@ describe('Feature: chat-streaming-richtext-metrics, Property 2: Whitespace-only 
       fc.property(
         fc.stringMatching(/^[\s]+$/).filter(s => s.length > 0 && s.length <= 50),
         (whitespaceContent) => {
-          const { container } = render(MessageContent({ content: whitespaceContent }) as any);
+          const { container } = render(MessageContent({ content: whitespaceContent }) as React.ReactElement);
           const messageDiv = container.querySelector('.message-content');
 
           expect(messageDiv).not.toBeNull();
@@ -51,7 +52,7 @@ describe('Feature: chat-streaming-richtext-metrics, Property 2: Whitespace-only 
   });
 
   it('empty string renders an empty container', () => {
-    const { container } = render(MessageContent({ content: '' }) as any);
+    const { container } = render(MessageContent({ content: '' }) as React.ReactElement);
     const messageDiv = container.querySelector('.message-content');
     expect(messageDiv).not.toBeNull();
     expect(messageDiv!.children.length).toBe(0);
@@ -113,7 +114,7 @@ describe('Feature: chat-streaming-richtext-metrics, Property 3: HTML sanitizatio
   it('rendered output contains zero <script> elements, zero on* event handlers, and zero javascript: URIs', () => {
     fc.assert(
       fc.property(xssVectorGen, (maliciousContent) => {
-        const { container } = render(MessageContent({ content: maliciousContent }) as any);
+        const { container } = render(MessageContent({ content: maliciousContent }) as React.ReactElement);
         const messageDiv = container.querySelector('.message-content');
 
         expect(messageDiv).not.toBeNull();
@@ -166,7 +167,7 @@ describe('Feature: chat-streaming-richtext-metrics, Property 4: Single newlines 
   it('single newlines between text lines produce <br> elements', () => {
     fc.assert(
       fc.property(singleNewlineContentGen, (content) => {
-        const { container } = render(MessageContent({ content }) as any);
+        const { container } = render(MessageContent({ content }) as React.ReactElement);
         const messageDiv = container.querySelector('.message-content');
 
         expect(messageDiv).not.toBeNull();

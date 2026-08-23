@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { appendMessage, createSession, getMessageById, listMessages } from '../electron/runtime/runtimeStore.js';
+import { appendMessage, createSession, listMessages } from '../electron/runtime/runtimeStore.js';
 import { normalizeMessage } from '../electron/runtime/stateSchema.js';
 
 /**
@@ -286,7 +286,7 @@ describe('Bug 1 Preservation: Non-Metrics Input Behavior', () => {
           // Verify the message is persisted and retrievable
           const messages = listMessages(statePath, sessionId);
           expect(messages.length).toBeGreaterThan(0);
-          const found = messages.find((m: any) => m.id === result.id);
+          const found = messages.find((m) => m.id === result.id);
           expect(found).toBeDefined();
           expect(found!.role).toBe(role);
           expect(found!.content).toBe(content);
@@ -351,10 +351,6 @@ describe('Bug 2 Preservation: Composer Clearing Exists in Send Flow', () => {
 
     const funcStart = appSource.indexOf('async function handleSendMessage');
     expect(funcStart).toBeGreaterThan(-1);
-
-    // Get function body until next top-level function
-    const nextFunc = appSource.indexOf('\n  async function', funcStart + 10);
-    const funcBody = appSource.slice(funcStart, nextFunc > -1 ? nextFunc : funcStart + 2000);
 
     // setComposerAttachments([]) exists within handleSendMessage or sendPromptWithStreaming
     // After the fix it may move to sendPromptWithStreaming, so check the broader send flow

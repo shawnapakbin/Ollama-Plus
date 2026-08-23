@@ -25,10 +25,12 @@ export function useChatStreamListener(options: UseChatStreamListenerOptions): vo
   const onErrorRef = useRef(options.onError);
 
   // Keep refs fresh on every render
-  onStartedRef.current = options.onStarted;
-  onTokenRef.current = options.onToken;
-  onCompletedRef.current = options.onCompleted;
-  onErrorRef.current = options.onError;
+  useEffect(() => {
+    onStartedRef.current = options.onStarted;
+    onTokenRef.current = options.onToken;
+    onCompletedRef.current = options.onCompleted;
+    onErrorRef.current = options.onError;
+  });
 
   useEffect(() => {
     const unsubscribe = runtimeClient.onChatStream((event: RuntimeChatStreamEvent) => {

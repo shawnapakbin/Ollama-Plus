@@ -68,8 +68,6 @@ describe('Feature: chat-streaming-richtext-metrics, Property 1: Thinking-process
         nonEmptySafeStringArb,
         safeStringArb,
         (before, thinkContent, after) => {
-          const input = `${before}<think>${thinkContent}</think>${after}`;
-          const result = stripThinkingProcess(input);
           // The thinking content should not appear in the result
           // (unless it also happens to be in before/after, so we use a unique marker)
           const uniqueThinkContent = `__UNIQUE_THINK_${thinkContent}__`;
