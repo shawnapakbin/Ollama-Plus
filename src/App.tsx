@@ -227,8 +227,10 @@ function getMessageLabel(message: RuntimeChatMessage): string {
 }
 
 function nanosToMilliseconds(value: number | null | undefined): number | null {
-  if (!Number.isFinite(Number(value))) return null;
-  return Number(value) / 1_000_000;
+  if (value === null || value === undefined) return null;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return num / 1_000_000;
 }
 
 function formatMilliseconds(value: number | null): string {
@@ -238,39 +240,31 @@ function formatMilliseconds(value: number | null): string {
 }
 
 function formatCount(value: number | null | undefined): string {
-  if (!Number.isFinite(Number(value))) return 'n/a';
-  return `${Math.round(Number(value))}`;
+  if (value === null || value === undefined) return 'n/a';
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 'n/a';
+  return `${Math.round(num)}`;
 }
 
 function computeTokensPerSecond(tokens: number | null, durationNs: number | null): string {
-  if (!Number.isFinite(Number(tokens)) || !Number.isFinite(Number(durationNs)) || Number(durationNs) <= 0) {
-    return 'n/a';
-  }
-
-  const tokensPerSecond = Number(tokens) / (Number(durationNs) / 1_000_000_000);
+  if (tokens === null || durationNs === null) return 'n/a';
+  const t = Number(tokens);
+  const d = Number(durationNs);
+  if (!Number.isFinite(t) || !Number.isFinite(d) || d <= 0) return 'n/a';
+  const tokensPerSecond = t / (d / 1_000_000_000);
   return `${tokensPerSecond.toFixed(2)} tok/s`;
 }
 
-function getMetricSections(metrics: RuntimeChatMetrics | null) {
-  const ingestionDurationMs = nanosToMilliseconds(metrics?.promptEvalDuration ?? null);
-  const generationDurationMs = nanosToMilliseconds(metrics?.evalDuration ?? null);
+function getCompactMetrics(metrics: RuntimeChatMetrics | null) {
   const totalDurationMs = nanosToMilliseconds(metrics?.totalDuration ?? null);
-  const loadDurationMs = nanosToMilliseconds(metrics?.loadDuration ?? null);
 
-  return {
-    ingestion: [
-      { label: 'Prompt tokens', value: formatCount(metrics?.promptEvalCount ?? null) },
-      { label: 'Ingestion duration', value: formatMilliseconds(ingestionDurationMs) },
-      { label: 'Prompt throughput', value: computeTokensPerSecond(metrics?.promptEvalCount ?? null, metrics?.promptEvalDuration ?? null) },
-      { label: 'Model load', value: formatMilliseconds(loadDurationMs) }
-    ],
-    generation: [
-      { label: 'Generated tokens', value: formatCount(metrics?.evalCount ?? null) },
-      { label: 'Generation duration', value: formatMilliseconds(generationDurationMs) },
-      { label: 'Token throughput', value: computeTokensPerSecond(metrics?.evalCount ?? null, metrics?.evalDuration ?? null) },
-      { label: 'Total duration', value: formatMilliseconds(totalDurationMs) }
-    ]
-  };
+  return [
+    { emoji: '📝', label: 'Prompt', value: formatCount(metrics?.promptEvalCount ?? null), unit: 'tokens' },
+    { emoji: '⚡', label: 'Prompt speed', value: computeTokensPerSecond(metrics?.promptEvalCount ?? null, metrics?.promptEvalDuration ?? null), unit: '' },
+    { emoji: '🤖', label: 'Generated', value: formatCount(metrics?.evalCount ?? null), unit: 'tokens' },
+    { emoji: '⚡', label: 'Gen speed', value: computeTokensPerSecond(metrics?.evalCount ?? null, metrics?.evalDuration ?? null), unit: '' },
+    { emoji: '⏱️', label: 'Total', value: formatMilliseconds(totalDurationMs), unit: '' }
+  ];
 }
 
 function buildPromptKey(content: string): string {
@@ -478,6 +472,7 @@ function App() {
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
   const [actionRunId, setActionRunId] = useState<string | null>(null);
   const [approvalDrafts, setApprovalDrafts] = useState<Record<string, { operator: string; operatorRole: string; reason: string }>>({});
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -1027,6 +1022,13 @@ function App() {
       }
     }));
 
+    // Clear composer and attachments immediately after optimistic message is created
+    setComposer('');
+    setComposerAttachments([]);
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = '';
+    }
+
     const response = await runtimeClient.sendChatMessageStream({
       sessionId,
       content: prompt,
@@ -1054,7 +1056,6 @@ function App() {
       return next;
     });
     streamRequestIdRef.current = null;
-    setComposer('');
     setActiveSessionId(sessionId);
     const savedConfig = await runtimeClient.getChatConfig();
     await Promise.all([
@@ -1065,20 +1066,35 @@ function App() {
     // Fire-and-forget auto-rename check
     void autoRenameAfterCompletion(sessionId);
 
+    // Auto-send queued message if one exists
+    if (queuedMessage) {
+      const nextMessage = queuedMessage;
+      setQueuedMessage(null);
+      await sendPromptWithStreaming(nextMessage, sessionId);
+    }
+
     return sessionId;
   }
 
   async function handleSendMessage() {
+    // Queue the message if a stream is already active (only if no queuedMessage is pending)
+    if (isSendingMessage) {
+      const hasContent = Boolean(composer.trim()) || composerAttachments.length > 0;
+      if (hasContent && queuedMessage === null) {
+        setQueuedMessage(composer.trim());
+        setComposer('');
+        setComposerAttachments([]);
+        if (attachmentInputRef.current) attachmentInputRef.current.value = '';
+      }
+      return;
+    }
+
     setIsSendingMessage(true);
     setError('');
 
     try {
       const promptWithAttachments = composePromptWithAttachments(composer, composerAttachments);
       await sendPromptWithStreaming(promptWithAttachments);
-      setComposerAttachments([]);
-      if (attachmentInputRef.current) {
-        attachmentInputRef.current.value = '';
-      }
     } catch (sendError) {
       if (streamRequestIdRef.current) {
         const failedRequestId = streamRequestIdRef.current;
@@ -1089,6 +1105,7 @@ function App() {
         });
       }
       streamRequestIdRef.current = null;
+      setQueuedMessage(null);
       setError(sendError instanceof Error ? sendError.message : String(sendError));
     } finally {
       setIsSendingMessage(false);
@@ -1414,9 +1431,9 @@ function App() {
     // Shift+Enter or Ctrl/Cmd+Enter inserts newline (default textarea behavior)
     if (event.shiftKey || event.ctrlKey || event.metaKey) return;
 
-    // Enter without modifiers: submit if non-empty
+    // Enter without modifiers: submit if non-empty (queues if streaming is active)
     event.preventDefault();
-    if (!isSendingMessage && canSendMessage) {
+    if (canSendMessage) {
       void handleSendMessage();
     }
   };
@@ -1659,30 +1676,14 @@ function App() {
                 ) : (
                   <MessageContent content={isThinkingProcessVisible ? message.content : stripThinkingProcess(message.content)} />
                 )}
-                {message.role === 'assistant' ? (
+                {message.role === 'assistant' && message.metrics ? (
                   <div className="message-metrics" aria-label="System metrics">
-                    <div className="message-metrics-group">
-                      <h4>Ingestion</h4>
-                      <ul>
-                        {getMetricSections(message.metrics).ingestion.map((metric) => (
-                          <li key={metric.label}>
-                            <span>{metric.label}</span>
-                            <strong>{metric.value}</strong>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="message-metrics-group">
-                      <h4>Token generation</h4>
-                      <ul>
-                        {getMetricSections(message.metrics).generation.map((metric) => (
-                          <li key={metric.label}>
-                            <span>{metric.label}</span>
-                            <strong>{metric.value}</strong>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                    {getCompactMetrics(message.metrics).map((metric) => (
+                      <span key={metric.label} className="metrics-item" title={metric.label}>
+                        <span className="metrics-emoji">{metric.emoji}</span>
+                        <span className="metrics-value">{metric.value}{metric.unit ? ` ${metric.unit}` : ''}</span>
+                      </span>
+                    ))}
                   </div>
                 ) : null}
                 <div className="message-actions">
@@ -1800,8 +1801,8 @@ function App() {
               <button className="secondary-action composer-attach-action" type="button" onClick={handlePickAttachments}>
                 <Paperclip size={15} /> Attach
               </button>
-              <button className="primary-action" type="button" onClick={() => void handleSendMessage()} disabled={isSendingMessage || !canSendMessage}>
-                {isSendingMessage ? 'Sending...' : 'Send message'}
+              <button className="primary-action" type="button" onClick={() => void handleSendMessage()} disabled={!canSendMessage} title={isSendingMessage && canSendMessage ? 'Queue message' : 'Send message'}>
+                {isSendingMessage && canSendMessage ? 'Queue message' : isSendingMessage ? 'Sending...' : 'Send message'}
               </button>
             </div>
           </div>
