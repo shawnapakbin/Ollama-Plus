@@ -188,6 +188,7 @@ export function appendMessage(statePath, input, options = {}) {
     content: input.content,
     model: input.model,
     endpoint: input.endpoint,
+    metrics: input.metrics,
     createdAt: now
   }, now);
 
