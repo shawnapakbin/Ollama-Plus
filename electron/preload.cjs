@@ -1,3 +1,7 @@
+/**
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ * v5.0.2
+ */
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {

@@ -1,3 +1,7 @@
+/**
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ * v5.0.2
+ */
 export const SESSION_STATUSES = new Set(['draft', 'queued', 'running', 'paused', 'waiting_approval', 'completed', 'failed', 'canceled']);
 export const RUN_STATUSES = new Set(['planned', 'running', 'paused', 'waiting_approval', 'completed', 'failed', 'canceled']);
 export const CHECKPOINT_STATUSES = new Set(['pending', 'ready', 'running', 'waiting_approval', 'completed', 'failed', 'canceled']);

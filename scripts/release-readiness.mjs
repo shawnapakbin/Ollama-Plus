@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+/**
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ * v5.0.2
+ */
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 

@@ -1,3 +1,7 @@
+<#
+  (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+  v5.0.2
+#>
 $ErrorActionPreference = 'Stop'
 
 # Accumulate all validation failures and report them together at the end.

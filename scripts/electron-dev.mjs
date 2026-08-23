@@ -1,3 +1,7 @@
+/**
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ * v5.0.2
+ */
 import net from 'node:net';
 import process from 'node:process';
 import { spawn } from 'node:child_process';

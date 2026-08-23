@@ -1,3 +1,7 @@
+/**
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ * v5.0.2
+ */
 export type RuntimeStatus = {
   appVersion: string;
   electronVersion: string;

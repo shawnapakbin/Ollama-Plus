@@ -1,3 +1,7 @@
+/**
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ * v5.0.2
+ */
 const APPROVAL_POLICIES = {
   'human-tool-routing-v1': {
     id: 'human-tool-routing-v1',
