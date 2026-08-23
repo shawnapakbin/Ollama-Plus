@@ -1,3 +1,7 @@
+/**
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ * v5.0.2
+ */
 function renderOutput(run, completedCheckpointCount) {
   return [
     `Graph ${run.graphName} completed in bootstrap executor mode.`,

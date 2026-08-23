@@ -1,4 +1,8 @@
 /**
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ * v5.0.2
+ */
+/**
  * Property-based tests for MessageContent component.
  *
  * Feature: chat-streaming-richtext-metrics

@@ -1,4 +1,8 @@
 /**
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ * v5.0.2
+ */
+/**
  * Property-based tests for token delta accumulation.
  *
  * Feature: chat-streaming-richtext-metrics

@@ -1,3 +1,7 @@
+/**
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ * v5.0.2
+ */
 import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';

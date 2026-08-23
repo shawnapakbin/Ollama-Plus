@@ -1,3 +1,7 @@
+/**
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ * v5.0.2
+ */
 import electronUpdater from 'electron-updater';
 const { autoUpdater } = electronUpdater;
 import { app, ipcMain } from 'electron';
