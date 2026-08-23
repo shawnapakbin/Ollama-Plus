@@ -180,8 +180,7 @@ describe.skipIf(!shouldRun)('Build Pipeline Integration Tests', () => {
               WIN_CSC_KEY_PASSWORD: undefined,
             },
           });
-          // If we get here, the build unexpectedly succeeded
-          exitCode = 0;
+          // If we get here, the build unexpectedly succeeded (exitCode stays null)
         } catch (error: unknown) {
           const execError = error as { status?: number; stdout?: string; stderr?: string };
           exitCode = execError.status ?? 1;
