@@ -257,17 +257,21 @@ Build renderer bundle:
 npm run build
 ```
 
-Build portable Windows app:
+Build Windows NSIS installer:
 
 ```bash
 npm run electron:build
 ```
 
+For complete Windows installer documentation (prerequisites, building, code signing, auto-update, troubleshooting), see [Windows Setup Guide](docs/WINDOWS_SETUP.md).
+
 ## Windows Notes
 
 If PowerShell execution policy blocks npm scripts, run via `cmd` or use a policy-compatible shell session.
 
-Electron packaging (`npm run electron:build`) requires native rebuild of `node-pty`. Ensure Visual Studio C++ build tools include Spectre-mitigated libraries for the active MSVC toolset, otherwise packaging can fail with `MSB8040`.
+Electron packaging (`npm run electron:build`) produces a full NSIS installer with prerequisite detection, guided wizard, and Windows integration. Building requires Visual Studio C++ build tools with Spectre-mitigated libraries for the active MSVC toolset, otherwise packaging can fail with `MSB8040`.
+
+For complete Windows installer documentation (prerequisites, building, code signing, auto-update, troubleshooting), see [Windows Setup Guide](docs/WINDOWS_SETUP.md).
 
 You may see a Vite warning for large JS chunk size in production builds. This is currently non-blocking and expected at this stage.
 

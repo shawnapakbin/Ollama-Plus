@@ -1,7 +1,7 @@
 {
   "name": "ollama-plus",
   "private": true,
-  "version": "5.0.1",
+  "version": "5.0.2",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -22,7 +22,8 @@
     "appId": "com.ollama.nativeapp",
     "productName": "Ollama +",
     "directories": {
-      "output": "dist-electron"
+      "output": "dist-electron",
+      "buildResources": "build"
     },
     "files": [
       "dist/**/*",
@@ -30,10 +31,35 @@
       "mcp/lib/**/*"
     ],
     "win": {
-      "target": "portable"
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Ollama+",
+      "menuCategory": "Ollama+",
+      "include": "build/installer.nsh",
+      "license": "build/license.txt",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "uninstallDisplayName": "Ollama + ${version}",
+      "packElevateHelper": true,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "compression": "maximum",
+    "publish": {
+      "provider": "generic",
+      "url": "${env.UPDATE_SERVER_URL}"
     }
   },
   "dependencies": {
+    "electron-updater": "6.8.9",
     "lucide-react": "^1.30.0",
     "playwright-core": "^1.63.0-alpha-2026-08-05",
     "react": "^19.2.5",

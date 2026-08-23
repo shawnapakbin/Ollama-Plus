@@ -36,5 +36,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
   approveRuntimeRun: (runId, decision) => ipcRenderer.invoke('lang-runtime:approve-run', runId, decision),
   denyRuntimeRun: (runId, decision) => ipcRenderer.invoke('lang-runtime:deny-run', runId, decision),
   mcpGatewayCall: (request) => ipcRenderer.invoke('mcp-gateway-call', request),
-  mcpGatewayStatus: () => ipcRenderer.invoke('mcp-gateway-status')
+  mcpGatewayStatus: () => ipcRenderer.invoke('mcp-gateway-status'),
+  // Auto-updater event listeners (main → renderer)
+  onUpdateAvailable: (listener) => {
+    const sub = (_event, payload) => listener(payload);
+    ipcRenderer.on('updater:update-available', sub);
+    return () => ipcRenderer.removeListener('updater:update-available', sub);
+  },
+  onUpdateProgress: (listener) => {
+    const sub = (_event, payload) => listener(payload);
+    ipcRenderer.on('updater:download-progress', sub);
+    return () => ipcRenderer.removeListener('updater:download-progress', sub);
+  },
+  onUpdateDownloaded: (listener) => {
+    const sub = (_event, payload) => listener(payload);
+    ipcRenderer.on('updater:update-downloaded', sub);
+    return () => ipcRenderer.removeListener('updater:update-downloaded', sub);
+  },
+  onUpdateError: (listener) => {
+    const sub = (_event, payload) => listener(payload);
+    ipcRenderer.on('updater:error', sub);
+    return () => ipcRenderer.removeListener('updater:error', sub);
+  },
+  // Auto-updater commands (renderer → main)
+  downloadUpdate: () => ipcRenderer.invoke('updater:download-update'),
+  installUpdate: () => ipcRenderer.invoke('updater:install-update'),
+  dismissUpdate: () => ipcRenderer.invoke('updater:dismiss')
 });

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRuntimeService } from './runtime/runtimeService.js';
+import { initAutoUpdater } from './updater.js';
 import { createGateway } from '../mcp/lib/gateway.mjs';
 import { checkBlenderPlateHealth } from '../mcp/lib/blenderPlate.mjs';
 import { checkOpenScadHealth } from '../mcp/lib/openscad.mjs';
@@ -56,32 +57,54 @@ function checkRootPath(rootPath) {
 }
 
 function checkDockerHealth() {
-  const now = Date.now();
-  const cache = checkDockerHealth.cache;
-  if (cache && now - cache.checkedAt < 60_000) {
-    return cache.result;
-  }
-
+  const now = Date.now();
+
+  const cache = checkDockerHealth.cache;
+
+  if (cache && now - cache.checkedAt < 60_000) {
+
+    return cache.result;
+
+  }
+
+
+
   const probe = spawnSync('docker', ['--version'], {
     encoding: 'utf8',
-    windowsHide: true,
-    timeout: 1_500
+    windowsHide: true,
+
+    timeout: 1_500
+
   });
 
-  const result = (!probe.error && probe.status === 0)
-    ? {
-        ok: true,
-        note: String(probe.stdout || probe.stderr || 'Docker available').trim()
-      }
-    : {
-        ok: false,
-        note: probe.error
-          ? (probe.error.message || 'Docker CLI unavailable.')
-          : String(probe.stderr || probe.stdout || 'Docker CLI unavailable.').trim()
-      };
-
-  checkDockerHealth.cache = { checkedAt: now, result };
-  return result;
+  const result = (!probe.error && probe.status === 0)
+
+    ? {
+
+        ok: true,
+
+        note: String(probe.stdout || probe.stderr || 'Docker available').trim()
+
+      }
+
+    : {
+
+        ok: false,
+
+        note: probe.error
+
+          ? (probe.error.message || 'Docker CLI unavailable.')
+
+          : String(probe.stderr || probe.stdout || 'Docker CLI unavailable.').trim()
+
+      };
+
+
+
+  checkDockerHealth.cache = { checkedAt: now, result };
+
+  return result;
+
 }
 
 function probeMcpServices() {
@@ -201,7 +224,11 @@ ipcMain.handle('mcp-gateway-status', async () => mcpGateway.statusSafe());
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
-  await createMainWindow();
+  const mainWindow = await createMainWindow();
+
+  if (!isDev) {
+    initAutoUpdater(mainWindow);
+  }
 
   browserSweepTimer = setInterval(() => {
     void sweepIdleBrowserSessions();
