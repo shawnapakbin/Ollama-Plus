@@ -1,12 +1,15 @@
 /**
- * AgentPage Layout Styles
+ * AgentPage Layout Styles — Conversational Chat Interface
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
  *
- * Full viewport height layout with:
- * - Nav tabs at the very top
- * - Header area: ProgressHeader + TaskControls
- * - Main area: ActivityStream (flex:1) + InspectorPanel (fixed width, collapsible)
- * - Footer area: AgentComposer
+ * Three-tab layout with glassmorphism theme:
+ * - .agent-page: full height flex column
+ * - .agent-page__tabs: horizontal pill-shaped tab bar at top
+ * - .agent-page__body: flex:1 row containing chat area + inspector
+ * - .agent-page__chat-area: flex column with stream + composer
+ * - Responsive: icons-only tabs below 640px, inspector hidden below 768px
+ *
+ * Requirements: 9.1, 9.4, 9.5, 10.1, 10.2, 10.3
  */
 
 /* ─── Page Container ──────────────────────────────────────────────────────── */
@@ -23,141 +26,236 @@
 
 /* ─── Navigation Tabs ─────────────────────────────────────────────────────── */
 
-.agent-page__nav {
+.agent-page__tabs {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 6px 12px;
-  background: var(--bg-secondary, #141414);
-  border-bottom: 1px solid var(--border-subtle, #2a2a2e);
+  gap: 4px;
+  padding: 8px 16px;
+  background: rgba(20, 20, 20, 0.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(198, 223, 211, 0.14);
   flex-shrink: 0;
 }
 
-.agent-page__nav-tab {
+.agent-page__tab {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
-  border: none;
-  border-radius: 6px;
+  padding: 7px 16px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: transparent;
   color: var(--text-muted, #a1a1aa);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
-.agent-page__nav-tab:hover {
-  background: var(--bg-hover, #1f1f23);
+.agent-page__tab:hover {
+  background: rgba(255, 255, 255, 0.04);
   color: var(--text-primary, #e4e4e7);
 }
 
-.agent-page__nav-tab--active {
-  background: var(--bg-active, #27272a);
+.agent-page__tab--active {
+  background: linear-gradient(135deg, rgba(212, 227, 159, 0.15), rgba(134, 196, 162, 0.15));
+  border-color: rgba(198, 223, 211, 0.25);
   color: var(--text-primary, #e4e4e7);
 }
 
-/* ─── Active Task View ────────────────────────────────────────────────────── */
-
-.agent-page__active {
+.agent-page__new-session-btn {
+  margin-left: auto;
   display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-/* ─── Header Area ─────────────────────────────────────────────────────────── */
-
-.agent-page__header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  background: var(--bg-secondary, #141414);
-  border-bottom: 1px solid var(--border-subtle, #2a2a2e);
-  flex-shrink: 0;
-  min-height: 44px;
-}
-
-.agent-page__resumed-indicator {
-  display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 10px;
-  border-radius: 4px;
-  background: var(--color-success-bg, #052e16);
-  color: var(--color-success, #4ade80);
+  padding: 5px 12px;
+  border: 1px solid rgba(198, 223, 211, 0.2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted, #a1a1aa);
   font-size: 12px;
   font-weight: 500;
-  animation: agent-page-fade-in 0.2s ease-out;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-@keyframes agent-page-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.agent-page__new-session-btn:hover {
+  background: rgba(212, 227, 159, 0.1);
+  color: var(--text-primary, #e4e4e7);
 }
 
-/* ─── Main Area ───────────────────────────────────────────────────────────── */
+/* ─── Active Tab Body (Chat + Inspector) ──────────────────────────────────── */
 
-.agent-page__main {
+.agent-page__body {
   display: flex;
+  flex-direction: row;
   flex: 1;
   min-height: 0;
   overflow: hidden;
 }
 
-.agent-page__stream-area {
+.agent-page__chat-area {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-width: 0;
+  min-width: 360px;
+  min-height: 0;
   overflow: hidden;
 }
 
-.agent-page__stream-area .activity-stream {
+/* Ensure AgentChatStream takes remaining space above the composer */
+.agent-page__chat-area > .agent-chat-stream {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
-.agent-page__stream-area .approval-gate-card {
-  margin: 8px 16px;
+/* Composer pinned at bottom */
+.agent-page__chat-area > .agent-composer {
   flex-shrink: 0;
 }
 
-/* ─── Footer Area ─────────────────────────────────────────────────────────── */
-
-.agent-page__footer {
-  flex-shrink: 0;
-  border-top: 1px solid var(--border-subtle, #2a2a2e);
-  background: var(--bg-secondary, #141414);
-}
-
-/* ─── History View ────────────────────────────────────────────────────────── */
+/* ─── History Tab ─────────────────────────────────────────────────────────── */
 
 .agent-page__history {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 20px 16px;
 }
 
-/* ─── Replay View ─────────────────────────────────────────────────────────── */
+.agent-page__history-header {
+  margin-bottom: 16px;
+}
 
-.agent-page__replay {
-  flex: 1;
-  overflow-y: auto;
+.agent-page__history-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, #e4e4e7);
+  margin: 0;
+}
+
+.agent-page__history-empty {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 20px;
+  color: var(--text-muted, #a1a1aa);
+  text-align: center;
 }
 
-/* ─── Settings View ───────────────────────────────────────────────────────── */
+.agent-page__history-empty p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* ─── Session List ────────────────────────────────────────────────────────── */
+
+.agent-page__session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-page__session-item {
+  margin: 0;
+}
+
+.agent-page__session-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(198, 223, 211, 0.1);
+  border-radius: 18px;
+  background: rgba(20, 20, 20, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: var(--text-primary, #e4e4e7);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.agent-page__session-btn:hover {
+  background: rgba(30, 30, 30, 0.8);
+  border-color: rgba(198, 223, 211, 0.25);
+}
+
+.agent-page__session-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-page__session-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary, #e4e4e7);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── Status Badge ────────────────────────────────────────────────────────── */
+
+.agent-page__status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+}
+
+.agent-page__status-badge--active {
+  background: rgba(100, 210, 140, 0.15);
+  color: #64d28c;
+}
+
+.agent-page__status-badge--completed {
+  background: rgba(108, 180, 248, 0.15);
+  color: #6cb4f8;
+}
+
+.agent-page__status-badge--failed {
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+}
+
+.agent-page__status-badge--idle {
+  background: rgba(161, 161, 170, 0.15);
+  color: #a1a1aa;
+}
+
+/* ─── Session Meta ────────────────────────────────────────────────────────── */
+
+.agent-page__session-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--text-muted, #a1a1aa);
+}
+
+.agent-page__session-time,
+.agent-page__session-messages,
+.agent-page__session-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ─── Settings Tab ────────────────────────────────────────────────────────── */
 
 .agent-page__settings {
   flex: 1;
@@ -165,28 +263,45 @@
   padding: 16px;
 }
 
-/* ─── Responsive Adjustments ──────────────────────────────────────────────── */
+/* ─── Responsive: Below 768px — Hide inspector ────────────────────────────── */
 
 @media (max-width: 768px) {
-  .agent-page__nav {
-    padding: 4px 8px;
+  .agent-page__body {
+    flex-direction: column;
   }
 
-  .agent-page__nav-tab {
-    padding: 5px 10px;
-    font-size: 12px;
+  .agent-page__chat-area {
+    min-width: 0;
   }
+}
 
-  .agent-page__nav-tab span {
-    display: none;
-  }
+/* ─── Responsive: Below 640px — Icons-only tabs ───────────────────────────── */
 
-  .agent-page__header {
-    flex-wrap: wrap;
+@media (max-width: 640px) {
+  .agent-page__tabs {
     padding: 6px 10px;
   }
 
-  .agent-page__stream-area .approval-gate-card {
-    margin: 6px 8px;
+  .agent-page__tab {
+    padding: 7px 10px;
+  }
+
+  .agent-page__tab-label {
+    display: none;
+  }
+
+  .agent-page__new-session-btn {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
+  .agent-page__session-meta {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .agent-page__session-btn {
+    padding: 12px;
+    border-radius: 14px;
   }
 }

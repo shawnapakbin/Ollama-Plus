@@ -1,0 +1,100 @@
+/**
+ * ToolUseGroup Styles
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ *
+ * Collapsible container that groups sequential tool calls
+ * under an "Agent Actions" header with a count badge.
+ * Glassmorphism styling with subtle border and smooth expand transition.
+ *
+ * Requirements: 2.7
+ */
+
+.tool-use-group {
+  border-radius: 14px;
+  border: 1px solid rgba(198, 223, 211, 0.12);
+  background: rgba(16, 20, 24, 0.55);
+  backdrop-filter: blur(16px);
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+
+.tool-use-group:hover {
+  border-color: rgba(198, 223, 211, 0.2);
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────────── */
+
+.tool-use-group__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary, #e4e4e7);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.tool-use-group__header:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tool-use-group__chevron {
+  font-size: 1.1rem;
+  color: var(--text-muted, #a1a1aa);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.tool-use-group__chevron--expanded {
+  transform: rotate(90deg);
+}
+
+.tool-use-group__label {
+  color: var(--text-primary, #e4e4e7);
+  letter-spacing: 0.01em;
+}
+
+.tool-use-group__count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(134, 196, 162, 0.15);
+  border: 1px solid rgba(134, 196, 162, 0.3);
+  color: #86c4a2;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ─── Content ─────────────────────────────────────────────────────────────── */
+
+.tool-use-group__content {
+  display: grid;
+  gap: 8px;
+  padding: 0 10px 10px;
+  border-top: 1px solid rgba(198, 223, 211, 0.08);
+  animation: tool-use-group-expand 0.2s ease-out;
+}
+
+@keyframes tool-use-group-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

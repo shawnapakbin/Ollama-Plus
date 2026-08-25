@@ -299,6 +299,21 @@ type ElectronAPI = {
   getAgentSession: (sessionId: string) => Promise<AgentTaskSession | null>;
   rerunAgentTask: (sessionId: string) => Promise<AgentRerunResult>;
   onAgentStream: (listener: (event: AgentActivityStreamEvent) => void) => () => void;
+  // Agent chat methods (agent-page-redesign)
+  sendAgentChatMessage: (input: {
+    sessionId?: string;
+    content: string;
+    model: string;
+    endpoint: string;
+    attachments?: import('./types/agentChat').AttachmentFile[];
+    requestId?: string;
+  }) => Promise<{ sessionId: string; requestId: string }>;
+  onAgentChatStream: (listener: (event: import('./types/agentChat').AgentChatStreamEvent) => void) => () => void;
+  stopAgentGeneration: (sessionId: string) => Promise<void>;
+  listAgentChatSessions: () => Promise<import('./types/agentChat').AgentSessionSummary[]>;
+  getAgentChatSession: (sessionId: string) => Promise<import('./types/agentChat').AgentSession | null>;
+  getLastActiveAgentSession: () => Promise<import('./types/agentChat').AgentSession | null>;
+  deleteAgentSession: (sessionId: string) => Promise<void>;
 };
 
 declare global {

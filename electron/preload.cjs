@@ -61,6 +61,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('agent:activity-stream', subscription);
     return () => ipcRenderer.removeListener('agent:activity-stream', subscription);
   },
+  // Agent chat IPC methods (agent-page-redesign)
+  sendAgentChatMessage: (input) => ipcRenderer.invoke('agent-chat:send-message', input),
+  onAgentChatStream: (listener) => {
+    const subscription = (_event, payload) => listener(payload);
+    ipcRenderer.on('agent-chat:stream', subscription);
+    return () => ipcRenderer.removeListener('agent-chat:stream', subscription);
+  },
+  stopAgentGeneration: (sessionId) => ipcRenderer.invoke('agent-chat:stop', sessionId),
+  getLastActiveAgentSession: () => ipcRenderer.invoke('agent-chat:get-last-active-session'),
+  deleteAgentSession: (sessionId) => ipcRenderer.invoke('agent-chat:delete-session', sessionId),
   // Auto-updater event listeners (main → renderer)
   onUpdateAvailable: (listener) => {
     const sub = (_event, payload) => listener(payload);

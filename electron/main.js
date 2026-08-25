@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRuntimeService } from './runtime/runtimeService.js';
 import { initAgentRuntime } from './runtime/agent/agentRuntime.js';
+import { registerAgentChatHandlers } from './runtime/agent/agentChatHandlers.js';
 import { initAutoUpdater } from './updater.js';
 import { createGateway } from '../mcp/lib/gateway.mjs';
 import { checkBlenderPlateHealth } from '../mcp/lib/blenderPlate.mjs';
@@ -44,6 +45,9 @@ const mcpGateway = createGateway();
 
 /** @type {ReturnType<typeof initAgentRuntime>|null} */
 let agentRuntime = null;
+
+/** @type {ReturnType<typeof registerAgentChatHandlers>|null} */
+let agentChatHandlers = null;
 
 function checkRootPath(rootPath) {
   try {
@@ -241,6 +245,15 @@ app.whenReady().then(async () => {
   agentRuntime = initAgentRuntime(ipcMain, mainWindow, {
     statePath: path.join(app.getPath('userData'), 'lang-runtime', 'state.json'),
     mcpGateway,
+    fetchImpl: globalThis.fetch,
+    defaultEndpoint: runtimeService.getChatConfig()?.endpoint || 'http://localhost:11434'
+  });
+
+  // Initialize the agent chat handlers (agent-page-redesign).
+  // Registers IPC handlers for the conversational chat interface that adapts
+  // Agent Runtime events into AgentChatStreamEvent format.
+  agentChatHandlers = registerAgentChatHandlers(ipcMain, mainWindow, {
+    statePath: path.join(app.getPath('userData'), 'lang-runtime', 'state.json'),
     fetchImpl: globalThis.fetch,
     defaultEndpoint: runtimeService.getChatConfig()?.endpoint || 'http://localhost:11434'
   });

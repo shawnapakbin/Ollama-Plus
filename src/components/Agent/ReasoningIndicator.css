@@ -1,0 +1,361 @@
+/**
+ * ReasoningIndicator Styles
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ *
+ * Reasoning/planning display in the agent chat stream.
+ * Supports plan, thinking, replan, and completion variants.
+ * Uses purple-tinted glassmorphism for plan blocks, animated ellipsis for thinking,
+ * and a connected vertical timeline line between steps.
+ *
+ * Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6
+ */
+
+/* ─── Container ───────────────────────────────────────────────────────────── */
+
+.reasoning-indicator {
+  border-radius: 14px;
+  border: 1px solid rgba(192, 160, 240, 0.18);
+  background: rgba(60, 30, 100, 0.14);
+  backdrop-filter: blur(12px);
+  padding: 0;
+  overflow: hidden;
+  margin: 4px 0;
+}
+
+/* ─── Variant-specific container tints ────────────────────────────────────── */
+
+.reasoning-indicator--plan {
+  border-color: rgba(192, 160, 240, 0.22);
+  background: rgba(75, 40, 120, 0.16);
+}
+
+.reasoning-indicator--thinking {
+  border-color: rgba(192, 160, 240, 0.12);
+  background: rgba(60, 30, 100, 0.08);
+}
+
+.reasoning-indicator--replan {
+  border-color: rgba(192, 160, 240, 0.18);
+  background: rgba(60, 30, 100, 0.12);
+}
+
+.reasoning-indicator--completion {
+  border-color: rgba(134, 196, 162, 0.25);
+  background: rgba(134, 196, 162, 0.06);
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────────── */
+
+.reasoning-indicator__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 150ms ease;
+}
+
+.reasoning-indicator__header:hover:not(:disabled) {
+  background: rgba(192, 160, 240, 0.06);
+}
+
+.reasoning-indicator__header:disabled {
+  cursor: default;
+}
+
+.reasoning-indicator__header-icon {
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.reasoning-indicator__header-title {
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: #e6d4ff;
+  letter-spacing: 0.01em;
+}
+
+.reasoning-indicator--completion .reasoning-indicator__header-title {
+  color: #dff9e6;
+}
+
+.reasoning-indicator__chevron {
+  margin-left: auto;
+  font-size: 1rem;
+  color: rgba(230, 212, 255, 0.6);
+  transition: transform 200ms ease;
+  transform: rotate(0deg);
+}
+
+.reasoning-indicator__chevron--open {
+  transform: rotate(90deg);
+}
+
+/* ─── Content Area ────────────────────────────────────────────────────────── */
+
+.reasoning-indicator__content {
+  padding: 0 14px 12px;
+}
+
+/* ─── Body ────────────────────────────────────────────────────────────────── */
+
+.reasoning-indicator__body {
+  display: grid;
+  gap: 8px;
+}
+
+.reasoning-indicator__plan-summary {
+  margin: 0;
+  font-size: 0.8rem;
+  color: rgba(230, 212, 255, 0.8);
+  line-height: 1.45;
+}
+
+/* ─── Step List (Plan & Replan) ───────────────────────────────────────────── */
+
+.reasoning-indicator__step-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+  position: relative;
+}
+
+.reasoning-indicator__step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  position: relative;
+  padding-left: 4px;
+}
+
+/* Connected vertical timeline line */
+.reasoning-indicator__step::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(192, 160, 240, 0.18);
+}
+
+.reasoning-indicator__step:first-child::before {
+  top: 50%;
+}
+
+.reasoning-indicator__step:last-child::before {
+  bottom: 50%;
+}
+
+.reasoning-indicator__step:only-child::before {
+  display: none;
+}
+
+/* ─── Step Status Icons ───────────────────────────────────────────────────── */
+
+.reasoning-step-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.reasoning-step-icon--completed {
+  background: rgba(100, 210, 140, 0.18);
+  color: #64d28c;
+  border: 1.5px solid rgba(100, 210, 140, 0.4);
+}
+
+.reasoning-step-icon--active {
+  background: rgba(192, 160, 240, 0.14);
+  border: 1.5px solid rgba(192, 160, 240, 0.4);
+}
+
+.reasoning-step-icon--pending {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(230, 212, 255, 0.5);
+  border: 1.5px solid rgba(192, 160, 240, 0.2);
+  font-size: 0.68rem;
+}
+
+/* Spinner for active step */
+.reasoning-step-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(192, 160, 240, 0.3);
+  border-top-color: #c0a0f0;
+  animation: reasoning-spin 800ms linear infinite;
+}
+
+@keyframes reasoning-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── Step Number & Title ─────────────────────────────────────────────────── */
+
+.reasoning-indicator__step-number {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(230, 212, 255, 0.6);
+  font-variant-numeric: tabular-nums;
+  min-width: 18px;
+}
+
+.reasoning-indicator__step-title {
+  font-size: 0.8rem;
+  color: #e6d4ff;
+  line-height: 1.35;
+}
+
+.reasoning-indicator__step--completed .reasoning-indicator__step-title {
+  color: rgba(223, 249, 230, 0.9);
+}
+
+.reasoning-indicator__step--active .reasoning-indicator__step-title {
+  color: #e6d4ff;
+  font-weight: 600;
+}
+
+.reasoning-indicator__step--pending .reasoning-indicator__step-title {
+  color: rgba(230, 212, 255, 0.55);
+}
+
+/* New steps highlight (replan variant) */
+.reasoning-indicator__step--new .reasoning-indicator__step-title {
+  color: #d4e39f;
+}
+
+.reasoning-indicator__step--new .reasoning-indicator__step-number {
+  color: rgba(212, 227, 159, 0.7);
+}
+
+/* ─── Thinking Variant ────────────────────────────────────────────────────── */
+
+.reasoning-indicator__body--thinking {
+  display: flex;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.reasoning-indicator__thinking-text {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(192, 160, 240, 0.85);
+  font-style: italic;
+}
+
+.reasoning-indicator__ellipsis::after {
+  content: '';
+  animation: reasoning-ellipsis 1.4s steps(4, end) infinite;
+}
+
+@keyframes reasoning-ellipsis {
+  0% {
+    content: '';
+  }
+  25% {
+    content: '.';
+  }
+  50% {
+    content: '..';
+  }
+  75% {
+    content: '...';
+  }
+  100% {
+    content: '';
+  }
+}
+
+/* ─── Replan Variant ──────────────────────────────────────────────────────── */
+
+.reasoning-indicator__replan-section {
+  display: grid;
+  gap: 4px;
+}
+
+.reasoning-indicator__replan-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.reasoning-indicator__replan-label--removed {
+  color: rgba(255, 148, 148, 0.8);
+}
+
+.reasoning-indicator__replan-label--added {
+  color: rgba(212, 227, 159, 0.85);
+}
+
+.reasoning-indicator__replan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.reasoning-indicator__replan-item {
+  padding: 3px 0;
+  font-size: 0.79rem;
+}
+
+.reasoning-indicator__replan-item--removed {
+  color: rgba(255, 148, 148, 0.7);
+}
+
+.reasoning-indicator__strikethrough {
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 148, 148, 0.5);
+}
+
+/* ─── Completion Variant ──────────────────────────────────────────────────── */
+
+.reasoning-indicator__body--completion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reasoning-indicator__completion-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(134, 196, 162, 0.18);
+  color: #86c4a2;
+  font-size: 0.72rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  border: 1.5px solid rgba(134, 196, 162, 0.35);
+}
+
+.reasoning-indicator__completion-text {
+  font-size: 0.82rem;
+  color: #dff9e6;
+  line-height: 1.4;
+}

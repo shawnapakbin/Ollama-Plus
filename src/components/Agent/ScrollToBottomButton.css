@@ -1,0 +1,80 @@
+/**
+ * ScrollToBottomButton Styles
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ *
+ * Floating glassmorphic circular button for scrolling chat stream to bottom.
+ * Fades in/out based on visibility state. Positioned bottom-right of the
+ * chat stream container.
+ * Requirements: 6.2, 6.3
+ */
+
+/* ─── Container ───────────────────────────────────────────────────────────── */
+
+.scroll-to-bottom-button {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 10;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(198, 223, 211, 0.14);
+  background: rgba(30, 35, 30, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    0 2px 8px rgba(0, 0, 0, 0.2);
+  transition:
+    opacity 200ms ease,
+    transform 200ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ─── Hidden State ────────────────────────────────────────────────────────── */
+
+.scroll-to-bottom-button--hidden {
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+}
+
+/* ─── Hover ───────────────────────────────────────────────────────────────── */
+
+.scroll-to-bottom-button:hover:not(.scroll-to-bottom-button--hidden) {
+  border-color: rgba(198, 223, 211, 0.35);
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.35),
+    0 2px 8px rgba(100, 210, 140, 0.1);
+  background: rgba(40, 48, 40, 0.9);
+}
+
+/* ─── Active ──────────────────────────────────────────────────────────────── */
+
+.scroll-to-bottom-button:active:not(.scroll-to-bottom-button--hidden) {
+  transform: translateY(1px);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* ─── Icon ────────────────────────────────────────────────────────────────── */
+
+.scroll-to-bottom-button__icon {
+  width: 18px;
+  height: 18px;
+  color: rgba(212, 227, 159, 0.9);
+  transition: color 200ms ease;
+}
+
+.scroll-to-bottom-button:hover:not(.scroll-to-bottom-button--hidden)
+  .scroll-to-bottom-button__icon {
+  color: rgba(212, 227, 159, 1);
+}

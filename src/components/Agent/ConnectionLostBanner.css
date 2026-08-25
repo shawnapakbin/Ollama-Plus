@@ -1,0 +1,102 @@
+/**
+ * ConnectionLostBanner Styles
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ *
+ * Red-tinted inline banner displayed at the bottom of the Agent Chat Stream
+ * when the connection to the Ollama endpoint is lost during streaming.
+ * Features a pulsing red dot indicator, "Connection lost" text, and a "Retry" button.
+ * Auto-dismisses on reconnection (parent sets isVisible to false).
+ *
+ * Requirements: 6.6, 11.6
+ */
+
+/* ─── Container ───────────────────────────────────────────────────────────── */
+
+.connection-lost-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 77, 79, 0.3);
+  background: rgba(255, 77, 79, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: connection-lost-fade-in 0.25s ease forwards;
+}
+
+@keyframes connection-lost-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Pulsing Red Dot ─────────────────────────────────────────────────────── */
+
+.connection-lost-banner__dot {
+  flex: 0 0 10px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff4d4f;
+  animation: connection-lost-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes connection-lost-pulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(255, 77, 79, 0.5);
+  }
+  50% {
+    opacity: 0.6;
+    box-shadow: 0 0 6px 2px rgba(255, 77, 79, 0.3);
+  }
+}
+
+/* ─── Text ────────────────────────────────────────────────────────────────── */
+
+.connection-lost-banner__text {
+  flex: 1;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #ffd6d6;
+  line-height: 1.3;
+}
+
+/* ─── Retry Button ────────────────────────────────────────────────────────── */
+
+.connection-lost-banner__retry {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 77, 79, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 77, 79, 0.12);
+  color: #ffa0a0;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.connection-lost-banner__retry:hover {
+  background: rgba(255, 77, 79, 0.2);
+  border-color: rgba(255, 77, 79, 0.5);
+  color: #ffd6d6;
+}
+
+.connection-lost-banner__retry:active {
+  background: rgba(255, 77, 79, 0.25);
+}
+
+.connection-lost-banner__retry-icon {
+  font-size: 0.8rem;
+  line-height: 1;
+}
