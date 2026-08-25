@@ -18,8 +18,9 @@
 .agent-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   width: 100%;
+  min-height: 0;
   overflow: hidden;
   background: var(--bg-primary, #0d0d0d);
   color: var(--text-primary, #e4e4e7);

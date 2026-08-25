@@ -1610,9 +1610,14 @@
   padding: 18px;
 }
 
-.workspace-content.page-chats {
+.workspace-content.page-chats,
+.workspace-content.page-agent {
   overflow: hidden;
   padding: 0;
+}
+
+.page-agent .agent-page {
+  height: 100%;
 }
 
 .page-chats .chat-layout {
