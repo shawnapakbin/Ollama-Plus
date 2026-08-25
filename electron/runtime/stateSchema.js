@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.2
+ * v5.0.3
  */
 export const SESSION_STATUSES = new Set(['draft', 'queued', 'running', 'paused', 'waiting_approval', 'completed', 'failed', 'canceled']);
 export const RUN_STATUSES = new Set(['planned', 'running', 'paused', 'waiting_approval', 'completed', 'failed', 'canceled']);

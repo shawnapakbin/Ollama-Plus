@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.2
+ * v5.0.3
  */
 export {};
 
@@ -205,6 +205,37 @@ type ApprovalDecision = {
   reason?: string;
 };
 
+// ─── Agent Client Types ──────────────────────────────────────────────────────
+
+type AgentTaskSubmission = import('./types/agent').TaskSubmission;
+type AgentTaskSession = import('./types/agent').TaskSession;
+type AgentActivityStreamEvent = import('./types/agent').ActivityStreamEvent;
+type AgentConfig = import('./types/agent').AgentConfig;
+type AgentPaginationOptions = import('./types/agent').PaginationOptions;
+type AgentPaginatedResult<T> = import('./types/agent').PaginatedResult<T>;
+
+type AgentSubmitResult =
+  | { success: true; session: AgentTaskSession }
+  | { success: false; errors: string[] };
+
+type AgentActionResult =
+  | { success: true }
+  | { success: false; error: string };
+
+type AgentFeedbackResult =
+  | { success: true; stepId: string }
+  | { success: false; error: string };
+
+type AgentConfigSaveResult = {
+  valid?: boolean;
+  savedConfig?: AgentConfig;
+  errors?: string[];
+};
+
+type AgentRerunResult =
+  | { success: true; session: AgentTaskSession; missingArtifacts: string[] }
+  | { success: false; error?: string; errors?: string[] };
+
 type ElectronAPI = {
   getRuntimeStatus: () => Promise<RuntimeStatus>;
   getRuntimeBootstrapPlan: () => Promise<RuntimeBootstrapPlan>;
@@ -253,6 +284,21 @@ type ElectronAPI = {
   denyRuntimeRun: (runId: string, decision?: ApprovalDecision) => Promise<RuntimeRunSummary>;
   mcpGatewayCall: (request: { server: string; action: string; payload?: unknown }) => Promise<{ ok: boolean; data?: unknown; error?: string }>;
   mcpGatewayStatus: () => Promise<{ ok: boolean; data?: unknown; error?: string }>;
+  // Agent client methods
+  submitAgentTask: (submission: AgentTaskSubmission) => Promise<AgentSubmitResult>;
+  pauseAgentTask: (sessionId: string) => Promise<AgentActionResult>;
+  resumeAgentTask: (sessionId: string) => Promise<AgentActionResult>;
+  cancelAgentTask: (sessionId: string) => Promise<AgentActionResult>;
+  submitAgentFollowUp: (sessionId: string, instruction: string) => Promise<AgentActionResult>;
+  submitAgentFeedback: (sessionId: string, stepId: string, feedback: string) => Promise<AgentFeedbackResult>;
+  approveAgentGate: (sessionId: string, gateId: string) => Promise<AgentActionResult>;
+  denyAgentGate: (sessionId: string, gateId: string, reason?: string) => Promise<AgentActionResult>;
+  getAgentConfig: () => Promise<AgentConfig>;
+  saveAgentConfig: (config: Partial<AgentConfig>) => Promise<AgentConfigSaveResult>;
+  listAgentSessions: (options?: AgentPaginationOptions) => Promise<AgentPaginatedResult<AgentTaskSession>>;
+  getAgentSession: (sessionId: string) => Promise<AgentTaskSession | null>;
+  rerunAgentTask: (sessionId: string) => Promise<AgentRerunResult>;
+  onAgentStream: (listener: (event: AgentActivityStreamEvent) => void) => () => void;
 };
 
 declare global {

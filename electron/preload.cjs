@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.2
+ * v5.0.3
  */
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -41,6 +41,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   denyRuntimeRun: (runId, decision) => ipcRenderer.invoke('lang-runtime:deny-run', runId, decision),
   mcpGatewayCall: (request) => ipcRenderer.invoke('mcp-gateway-call', request),
   mcpGatewayStatus: () => ipcRenderer.invoke('mcp-gateway-status'),
+  // Agent client IPC methods (renderer → main)
+  submitAgentTask: (submission) => ipcRenderer.invoke('agent:submit-task', submission),
+  pauseAgentTask: (sessionId) => ipcRenderer.invoke('agent:pause-task', sessionId),
+  resumeAgentTask: (sessionId) => ipcRenderer.invoke('agent:resume-task', sessionId),
+  cancelAgentTask: (sessionId) => ipcRenderer.invoke('agent:cancel-task', sessionId),
+  submitAgentFollowUp: (sessionId, instruction) => ipcRenderer.invoke('agent:submit-follow-up', sessionId, instruction),
+  submitAgentFeedback: (sessionId, stepId, feedback) => ipcRenderer.invoke('agent:submit-feedback', sessionId, stepId, feedback),
+  approveAgentGate: (sessionId, gateId) => ipcRenderer.invoke('agent:approve-gate', sessionId, gateId),
+  denyAgentGate: (sessionId, gateId, reason) => ipcRenderer.invoke('agent:deny-gate', sessionId, gateId, reason),
+  getAgentConfig: () => ipcRenderer.invoke('agent:get-config'),
+  saveAgentConfig: (config) => ipcRenderer.invoke('agent:save-config', config),
+  listAgentSessions: (options) => ipcRenderer.invoke('agent:list-sessions', options),
+  getAgentSession: (sessionId) => ipcRenderer.invoke('agent:get-session', sessionId),
+  rerunAgentTask: (sessionId) => ipcRenderer.invoke('agent:rerun-task', sessionId),
+  // Agent activity stream event listener (main → renderer)
+  onAgentStream: (listener) => {
+    const subscription = (_event, payload) => listener(payload);
+    ipcRenderer.on('agent:activity-stream', subscription);
+    return () => ipcRenderer.removeListener('agent:activity-stream', subscription);
+  },
   // Auto-updater event listeners (main → renderer)
   onUpdateAvailable: (listener) => {
     const sub = (_event, payload) => listener(payload);

@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.2
+ * v5.0.3
  */
 const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 

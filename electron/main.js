@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.2
+ * v5.0.3
  */
 import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import fs from 'node:fs';
@@ -8,6 +8,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRuntimeService } from './runtime/runtimeService.js';
+import { initAgentRuntime } from './runtime/agent/agentRuntime.js';
 import { initAutoUpdater } from './updater.js';
 import { createGateway } from '../mcp/lib/gateway.mjs';
 import { checkBlenderPlateHealth } from '../mcp/lib/blenderPlate.mjs';
@@ -40,6 +41,9 @@ const runtimeService = createRuntimeService({
   langsmithConfigured: Boolean(process.env.LANGSMITH_API_KEY || process.env.LANGCHAIN_API_KEY)
 });
 const mcpGateway = createGateway();
+
+/** @type {ReturnType<typeof initAgentRuntime>|null} */
+let agentRuntime = null;
 
 function checkRootPath(rootPath) {
   try {
@@ -230,6 +234,17 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   const mainWindow = await createMainWindow();
 
+  // Initialize the autonomous agent runtime alongside existing runtime service.
+  // The agent runtime registers its own IPC handlers for task submission, execution,
+  // approval gates, configuration, and session history.
+  // Requirements: 7.7 (working directory authorization), 10.4 (Ollama connectivity), 11.6 (project detection)
+  agentRuntime = initAgentRuntime(ipcMain, mainWindow, {
+    statePath: path.join(app.getPath('userData'), 'lang-runtime', 'state.json'),
+    mcpGateway,
+    fetchImpl: globalThis.fetch,
+    defaultEndpoint: runtimeService.getChatConfig()?.endpoint || 'http://localhost:11434'
+  });
+
   if (!isDev) {
     initAutoUpdater(mainWindow);
   }
@@ -250,6 +265,9 @@ app.on('before-quit', async () => {
   if (browserSweepTimer) {
     clearInterval(browserSweepTimer);
     browserSweepTimer = null;
+  }
+  if (agentRuntime) {
+    await agentRuntime.shutdown();
   }
   await closeAllBrowserSessions();
 });

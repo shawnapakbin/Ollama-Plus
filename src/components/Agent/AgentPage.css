@@ -1,0 +1,192 @@
+/**
+ * AgentPage Layout Styles
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ *
+ * Full viewport height layout with:
+ * - Nav tabs at the very top
+ * - Header area: ProgressHeader + TaskControls
+ * - Main area: ActivityStream (flex:1) + InspectorPanel (fixed width, collapsible)
+ * - Footer area: AgentComposer
+ */
+
+/* ─── Page Container ──────────────────────────────────────────────────────── */
+
+.agent-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-primary, #0d0d0d);
+  color: var(--text-primary, #e4e4e7);
+}
+
+/* ─── Navigation Tabs ─────────────────────────────────────────────────────── */
+
+.agent-page__nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px;
+  background: var(--bg-secondary, #141414);
+  border-bottom: 1px solid var(--border-subtle, #2a2a2e);
+  flex-shrink: 0;
+}
+
+.agent-page__nav-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted, #a1a1aa);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.agent-page__nav-tab:hover {
+  background: var(--bg-hover, #1f1f23);
+  color: var(--text-primary, #e4e4e7);
+}
+
+.agent-page__nav-tab--active {
+  background: var(--bg-active, #27272a);
+  color: var(--text-primary, #e4e4e7);
+}
+
+/* ─── Active Task View ────────────────────────────────────────────────────── */
+
+.agent-page__active {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ─── Header Area ─────────────────────────────────────────────────────────── */
+
+.agent-page__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--bg-secondary, #141414);
+  border-bottom: 1px solid var(--border-subtle, #2a2a2e);
+  flex-shrink: 0;
+  min-height: 44px;
+}
+
+.agent-page__resumed-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: var(--color-success-bg, #052e16);
+  color: var(--color-success, #4ade80);
+  font-size: 12px;
+  font-weight: 500;
+  animation: agent-page-fade-in 0.2s ease-out;
+}
+
+@keyframes agent-page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Main Area ───────────────────────────────────────────────────────────── */
+
+.agent-page__main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.agent-page__stream-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.agent-page__stream-area .activity-stream {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.agent-page__stream-area .approval-gate-card {
+  margin: 8px 16px;
+  flex-shrink: 0;
+}
+
+/* ─── Footer Area ─────────────────────────────────────────────────────────── */
+
+.agent-page__footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-subtle, #2a2a2e);
+  background: var(--bg-secondary, #141414);
+}
+
+/* ─── History View ────────────────────────────────────────────────────────── */
+
+.agent-page__history {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+/* ─── Replay View ─────────────────────────────────────────────────────────── */
+
+.agent-page__replay {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Settings View ───────────────────────────────────────────────────────── */
+
+.agent-page__settings {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+/* ─── Responsive Adjustments ──────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .agent-page__nav {
+    padding: 4px 8px;
+  }
+
+  .agent-page__nav-tab {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+
+  .agent-page__nav-tab span {
+    display: none;
+  }
+
+  .agent-page__header {
+    flex-wrap: wrap;
+    padding: 6px 10px;
+  }
+
+  .agent-page__stream-area .approval-gate-card {
+    margin: 6px 8px;
+  }
+}

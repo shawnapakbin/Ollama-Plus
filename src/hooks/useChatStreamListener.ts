@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.2
+ * v5.0.3
  */
 import { useEffect, useRef } from 'react';
 import { runtimeClient, type RuntimeChatStreamEvent } from '../services/runtimeClient';

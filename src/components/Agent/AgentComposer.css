@@ -1,0 +1,355 @@
+/**
+ * AgentComposer Styles
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ */
+
+.agent-composer {
+  display: grid;
+  gap: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(184, 216, 200, 0.2);
+  background: rgba(8, 14, 17, 0.96);
+  padding: 14px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+}
+
+/* ─── Task Input Textarea ─────────────────────────────────────────────── */
+
+.agent-composer-input {
+  display: grid;
+  gap: 6px;
+}
+
+.agent-composer-input textarea {
+  width: 100%;
+  min-height: 140px;
+  max-height: 360px;
+  resize: vertical;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(11, 17, 21, 0.8);
+  color: #effff7;
+  font: inherit;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.agent-composer-input textarea:focus {
+  outline: none;
+  border-color: rgba(212, 227, 159, 0.45);
+}
+
+.agent-composer-input textarea::placeholder {
+  color: rgba(220, 236, 228, 0.45);
+}
+
+.agent-composer-char-count {
+  text-align: right;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.agent-composer-char-count.near-limit {
+  color: #ffd6d6;
+}
+
+/* ─── Validation Error ────────────────────────────────────────────────── */
+
+.agent-composer-error {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 145, 145, 0.28);
+  background: rgba(101, 22, 22, 0.32);
+  color: #ffd2ca;
+  font-size: 0.8rem;
+}
+
+/* ─── File Attachment Zone ────────────────────────────────────────────── */
+
+.agent-composer-attachments {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-composer-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 64px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(161, 201, 182, 0.3);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.agent-composer-dropzone:hover {
+  border-color: rgba(212, 227, 159, 0.4);
+  background: rgba(212, 227, 159, 0.04);
+}
+
+.agent-composer-dropzone.drag-over {
+  border-color: rgba(212, 227, 159, 0.6);
+  background: rgba(212, 227, 159, 0.08);
+  color: #e8f9c2;
+}
+
+.agent-composer-dropzone-input {
+  display: none;
+}
+
+.agent-composer-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agent-composer-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2f3e8;
+  padding: 4px 8px 4px 10px;
+  font-size: 0.74rem;
+}
+
+.agent-composer-file-chip span {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-composer-file-chip small {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.agent-composer-file-remove {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  flex: 0 0 18px;
+  display: inline-grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: #d7e9df;
+  cursor: pointer;
+  padding: 0;
+}
+
+.agent-composer-file-remove:hover {
+  background: rgba(255, 100, 100, 0.3);
+  color: #ffd6d6;
+}
+
+/* ─── Working Directory ───────────────────────────────────────────────── */
+
+.agent-composer-workdir {
+  display: grid;
+  gap: 4px;
+}
+
+.agent-composer-workdir label {
+  font-size: 0.74rem;
+  color: #d6e9dd;
+}
+
+.agent-composer-workdir input {
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(11, 17, 21, 0.8);
+  color: #effff7;
+  font: inherit;
+  font-size: 0.82rem;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+}
+
+.agent-composer-workdir input:focus {
+  outline: none;
+  border-color: rgba(212, 227, 159, 0.45);
+}
+
+.agent-composer-workdir input::placeholder {
+  color: rgba(220, 236, 228, 0.4);
+}
+
+/* ─── Model Display ───────────────────────────────────────────────────── */
+
+.agent-composer-model-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.78rem;
+}
+
+.agent-composer-model-bar .model-label {
+  color: var(--text-muted);
+}
+
+.agent-composer-model-bar .model-value {
+  color: #e8f9c2;
+  font-weight: 600;
+}
+
+.agent-composer-model-bar .model-endpoint {
+  color: var(--text-muted);
+  margin-left: auto;
+  font-size: 0.72rem;
+}
+
+.agent-composer-no-model {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(235, 187, 95, 0.34);
+  background: rgba(117, 82, 18, 0.3);
+  color: #fff3ca;
+  font-size: 0.8rem;
+}
+
+/* ─── Actions Row ─────────────────────────────────────────────────────── */
+
+.agent-composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.agent-composer-actions small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.agent-composer-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  padding: 9px 16px;
+  border: none;
+  background: linear-gradient(135deg, #d4e39f, #86c4a2);
+  color: #0f1f16;
+  font: inherit;
+  font-weight: 650;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: opacity 160ms ease, transform 80ms ease;
+}
+
+.agent-composer-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.agent-composer-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Follow-Up Mode ──────────────────────────────────────────────────── */
+
+.agent-composer-followup {
+  display: grid;
+  gap: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(184, 216, 200, 0.2);
+  background: rgba(8, 14, 17, 0.96);
+  padding: 12px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+}
+
+.agent-composer-followup-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.agent-composer-followup-row textarea {
+  flex: 1;
+  min-height: 56px;
+  max-height: 160px;
+  resize: vertical;
+  padding: 10px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(11, 17, 21, 0.8);
+  color: #effff7;
+  font: inherit;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.agent-composer-followup-row textarea:focus {
+  outline: none;
+  border-color: rgba(212, 227, 159, 0.45);
+}
+
+.agent-composer-followup-row textarea::placeholder {
+  color: rgba(220, 236, 228, 0.4);
+}
+
+.agent-composer-followup-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #d4e39f, #86c4a2);
+  color: #0f1f16;
+  cursor: pointer;
+  transition: opacity 160ms ease;
+}
+
+.agent-composer-followup-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-composer-followup-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* ─── Responsive ──────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .agent-composer {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .agent-composer-model-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .agent-composer-model-bar .model-endpoint {
+    margin-left: 0;
+  }
+
+  .agent-composer-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

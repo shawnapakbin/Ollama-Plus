@@ -1,0 +1,412 @@
+/**
+ * InspectorPanel Styles
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ *
+ * Sidebar panel displaying execution plan, artifacts, and memory records.
+ * Supports collapsible layout with dark theme styling.
+ */
+
+/* ─── Container ───────────────────────────────────────────────────────────── */
+
+.inspector-panel {
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  height: 100%;
+  border-left: 1px solid rgba(198, 223, 211, 0.1);
+  background: rgba(9, 15, 18, 0.85);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+  transition: width 200ms ease;
+}
+
+.inspector-panel--collapsed {
+  width: 40px;
+  min-width: 40px;
+}
+
+/* ─── Collapse Toggle ─────────────────────────────────────────────────────── */
+
+.inspector-panel__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 44px;
+  border: none;
+  border-bottom: 1px solid rgba(198, 223, 211, 0.08);
+  background: transparent;
+  color: rgba(198, 223, 211, 0.6);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.inspector-panel__toggle:hover {
+  background: rgba(198, 223, 211, 0.06);
+  color: rgba(198, 223, 211, 0.9);
+}
+
+/* ─── Content Area ────────────────────────────────────────────────────────── */
+
+.inspector-panel__content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  gap: 16px;
+}
+
+/* ─── Section ─────────────────────────────────────────────────────────────── */
+
+.inspector-panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inspector-panel__section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.inspector-panel__section-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(198, 223, 211, 0.55);
+}
+
+.inspector-panel__section-count {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(198, 223, 211, 0.08);
+  color: rgba(198, 223, 211, 0.5);
+}
+
+/* ─── Plan Steps ──────────────────────────────────────────────────────────── */
+
+.inspector-panel__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inspector-panel__step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.inspector-panel__step:hover {
+  background: rgba(198, 223, 211, 0.04);
+}
+
+.inspector-panel__step-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+.inspector-panel__step-icon--completed {
+  color: #64d28c;
+}
+
+.inspector-panel__step-icon--active {
+  color: #6cb4f8;
+  animation: inspector-spin 1.2s linear infinite;
+}
+
+.inspector-panel__step-icon--pending {
+  color: rgba(198, 223, 211, 0.3);
+}
+
+@keyframes inspector-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.inspector-panel__step-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.inspector-panel__step-title {
+  font-size: 0.82rem;
+  color: rgba(222, 255, 241, 0.88);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.inspector-panel__step--active .inspector-panel__step-title {
+  color: #defff1;
+  font-weight: 600;
+}
+
+.inspector-panel__step--completed .inspector-panel__step-title {
+  color: rgba(198, 223, 211, 0.6);
+}
+
+.inspector-panel__step-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.inspector-panel__step-status {
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.inspector-panel__step-status--completed {
+  color: #64d28c;
+}
+
+.inspector-panel__step-status--active {
+  color: #6cb4f8;
+}
+
+.inspector-panel__step-status--pending {
+  color: rgba(198, 223, 211, 0.35);
+}
+
+.inspector-panel__step-risk {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.inspector-panel__step-risk--low {
+  background: rgba(100, 210, 140, 0.12);
+  color: #64d28c;
+}
+
+.inspector-panel__step-risk--medium {
+  background: rgba(240, 200, 60, 0.12);
+  color: #f0c83c;
+}
+
+.inspector-panel__step-risk--high {
+  background: rgba(240, 80, 80, 0.12);
+  color: #f06060;
+}
+
+.inspector-panel__step-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.inspector-panel__step-tool {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(140, 180, 220, 0.1);
+  color: rgba(168, 208, 240, 0.75);
+}
+
+/* ─── Artifacts ───────────────────────────────────────────────────────────── */
+
+.inspector-panel__artifacts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inspector-panel__artifact {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.inspector-panel__artifact:hover {
+  background: rgba(198, 223, 211, 0.04);
+}
+
+.inspector-panel__artifact-icon {
+  flex-shrink: 0;
+  color: rgba(198, 223, 211, 0.5);
+  margin-top: 2px;
+}
+
+.inspector-panel__artifact-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.inspector-panel__artifact-path {
+  font-size: 0.78rem;
+  color: rgba(222, 255, 241, 0.85);
+  word-break: break-all;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.inspector-panel__artifact-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+}
+
+.inspector-panel__artifact-operation {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.inspector-panel__artifact-operation--create {
+  background: rgba(100, 210, 140, 0.12);
+  color: #64d28c;
+}
+
+.inspector-panel__artifact-operation--modify {
+  background: rgba(140, 180, 220, 0.12);
+  color: #a8d0f0;
+}
+
+.inspector-panel__artifact-operation--delete {
+  background: rgba(240, 80, 80, 0.12);
+  color: #f06060;
+}
+
+.inspector-panel__artifact-size {
+  font-size: 0.68rem;
+  color: rgba(198, 223, 211, 0.4);
+}
+
+.inspector-panel__artifact-time {
+  font-size: 0.68rem;
+  color: rgba(198, 223, 211, 0.35);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Memory Records ──────────────────────────────────────────────────────── */
+
+.inspector-panel__memory-records {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inspector-panel__memory-record {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.inspector-panel__memory-record:hover {
+  background: rgba(198, 223, 211, 0.04);
+}
+
+.inspector-panel__memory-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.inspector-panel__memory-fact {
+  font-size: 0.8rem;
+  color: rgba(222, 255, 241, 0.85);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.inspector-panel__memory-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.inspector-panel__memory-tag {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(180, 140, 240, 0.1);
+  color: rgba(192, 160, 240, 0.8);
+}
+
+.inspector-panel__memory-score {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(219, 240, 180, 0.1);
+  color: rgba(219, 240, 180, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+
+.inspector-panel__memory-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.inspector-panel__memory-record:hover .inspector-panel__memory-actions {
+  opacity: 1;
+}
+
+.inspector-panel__memory-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(198, 223, 211, 0.5);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.inspector-panel__memory-action-btn:hover {
+  background: rgba(198, 223, 211, 0.1);
+  color: rgba(198, 223, 211, 0.9);
+}
+
+.inspector-panel__memory-action-btn--delete:hover {
+  background: rgba(240, 80, 80, 0.12);
+  color: #f06060;
+}
+
+/* ─── Empty States ────────────────────────────────────────────────────────── */
+
+.inspector-panel__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 12px;
+  font-size: 0.78rem;
+  color: rgba(198, 223, 211, 0.3);
+  text-align: center;
+}
