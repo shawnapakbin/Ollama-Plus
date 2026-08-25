@@ -54,9 +54,12 @@
   overflow-y: auto;
 }
 
-/* Composer pinned at bottom */
+/* Composer pinned at bottom, 3/4 page width and centered */
 .agent-page__chat-area > .agent-composer {
   flex-shrink: 0;
+  width: 75%;
+  max-width: 900px;
+  margin: 0 auto 16px;
 }
 
 /* ─── History Tab ─────────────────────────────────────────────────────────── */
@@ -217,6 +220,12 @@
 
   .agent-page__chat-area {
     min-width: 0;
+  }
+
+  /* Use (nearly) full width on narrow screens instead of a cramped 75% */
+  .agent-page__chat-area > .agent-composer {
+    width: calc(100% - 16px);
+    margin-inline: 8px;
   }
 }
 
