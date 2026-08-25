@@ -20,7 +20,6 @@ import {
   RefreshCw,
   Server,
   Settings,
-  SlidersHorizontal,
   Square,
   Trash,
   Trash2,
@@ -47,6 +46,7 @@ import {
 } from './services/runtimeClient';
 import { evaluateRenameGuard } from './services/renameGuard';
 import { MessageContent } from './components/Chat/MessageContent';
+import { AgentPage } from './components/Agent/AgentPage';
 import { useChatStreamListener } from './hooks/useChatStreamListener';
 import { useMemo, useEffect, useRef, useState } from 'react';
 
@@ -1597,11 +1597,6 @@ function App() {
                 <RefreshCw size={16} /> {isRefreshingModels ? 'Refreshing...' : 'Refresh'}
               </button>
             ) : null}
-            {activePage === 'agent' ? (
-              <button className="primary-action compact-action" type="button" onClick={() => void handleStartRun(activeGraphId)} disabled={isPlanningRun || !activeSessionId}>
-                <SlidersHorizontal size={16} /> {isPlanningRun ? 'Planning...' : 'Plan run'}
-              </button>
-            ) : null}
           </div>
         </header>
 
@@ -2375,68 +2370,7 @@ function App() {
       ) : null}
 
       {activePage === 'agent' ? (
-        <section className="page-grid two-up">
-          <article className="surface">
-            <div className="panel-head split-head">
-              <div>
-                <h2>Graphs</h2>
-                <p>Choose a graph before planning a run.</p>
-              </div>
-            </div>
-            <div className="graph-pills">
-              {graphs.map((graph) => (
-                <button
-                  key={graph.id}
-                  type="button"
-                  className={`graph-pill ${graph.id === activeGraphId ? 'active' : ''}`}
-                  onClick={() => setActiveGraphId(graph.id)}
-                >
-                  {graph.name}
-                </button>
-              ))}
-            </div>
-          </article>
-
-          <article className="surface">
-            <div className="panel-head">
-              <h2>Runs</h2>
-            </div>
-            {activeRuns.length === 0 ? <div className="empty-state">No runtime runs for this session.</div> : (
-              <div className="run-list compact">
-                {activeRuns.map((run) => (
-                  <article className="run-card" key={run.id}>
-                    <header className="run-header">
-                      <div>
-                        <h3>{run.graphName}</h3>
-                        <p>{run.summary}</p>
-                      </div>
-                      <span className={`status-pill ${getRunStatusTone(run.status)}`}>{run.status}</span>
-                    </header>
-                    <div className="run-actions">
-                      {(run.status === 'planned' || run.status === 'paused') ? <button className="secondary-action" type="button" onClick={() => void handleRunAction(run.id, 'resume')} disabled={actionRunId === run.id}>Start</button> : null}
-                      {(run.status === 'planned' || run.status === 'running' || run.status === 'paused') ? <button className="secondary-action" type="button" onClick={() => void handleRunAction(run.id, 'step')} disabled={actionRunId === run.id}>Step</button> : null}
-                      {(run.status === 'planned' || run.status === 'paused') ? <button className="secondary-action" type="button" onClick={() => void handleRunAction(run.id, 'execute')} disabled={actionRunId === run.id}>Run all</button> : null}
-                      {(run.status === 'planned' || run.status === 'running' || run.status === 'paused') ? (
-                        <button
-                          className="icon-action run-action-icon danger-icon"
-                          type="button"
-                          onClick={() => void handleRunAction(run.id, 'cancel')}
-                          disabled={actionRunId === run.id}
-                          title="Cancel run"
-                          aria-label={`Cancel ${run.graphName} run`}
-                          data-tooltip="Cancel run"
-                        >
-                          <X size={14} />
-                        </button>
-                      ) : null}
-                    </div>
-                    {run.pendingApproval ? <div className="approval-banner">Approval needed: {run.pendingApproval.checkpointTitle} | role {run.pendingApproval.requiredApproverRole}</div> : null}
-                  </article>
-                ))}
-              </div>
-            )}
-          </article>
-        </section>
+        <AgentPage />
       ) : null}
           </div>
         </div>
