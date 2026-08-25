@@ -17,20 +17,18 @@ import {
   Clock,
   History,
   MessageSquare,
-  Settings as SettingsIcon,
 } from 'lucide-react';
 import type { AgentSessionSummary } from '../../types/agentChat';
 import { useAgentChat } from '../../hooks/useAgentChat';
 import { useSessionStorage } from '../../hooks/useSessionStorage';
 import { AgentChatStream } from './AgentChatStream';
 import { AgentComposer } from './AgentComposer';
-import { AgentSettings } from './AgentSettings';
 import { InspectorPanel } from './InspectorPanel';
 import './AgentPage.css';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type TabId = 'active' | 'history' | 'settings';
+type TabId = 'active' | 'history';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -230,17 +228,6 @@ export function AgentPage() {
           <History size={14} aria-hidden="true" />
           <span className="agent-page__tab-label">History</span>
         </button>
-        <button
-          className={`agent-page__tab${activeTab === 'settings' ? ' agent-page__tab--active' : ''}`}
-          onClick={() => setActiveTab('settings')}
-          role="tab"
-          aria-selected={activeTab === 'settings'}
-          aria-controls="agent-panel-settings"
-          type="button"
-        >
-          <SettingsIcon size={14} aria-hidden="true" />
-          <span className="agent-page__tab-label">Settings</span>
-        </button>
 
         {/* New Session button */}
         {activeTab === 'active' && (
@@ -358,12 +345,6 @@ export function AgentPage() {
         </div>
       )}
 
-      {/* ─── Settings Tab ─────────────────────────────────────────────── */}
-      {activeTab === 'settings' && (
-        <div className="agent-page__settings" id="agent-panel-settings" role="tabpanel">
-          <AgentSettings />
-        </div>
-      )}
     </div>
   );
 }

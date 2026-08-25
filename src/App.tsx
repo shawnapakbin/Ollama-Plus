@@ -47,6 +47,7 @@ import {
 import { evaluateRenameGuard } from './services/renameGuard';
 import { MessageContent } from './components/Chat/MessageContent';
 import { AgentPage } from './components/Agent/AgentPage';
+import { AgentSettings } from './components/Agent/AgentSettings';
 import { useChatStreamListener } from './hooks/useChatStreamListener';
 import { useMemo, useEffect, useRef, useState } from 'react';
 
@@ -2235,6 +2236,10 @@ function App() {
                 />
               </label>
             </div>
+          </article>
+
+          <article className="surface">
+            <AgentSettings />
           </article>
 
           <article className="surface">
