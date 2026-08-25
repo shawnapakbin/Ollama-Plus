@@ -12,7 +12,7 @@
 .tool-use-group {
   border-radius: 14px;
   border: 1px solid rgba(198, 223, 211, 0.12);
-  background: rgba(16, 20, 24, 0.55);
+  background: linear-gradient(160deg, rgba(9, 15, 18, 0.82), rgba(7, 11, 14, 0.72));
   backdrop-filter: blur(16px);
   overflow: hidden;
   transition: border-color 0.2s ease;

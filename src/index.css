@@ -8,6 +8,15 @@
   --text-main: #f4f7f1;
   --text-muted: #abc0b1;
   --font-body: 'Space Grotesk', 'Segoe UI', sans-serif;
+
+  /* Shared theme aliases consumed by the Agent components so they stay in
+     sync with the app palette instead of falling back to neutral greys. */
+  --bg-primary: #081014;
+  --bg-surface: rgba(9, 15, 18, 0.9);
+  --text-primary: #f4f7f1;
+  --border-subtle: rgba(198, 223, 211, 0.14);
+  --accent-green: rgba(144, 185, 165, 0.16);
+  --accent-green-border: rgba(161, 201, 182, 0.35);
 }
 
 * {

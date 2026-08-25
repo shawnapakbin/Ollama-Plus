@@ -13,7 +13,7 @@
 .tool-use-block {
   border-radius: 12px;
   border: 1px solid rgba(198, 223, 211, 0.14);
-  background: rgba(20, 20, 20, 0.6);
+  background: linear-gradient(160deg, rgba(9, 15, 18, 0.88), rgba(7, 11, 14, 0.8));
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   overflow: hidden;
