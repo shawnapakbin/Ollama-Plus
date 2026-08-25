@@ -12,13 +12,17 @@
  * Requirements: 7.1, 10.6
  */
 
+/** Maximum number of text lines the composer expands to before scrolling. */
+export const MAX_COMPOSER_LINES = 4;
+
 /**
  * Calculates the appropriate composer textarea height based on content,
  * line height, and viewport dimensions.
  *
  * - Counts newlines in content to determine line count
  * - Multiplies line count by lineHeight for raw height
- * - Clamps between minimum (1 line = lineHeight) and maximum (200px, or 100px on small viewports)
+ * - Clamps between minimum (1 line = lineHeight) and a maximum of 4 lines
+ *   (further reduced on small viewports < 600px height)
  * - The height grows monotonically with content length until the max is reached
  *
  * @param content - The current textarea content string
@@ -33,7 +37,9 @@ export function calculateComposerHeight(
 ): number {
   const lineCount = content.split('\n').length;
   const rawHeight = lineCount * lineHeight;
-  const maxHeight = viewportHeight < 600 ? 100 : 200;
+  // Cap at 4 lines; on short viewports allow fewer to preserve space.
+  const maxLines = viewportHeight < 600 ? Math.min(3, MAX_COMPOSER_LINES) : MAX_COMPOSER_LINES;
+  const maxHeight = maxLines * lineHeight;
 
   return Math.max(lineHeight, Math.min(rawHeight, maxHeight));
 }
