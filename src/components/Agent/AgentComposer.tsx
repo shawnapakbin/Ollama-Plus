@@ -11,7 +11,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUp, Paperclip, Square, X } from 'lucide-react';
 import type { AttachmentFile } from '../../types/agentChat';
 import { isValidMessage, shouldSubmitOnKeyDown } from '../../utils/agent/agentComposerLogic';
-import { calculateComposerHeight } from '../../utils/agent/composerHeightCalc';
 import { validateAttachments } from '../../utils/agent/attachmentValidator';
 import './AgentComposer.css';
 
@@ -63,6 +62,10 @@ async function fileToBase64(file: File): Promise<string> {
 // ─── Line height constant for height calculation ────────────────────────────
 
 const LINE_HEIGHT = 22;
+/** Max visible lines before the textarea starts scrolling. */
+const MAX_LINES = 4;
+/** Vertical padding on the textarea (top + bottom), keep in sync with CSS. */
+const TEXTAREA_VERTICAL_PADDING = 12;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -80,7 +83,7 @@ export function AgentComposer({
   const [attachments, setAttachments] = useState<LocalAttachment[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [textareaHeight, setTextareaHeight] = useState(LINE_HEIGHT);
+  const [textareaHeight, setTextareaHeight] = useState(LINE_HEIGHT + TEXTAREA_VERTICAL_PADDING);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -96,13 +99,22 @@ export function AgentComposer({
   );
 
   // ── Auto-expand textarea height ───────────────────────────────────────────
+  // Measure the textarea's real rendered content height (handles wrapped lines,
+  // not just explicit newlines) and clamp it to a maximum of MAX_LINES.
   useEffect(() => {
-    const height = calculateComposerHeight(
-      content,
-      LINE_HEIGHT,
-      window.innerHeight
-    );
-    setTextareaHeight(height);
+    const el = textareaRef.current;
+    if (!el) return;
+
+    // On short viewports, allow fewer lines to preserve space.
+    const maxLines = window.innerHeight < 600 ? Math.min(3, MAX_LINES) : MAX_LINES;
+    const maxHeight = maxLines * LINE_HEIGHT + TEXTAREA_VERTICAL_PADDING;
+
+    // Reset to auto so scrollHeight reflects the true content height (allows shrink).
+    el.style.height = 'auto';
+    const contentHeight = el.scrollHeight;
+    const nextHeight = Math.min(contentHeight, maxHeight);
+
+    setTextareaHeight(nextHeight);
   }, [content]);
 
   // ── Handle content change ─────────────────────────────────────────────────
@@ -148,7 +160,7 @@ export function AgentComposer({
     setContent('');
     setAttachments([]);
     setAttachmentError(null);
-    setTextareaHeight(LINE_HEIGHT);
+    setTextareaHeight(LINE_HEIGHT + TEXTAREA_VERTICAL_PADDING);
 
     // Focus textarea after send
     textareaRef.current?.focus();

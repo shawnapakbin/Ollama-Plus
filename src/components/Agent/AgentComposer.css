@@ -42,8 +42,8 @@
 .agent-composer-textarea {
   flex: 1;
   min-height: 22px;
-  /* Up to 4 lines (4 × 22px line-height), then scroll */
-  max-height: 88px;
+  /* Up to 4 lines (4 × 22px) + 12px vertical padding, then scroll */
+  max-height: 100px;
   resize: none;
   padding: 6px 4px;
   border: none;
@@ -68,10 +68,10 @@
   cursor: not-allowed;
 }
 
-/* Small viewport: reduce max height to 3 lines */
+/* Small viewport: reduce max height to 3 lines (3 × 22px + 12px padding) */
 @media (max-height: 600px) {
   .agent-composer-textarea {
-    max-height: 66px;
+    max-height: 78px;
   }
 }
 
