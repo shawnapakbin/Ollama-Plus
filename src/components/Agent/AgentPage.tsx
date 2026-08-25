@@ -79,9 +79,25 @@ function statusBadgeClass(status: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function AgentPage() {
+export interface AgentPageProps {
+  /** Active sub-tab, controlled by the parent (e.g. sidebar). Defaults to internal state when omitted. */
+  activeTab?: TabId;
+  /** Called when a sub-tab is selected (e.g. from History → Active on session resume). */
+  onTabChange?: (tab: TabId) => void;
+}
+
+export function AgentPage({ activeTab: controlledTab, onTabChange }: AgentPageProps = {}) {
   // ─── Tab State ───────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<TabId>('active');
+  // Supports both controlled (via props) and uncontrolled (internal) usage.
+  const [internalTab, setInternalTab] = useState<TabId>('active');
+  const activeTab = controlledTab ?? internalTab;
+  const setActiveTab = useCallback(
+    (tab: TabId) => {
+      setInternalTab(tab);
+      onTabChange?.(tab);
+    },
+    [onTabChange]
+  );
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
 
   // ─── Model/Config State ──────────────────────────────────────────────────
@@ -204,48 +220,21 @@ export function AgentPage() {
 
   return (
     <div className="agent-page">
-      {/* ─── Navigation Tabs ──────────────────────────────────────────── */}
-      <nav className="agent-page__tabs" role="tablist" aria-label="Agent views">
-        <button
-          className={`agent-page__tab${activeTab === 'active' ? ' agent-page__tab--active' : ''}`}
-          onClick={() => setActiveTab('active')}
-          role="tab"
-          aria-selected={activeTab === 'active'}
-          aria-controls="agent-panel-active"
-          type="button"
-        >
-          <MessageSquare size={14} aria-hidden="true" />
-          <span className="agent-page__tab-label">Active</span>
-        </button>
-        <button
-          className={`agent-page__tab${activeTab === 'history' ? ' agent-page__tab--active' : ''}`}
-          onClick={() => setActiveTab('history')}
-          role="tab"
-          aria-selected={activeTab === 'history'}
-          aria-controls="agent-panel-history"
-          type="button"
-        >
-          <History size={14} aria-hidden="true" />
-          <span className="agent-page__tab-label">History</span>
-        </button>
-
-        {/* New Session button */}
-        {activeTab === 'active' && (
-          <button
-            className="agent-page__new-session-btn"
-            onClick={handleNewSession}
-            title="Start new session"
-            type="button"
-          >
-            + New
-          </button>
-        )}
-      </nav>
-
       {/* ─── Active Tab ───────────────────────────────────────────────── */}
       {activeTab === 'active' && (
         <div className="agent-page__body" id="agent-panel-active" role="tabpanel">
           <div className="agent-page__chat-area">
+            <div className="agent-page__chat-toolbar">
+              <button
+                className="agent-page__new-session-btn"
+                onClick={handleNewSession}
+                title="Start new session"
+                type="button"
+              >
+                + New session
+              </button>
+            </div>
+
             <AgentChatStream
               messages={agentChat.messages}
               streamingMessage={agentChat.streamingMessage}

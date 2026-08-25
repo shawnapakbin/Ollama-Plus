@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   GitBranchPlus,
+  History,
   Image as ImageIcon,
   MessageSquare,
   Network,
@@ -395,6 +396,7 @@ function App() {
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [activePage, setActivePage] = useState<AppPage>('chats');
+  const [agentTab, setAgentTab] = useState<'active' | 'history'>('active');
   const [isNavOpen, setIsNavOpen] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
 
@@ -1473,17 +1475,45 @@ function App() {
           {appPages.filter((page) => page.id !== 'settings').map((page) => {
             const PageIcon = page.icon;
             return (
-              <button
-                key={page.id}
-                className={`sidebar-nav-item ${activePage === page.id ? 'active' : ''}`}
-                type="button"
-                onClick={() => handlePageChange(page.id)}
-                aria-current={activePage === page.id ? 'page' : undefined}
-                title={page.label}
-              >
-                <PageIcon size={18} />
-                <span className="sidebar-labels">{page.label}</span>
-              </button>
+              <div key={page.id} className="sidebar-nav-group">
+                <button
+                  className={`sidebar-nav-item ${activePage === page.id ? 'active' : ''}`}
+                  type="button"
+                  onClick={() => handlePageChange(page.id)}
+                  aria-current={activePage === page.id ? 'page' : undefined}
+                  title={page.label}
+                >
+                  <PageIcon size={18} />
+                  <span className="sidebar-labels">{page.label}</span>
+                </button>
+
+                {page.id === 'agent' && activePage === 'agent' ? (
+                  <div className="sidebar-subnav" role="tablist" aria-label="Agent views">
+                    <button
+                      className={`sidebar-subnav-item ${agentTab === 'active' ? 'active' : ''}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={agentTab === 'active'}
+                      onClick={() => setAgentTab('active')}
+                      title="Active session"
+                    >
+                      <MessageSquare size={15} />
+                      <span className="sidebar-labels">Active</span>
+                    </button>
+                    <button
+                      className={`sidebar-subnav-item ${agentTab === 'history' ? 'active' : ''}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={agentTab === 'history'}
+                      onClick={() => setAgentTab('history')}
+                      title="Session history"
+                    >
+                      <History size={15} />
+                      <span className="sidebar-labels">History</span>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </nav>
@@ -2375,7 +2405,7 @@ function App() {
       ) : null}
 
       {activePage === 'agent' ? (
-        <AgentPage />
+        <AgentPage activeTab={agentTab} onTabChange={setAgentTab} />
       ) : null}
           </div>
         </div>

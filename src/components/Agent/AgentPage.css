@@ -2,12 +2,13 @@
  * AgentPage Layout Styles — Conversational Chat Interface
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
  *
- * Three-tab layout with glassmorphism theme:
+ * Glassmorphism theme. Active/History tabs live in the main sidebar as
+ * sub-tabs; this component renders the panel for the selected sub-tab.
  * - .agent-page: full height flex column
- * - .agent-page__tabs: horizontal pill-shaped tab bar at top
+ * - .agent-page__chat-toolbar: compact toolbar with New session action
  * - .agent-page__body: flex:1 row containing chat area + inspector
  * - .agent-page__chat-area: flex column with stream + composer
- * - Responsive: icons-only tabs below 640px, inspector hidden below 768px
+ * - Responsive: inspector hidden below 768px
  *
  * Requirements: 9.1, 9.4, 9.5, 10.1, 10.2, 10.3
  */
@@ -26,9 +27,10 @@
 
 /* ─── Navigation Tabs ─────────────────────────────────────────────────────── */
 
-.agent-page__tabs {
+.agent-page__chat-toolbar {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
   padding: 8px 16px;
   background: rgba(20, 20, 20, 0.8);
@@ -38,34 +40,7 @@
   flex-shrink: 0;
 }
 
-.agent-page__tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 16px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted, #a1a1aa);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-}
-
-.agent-page__tab:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-primary, #e4e4e7);
-}
-
-.agent-page__tab--active {
-  background: linear-gradient(135deg, rgba(212, 227, 159, 0.15), rgba(134, 196, 162, 0.15));
-  border-color: rgba(198, 223, 211, 0.25);
-  color: var(--text-primary, #e4e4e7);
-}
-
 .agent-page__new-session-btn {
-  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -278,16 +253,8 @@
 /* ─── Responsive: Below 640px — Icons-only tabs ───────────────────────────── */
 
 @media (max-width: 640px) {
-  .agent-page__tabs {
+  .agent-page__chat-toolbar {
     padding: 6px 10px;
-  }
-
-  .agent-page__tab {
-    padding: 7px 10px;
-  }
-
-  .agent-page__tab-label {
-    display: none;
   }
 
   .agent-page__new-session-btn {
