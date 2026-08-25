@@ -4,8 +4,8 @@
  *
  * Glassmorphism theme. Active/History tabs live in the main sidebar as
  * sub-tabs; this component renders the panel for the selected sub-tab.
+ * The "New session" action lives in the sidebar sub-nav.
  * - .agent-page: full height flex column
- * - .agent-page__chat-toolbar: compact toolbar with New session action
  * - .agent-page__body: flex:1 row containing chat area + inspector
  * - .agent-page__chat-area: flex column with stream + composer
  * - Responsive: inspector hidden below 768px
@@ -27,39 +27,6 @@
 }
 
 /* ─── Navigation Tabs ─────────────────────────────────────────────────────── */
-
-.agent-page__chat-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  padding: 8px 16px;
-  background: linear-gradient(160deg, rgba(9, 15, 18, 0.9), rgba(7, 11, 14, 0.82));
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(198, 223, 211, 0.14);
-  flex-shrink: 0;
-}
-
-.agent-page__new-session-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 12px;
-  border: 1px solid rgba(198, 223, 211, 0.2);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted, #a1a1aa);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.agent-page__new-session-btn:hover {
-  background: rgba(212, 227, 159, 0.1);
-  color: var(--text-primary, #e4e4e7);
-}
 
 /* ─── Active Tab Body (Chat + Inspector) ──────────────────────────────────── */
 
@@ -256,15 +223,6 @@
 /* ─── Responsive: Below 640px — Icons-only tabs ───────────────────────────── */
 
 @media (max-width: 640px) {
-  .agent-page__chat-toolbar {
-    padding: 6px 10px;
-  }
-
-  .agent-page__new-session-btn {
-    padding: 5px 8px;
-    font-size: 11px;
-  }
-
   .agent-page__session-meta {
     flex-wrap: wrap;
     gap: 8px;

@@ -1296,6 +1296,17 @@
   color: #efffe9;
 }
 
+.sidebar-subnav-action {
+  margin-top: 2px;
+  color: #cbe3d3;
+  font-weight: 600;
+}
+
+.sidebar-subnav-action:hover {
+  background: rgba(144, 185, 165, 0.12);
+  color: #efffe9;
+}
+
 .sidebar-collapsed .sidebar-subnav {
   margin-left: 0;
   padding-left: 0;

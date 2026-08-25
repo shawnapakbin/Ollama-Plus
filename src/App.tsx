@@ -50,7 +50,7 @@ import { MessageContent } from './components/Chat/MessageContent';
 import { AgentPage } from './components/Agent/AgentPage';
 import { AgentSettings } from './components/Agent/AgentSettings';
 import { useChatStreamListener } from './hooks/useChatStreamListener';
-import { useMemo, useEffect, useRef, useState } from 'react';
+import { useCallback, useMemo, useEffect, useRef, useState } from 'react';
 
 const NAV_PREFERENCE_KEY = 'ollama-plus.nav-open';
 const INSPECTOR_PREFERENCE_KEY = 'ollama-plus.inspector-sections';
@@ -395,6 +395,7 @@ function App() {
   const navToggleRef = useRef<HTMLButtonElement | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const agentNewSessionRef = useRef<(() => void) | null>(null);
   const [activePage, setActivePage] = useState<AppPage>('chats');
   const [agentTab, setAgentTab] = useState<'active' | 'history'>('active');
   const [isNavOpen, setIsNavOpen] = useState<boolean>(() => {
@@ -1394,6 +1395,12 @@ function App() {
     }
   };
 
+  // Stable registration callback so AgentPage can expose its new-session handler
+  // to the sidebar without re-running its effect on every parent render.
+  const registerAgentNewSession = useCallback((handler: (() => void) | null) => {
+    agentNewSessionRef.current = handler;
+  }, []);
+
   const canSendMessage = Boolean(composer.trim()) || composerAttachments.length > 0;
 
   const handlePickAttachments = () => {
@@ -1510,6 +1517,15 @@ function App() {
                     >
                       <History size={15} />
                       <span className="sidebar-labels">History</span>
+                    </button>
+                    <button
+                      className="sidebar-subnav-item sidebar-subnav-action"
+                      type="button"
+                      onClick={() => agentNewSessionRef.current?.()}
+                      title="Start new session"
+                    >
+                      <Plus size={15} />
+                      <span className="sidebar-labels">New session</span>
                     </button>
                   </div>
                 ) : null}
@@ -2405,7 +2421,11 @@ function App() {
       ) : null}
 
       {activePage === 'agent' ? (
-        <AgentPage activeTab={agentTab} onTabChange={setAgentTab} />
+        <AgentPage
+          activeTab={agentTab}
+          onTabChange={setAgentTab}
+          registerNewSession={registerAgentNewSession}
+        />
       ) : null}
           </div>
         </div>

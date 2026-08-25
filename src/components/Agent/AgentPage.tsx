@@ -84,9 +84,15 @@ export interface AgentPageProps {
   activeTab?: TabId;
   /** Called when a sub-tab is selected (e.g. from History → Active on session resume). */
   onTabChange?: (tab: TabId) => void;
+  /**
+   * Registers the "start new session" handler with the parent so an external
+   * control (e.g. the sidebar) can trigger it. Called with the handler on mount
+   * and with `null` on unmount.
+   */
+  registerNewSession?: (handler: (() => void) | null) => void;
 }
 
-export function AgentPage({ activeTab: controlledTab, onTabChange }: AgentPageProps = {}) {
+export function AgentPage({ activeTab: controlledTab, onTabChange, registerNewSession }: AgentPageProps = {}) {
   // ─── Tab State ───────────────────────────────────────────────────────────
   // Supports both controlled (via props) and uncontrolled (internal) usage.
   const [internalTab, setInternalTab] = useState<TabId>('active');
@@ -196,7 +202,14 @@ export function AgentPage({ activeTab: controlledTab, onTabChange }: AgentPagePr
   // ─── New Session ─────────────────────────────────────────────────────────
   const handleNewSession = useCallback(() => {
     agentChat.startNewSession();
-  }, [agentChat]);
+    setActiveTab('active');
+  }, [agentChat, setActiveTab]);
+
+  // Expose the new-session handler to the parent (e.g. the sidebar button).
+  useEffect(() => {
+    registerNewSession?.(handleNewSession);
+    return () => registerNewSession?.(null);
+  }, [registerNewSession, handleNewSession]);
 
   // ─── Inspector derived data ──────────────────────────────────────────────
   const plan = agentChat.session?.plan ?? null;
@@ -224,17 +237,6 @@ export function AgentPage({ activeTab: controlledTab, onTabChange }: AgentPagePr
       {activeTab === 'active' && (
         <div className="agent-page__body" id="agent-panel-active" role="tabpanel">
           <div className="agent-page__chat-area">
-            <div className="agent-page__chat-toolbar">
-              <button
-                className="agent-page__new-session-btn"
-                onClick={handleNewSession}
-                title="Start new session"
-                type="button"
-              >
-                + New session
-              </button>
-            </div>
-
             <AgentChatStream
               messages={agentChat.messages}
               streamingMessage={agentChat.streamingMessage}
