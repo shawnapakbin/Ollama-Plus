@@ -155,7 +155,11 @@ export function normalizeMessage(message, nowIso) {
   };
 }
 
+export const MAX_SYSTEM_PROMPT_LENGTH = 8000;
+
 export function normalizeChatConfig(config) {
+  const rawSystemPrompt = typeof config?.systemPrompt === 'string' ? config.systemPrompt : '';
+  const systemPrompt = rawSystemPrompt.trim().slice(0, MAX_SYSTEM_PROMPT_LENGTH);
   return {
     endpoint: typeof config?.endpoint === 'string' && config.endpoint.trim()
       ? config.endpoint.trim()
@@ -163,7 +167,8 @@ export function normalizeChatConfig(config) {
     model: typeof config?.model === 'string' ? config.model.trim() : '',
     autoRenameEnabled: typeof config?.autoRenameEnabled === 'boolean'
       ? config.autoRenameEnabled
-      : true
+      : true,
+    systemPrompt
   };
 }
 

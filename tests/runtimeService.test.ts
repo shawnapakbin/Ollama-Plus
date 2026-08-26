@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { createRuntimeService } from '../electron/runtime/runtimeService.js';
 import { getChatConfig, updateChatConfig } from '../electron/runtime/runtimeStore.js';
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../electron/runtime/stateSchema.js';
+import { MASTER_PROMPT_ENV_VAR, resolveMasterPrompt } from '../electron/runtime/agent/masterPrompt.js';
 
 const tempDirs: string[] = [];
 
@@ -535,6 +537,272 @@ describe('normalizeChatConfig – Property 2: Config Persistence Round-Trip', ()
           const readBack = getChatConfig(statePath);
           const lastValue = booleans[booleans.length - 1];
           expect(readBack.autoRenameEnabled).toBe(lastValue);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+});
+
+// Feature: agent-system-prompts, Property 3: System prompt persistence round-trip
+describe('systemPrompt – Property 3: System prompt persistence round-trip', () => {
+  /**
+   * Validates: Requirements 2.5, 2.7, 6.2, 6.3
+   *
+   * For any normalized systemPrompt value, saving it via updateChatConfig (or
+   * runtimeService.saveChatConfig) and reading it back via getChatConfig —
+   * including through a read/normalize cycle from a state shape that predates
+   * this feature — yields an equal systemPrompt.
+   */
+
+  /** Mirrors normalizeChatConfig: trim then bound to MAX_SYSTEM_PROMPT_LENGTH. */
+  function normalizeSystemPrompt(value: string) {
+    return value.trim().slice(0, MAX_SYSTEM_PROMPT_LENGTH);
+  }
+
+  it('round-trips systemPrompt through updateChatConfig and getChatConfig', () => {
+    fc.assert(
+      fc.property(
+        fc.string({ maxLength: MAX_SYSTEM_PROMPT_LENGTH + 500 }),
+        (systemPrompt) => {
+          const statePath = createTempStatePath();
+
+          updateChatConfig(statePath, {
+            endpoint: 'http://127.0.0.1:11434',
+            model: 'llama3.2',
+            systemPrompt
+          });
+
+          const readBack = getChatConfig(statePath);
+          expect(readBack.systemPrompt).toBe(normalizeSystemPrompt(systemPrompt));
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  it('round-trips systemPrompt through runtimeService.saveChatConfig and getChatConfig', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.string({ maxLength: MAX_SYSTEM_PROMPT_LENGTH + 500 }),
+        async (systemPrompt) => {
+          const statePath = createTempStatePath();
+          const service = createService({ statePath });
+
+          const saved = await service.saveChatConfig({
+            endpoint: 'http://127.0.0.1:11434',
+            model: 'llama3.2',
+            systemPrompt
+          });
+
+          const expected = normalizeSystemPrompt(systemPrompt);
+          expect(saved.systemPrompt).toBe(expected);
+
+          const readBack = getChatConfig(statePath);
+          expect(readBack.systemPrompt).toBe(expected);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  it('defaults systemPrompt to empty string when reading a pre-feature state shape', () => {
+    fc.assert(
+      fc.property(
+        // Pre-feature chatConfig shapes carried only endpoint/model/autoRenameEnabled.
+        fc.record({
+          endpoint: fc.constant('http://127.0.0.1:11434'),
+          model: fc.string({ maxLength: 40 }),
+          autoRenameEnabled: fc.boolean()
+        }),
+        (legacyChatConfig) => {
+          const statePath = createTempStatePath();
+
+          // Write a raw state.json that predates the feature (no systemPrompt key).
+          const legacyState = {
+            sessions: [],
+            runs: [],
+            messages: [],
+            ollamaServers: [],
+            memoryRecords: [],
+            chatConfig: legacyChatConfig
+          };
+          fs.mkdirSync(path.dirname(statePath), { recursive: true });
+          fs.writeFileSync(statePath, JSON.stringify(legacyState, null, 2), 'utf8');
+
+          const readBack = getChatConfig(statePath);
+          expect(readBack.systemPrompt).toBe('');
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  it('preserves a persisted systemPrompt across a pre-feature read/normalize/upgrade cycle', () => {
+    fc.assert(
+      fc.property(
+        fc.string({ maxLength: 200 }),
+        (systemPrompt) => {
+          const statePath = createTempStatePath();
+
+          // Simulate a legacy state that also happens to include a systemPrompt-like
+          // value written by an older build; it must survive the normalize cycle.
+          const legacyState = {
+            sessions: [],
+            runs: [],
+            messages: [],
+            ollamaServers: [],
+            memoryRecords: [],
+            chatConfig: {
+              endpoint: 'http://127.0.0.1:11434',
+              model: 'llama3.2',
+              autoRenameEnabled: true,
+              systemPrompt
+            }
+          };
+          fs.mkdirSync(path.dirname(statePath), { recursive: true });
+          fs.writeFileSync(statePath, JSON.stringify(legacyState, null, 2), 'utf8');
+
+          const readBack = getChatConfig(statePath);
+          expect(readBack.systemPrompt).toBe(normalizeSystemPrompt(systemPrompt));
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+});
+
+// Feature: agent-system-prompts, Task 6.1: master prompt not returned by chat-config bridge
+describe('getChatConfig – master prompt is not exposed through the chat-config getter', () => {
+  /**
+   * Validates: Requirements 7.4, 1.4, 6.4
+   *
+   * The Master_Prompt is defined in the main process and applied at transcript
+   * assembly time only. It must never be returned by the chat-config getter/bridge.
+   * Even when the override env var (MASTER_PROMPT_ENV_VAR) is set to a recognizable
+   * value and a chat config is saved, getChatConfig() must expose only the four
+   * known chat-config keys and must not leak the master text.
+   */
+
+  const MASTER_TEXT = 'MASTER_PROMPT_SENTINEL_do_not_leak_9e3f7a';
+  const originalMasterEnv = process.env[MASTER_PROMPT_ENV_VAR];
+
+  afterEach(() => {
+    if (originalMasterEnv === undefined) {
+      delete process.env[MASTER_PROMPT_ENV_VAR];
+    } else {
+      process.env[MASTER_PROMPT_ENV_VAR] = originalMasterEnv;
+    }
+  });
+
+  it('returns only the four known keys with no master-prompt key of any casing, and does not contain the master text', async () => {
+    process.env[MASTER_PROMPT_ENV_VAR] = MASTER_TEXT;
+
+    // Sanity check: the resolver actually surfaces the sentinel in the main process.
+    expect(resolveMasterPrompt()).toBe(MASTER_TEXT);
+
+    const statePath = createTempStatePath();
+    const service = createService({ statePath });
+
+    await service.saveChatConfig({
+      endpoint: 'http://127.0.0.1:11434',
+      model: 'llama3.2',
+      systemPrompt: 'be concise'
+    });
+
+    // Read back via both the service getter and the store getter.
+    const viaService = service.getChatConfig();
+    const viaStore = getChatConfig(statePath);
+
+    for (const config of [viaService, viaStore]) {
+      // Exactly the four known chat-config keys — nothing more.
+      expect(Object.keys(config).sort()).toEqual(
+        ['autoRenameEnabled', 'endpoint', 'model', 'systemPrompt'].sort()
+      );
+
+      // No master-prompt key of any casing/spelling.
+      const hasMasterKey = Object.keys(config).some((key) =>
+        key.toLowerCase().replace(/[^a-z]/g, '').includes('masterprompt')
+      );
+      expect(hasMasterKey).toBe(false);
+
+      // The serialized config must not contain the recognizable master text.
+      expect(JSON.stringify(config)).not.toContain(MASTER_TEXT);
+    }
+  });
+});
+
+// Feature: agent-system-prompts, Property 9: The master prompt never reaches persisted state
+describe('systemPrompt – Property 9: master prompt never reaches persisted state', () => {
+  /**
+   * Validates: Requirements 1.5 (also covers Req 7.5)
+   *
+   * For any master-prompt string (via the override env var) and any saved
+   * systemPrompt, after saving the chat config the persisted state.json bytes do
+   * not contain the master text and the persisted chatConfig object has no
+   * master-prompt key.
+   *
+   * A recognizable sentinel prefix keeps the "master text absent" assertion
+   * meaningful: the generated master string can never coincidentally be empty or
+   * appear inside an unrelated systemPrompt, and the systemPrompt generator is
+   * constrained so it never embeds the sentinel.
+   */
+
+  // Sentinel prefix guarantees the resolved master text is non-trivial and unique,
+  // so its absence from the persisted bytes is a genuine signal (not a coincidence).
+  const MASTER_SENTINEL = 'MASTER_PROMPT_SENTINEL_never_persist_7b1c9d::';
+  const originalMasterEnv = process.env[MASTER_PROMPT_ENV_VAR];
+
+  afterEach(() => {
+    if (originalMasterEnv === undefined) {
+      delete process.env[MASTER_PROMPT_ENV_VAR];
+    } else {
+      process.env[MASTER_PROMPT_ENV_VAR] = originalMasterEnv;
+    }
+  });
+
+  it('does not write the master text or any master-prompt key to state.json for arbitrary master/systemPrompt inputs', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        // Arbitrary master body; the sentinel prefix is applied below so the
+        // effective master text is always recognizable and non-empty.
+        fc.string({ maxLength: 500 }),
+        // Arbitrary systemPrompt. Guard: it must not contain the sentinel, so any
+        // occurrence of the master text in the raw bytes can only come from a leak.
+        fc.string({ maxLength: MAX_SYSTEM_PROMPT_LENGTH + 200 }).filter(
+          (value) => !value.includes(MASTER_SENTINEL)
+        ),
+        async (masterBody, systemPrompt) => {
+          const masterText = `${MASTER_SENTINEL}${masterBody}`;
+          process.env[MASTER_PROMPT_ENV_VAR] = masterText;
+
+          // Sanity: the resolver surfaces the sentinel in the main process, so the
+          // master text is genuinely "in play" for this iteration.
+          expect(resolveMasterPrompt()).toContain(MASTER_SENTINEL);
+
+          const statePath = createTempStatePath();
+          const service = createService({ statePath });
+
+          await service.saveChatConfig({
+            endpoint: 'http://127.0.0.1:11434',
+            model: 'llama3.2',
+            systemPrompt
+          });
+
+          // Read the raw persisted bytes exactly as they hit disk.
+          const rawBytes = fs.readFileSync(statePath, 'utf8');
+
+          // The recognizable master text must never appear in the persisted file.
+          expect(rawBytes.includes(MASTER_SENTINEL)).toBe(false);
+          expect(rawBytes.includes(masterText)).toBe(false);
+
+          // The persisted chatConfig must carry no master-prompt key of any casing.
+          const parsed = JSON.parse(rawBytes);
+          const chatConfig = parsed.chatConfig ?? {};
+          const hasMasterKey = Object.keys(chatConfig).some((key) =>
+            key.toLowerCase().replace(/[^a-z]/g, '').includes('masterprompt')
+          );
+          expect(hasMasterKey).toBe(false);
         }
       ),
       { numRuns: 100 }

@@ -288,7 +288,8 @@ export function createRuntimeService(config) {
       return updateChatConfig(statePath, (current) => ({
         ...current,
         endpoint: input.endpoint ?? current.endpoint ?? defaultOllamaEndpoint,
-        model: input.model ?? current.model ?? ''
+        model: input.model ?? current.model ?? '',
+        systemPrompt: input.systemPrompt ?? current.systemPrompt ?? ''
       }));
     },
 

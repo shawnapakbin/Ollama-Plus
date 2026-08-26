@@ -362,6 +362,7 @@ app.whenReady().then(async () => {
   // Agent Runtime events into AgentChatStreamEvent format.
   agentChatHandlers = registerAgentChatHandlers(ipcMain, mainWindow, {
     statePath: path.join(app.getPath('userData'), 'lang-runtime', 'state.json'),
+    mcpGateway,
     fetchImpl: globalThis.fetch,
     defaultEndpoint: runtimeService.getChatConfig()?.endpoint || 'http://localhost:11434'
   });

@@ -109,7 +109,16 @@ export type RuntimeChatConfig = {
   endpoint: string;
   model: string;
   autoRenameEnabled: boolean;
+  systemPrompt: string;
 };
+
+/**
+ * Maximum allowed length for the user-editable System_Prompt.
+ * Mirrors `MAX_SYSTEM_PROMPT_LENGTH` in `electron/runtime/stateSchema.js`; the
+ * store normalization enforces the same bound so the renderer and main process
+ * agree on the limit. Keep both values in sync.
+ */
+export const MAX_SYSTEM_PROMPT_LENGTH = 8000;
 
 export type RuntimeOllamaModel = {
   name: string;

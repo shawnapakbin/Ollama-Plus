@@ -755,6 +755,34 @@
   min-height: 120px;
 }
 
+.system-prompt-field {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+}
+
+.system-prompt-field label {
+  font-size: 0.76rem;
+  color: #d6e9dd;
+}
+
+.system-prompt-field textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 120px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(11, 17, 21, 0.8);
+  color: #effff7;
+  padding: 10px;
+  font: inherit;
+}
+
+.system-prompt-field small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
 .composer-actions {
   justify-content: space-between;
   align-items: center;

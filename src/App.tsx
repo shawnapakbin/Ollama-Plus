@@ -31,6 +31,7 @@ import {
 import './App.css';
 import {
   runtimeClient,
+  MAX_SYSTEM_PROMPT_LENGTH,
   type ApprovalDecision,
   type RuntimeBootstrapPlan,
   type RuntimeChatConfig,
@@ -438,7 +439,7 @@ function App() {
   const [runs, setRuns] = useState<RuntimeRunSummary[]>([]);
   const [memoryRecords, setMemoryRecords] = useState<RuntimeMemoryRecord[]>([]);
   const [messages, setMessages] = useState<RuntimeChatMessage[]>([]);
-  const [chatConfig, setChatConfig] = useState<RuntimeChatConfig>({ endpoint: 'http://127.0.0.1:11434', model: '', autoRenameEnabled: true });
+  const [chatConfig, setChatConfig] = useState<RuntimeChatConfig>({ endpoint: 'http://127.0.0.1:11434', model: '', autoRenameEnabled: true, systemPrompt: '' });
   const [availableModels, setAvailableModels] = useState<RuntimeOllamaModel[]>([]);
   const [ollamaServers, setOllamaServers] = useState<RuntimeOllamaServer[]>([]);
   const [ollamaServerHealth, setOllamaServerHealth] = useState<Record<string, RuntimeOllamaServerHealth>>({});
@@ -666,7 +667,12 @@ function App() {
         setPlan(nextPlan);
         setGraphs(nextGraphs);
         setSessions(nextSessions);
-        setChatConfig({ endpoint: modelCatalog.endpoint || nextConfig.endpoint, model: modelCatalog.model || nextConfig.model });
+        setChatConfig({
+          endpoint: modelCatalog.endpoint || nextConfig.endpoint,
+          model: modelCatalog.model || nextConfig.model,
+          autoRenameEnabled: nextConfig.autoRenameEnabled,
+          systemPrompt: nextConfig.systemPrompt ?? ''
+        });
         setAvailableModels(modelCatalog.availableModels);
         setOllamaServers(nextOllamaServers);
         setActiveSessionId(sessionId);
@@ -810,7 +816,7 @@ function App() {
     try {
       const catalog = await runtimeClient.listOllamaModels(chatConfig.endpoint);
       setAvailableModels(catalog.availableModels);
-      setChatConfig({ endpoint: catalog.endpoint, model: catalog.model });
+      setChatConfig((current) => ({ ...current, endpoint: catalog.endpoint, model: catalog.model }));
     } catch (modelError) {
       setError(modelError instanceof Error ? modelError.message : String(modelError));
     } finally {
@@ -918,7 +924,7 @@ function App() {
     try {
       const catalog = await runtimeClient.listOllamaModels(server.endpoint);
       setAvailableModels(catalog.availableModels);
-      setChatConfig({ endpoint: catalog.endpoint, model: catalog.model });
+      setChatConfig((current) => ({ ...current, endpoint: catalog.endpoint, model: catalog.model }));
       setOllamaServerHealth((current) => ({
         ...current,
         [server.id]: {
@@ -944,8 +950,40 @@ function App() {
     try {
       const saved = await runtimeClient.saveChatConfig({
         endpoint: nextConfig.endpoint ?? chatConfig.endpoint,
-        model: nextConfig.model ?? chatConfig.model
+        model: nextConfig.model ?? chatConfig.model,
+        ...(nextConfig.autoRenameEnabled !== undefined ? { autoRenameEnabled: nextConfig.autoRenameEnabled } : {}),
+        ...(nextConfig.systemPrompt !== undefined ? { systemPrompt: nextConfig.systemPrompt } : {})
       });
+      setChatConfig(saved);
+    } catch (configError) {
+      setError(configError instanceof Error ? configError.message : String(configError));
+    }
+  }
+
+  async function handleSaveSystemPrompt(value: string) {
+    // Empty-skip: do not overwrite an existing persisted value with '' (Req 2.6).
+    if (!value.trim()) {
+      return;
+    }
+
+    // Max-length block: refuse to save values over the configured maximum,
+    // even when that maximum is impractically short (Req 3.5, 3.6).
+    if (value.length > MAX_SYSTEM_PROMPT_LENGTH) {
+      setError(`System prompt exceeds the maximum of ${MAX_SYSTEM_PROMPT_LENGTH} characters.`);
+      return;
+    }
+
+    // The store normalizes with trim + slice; mirror it to detect a mismatch.
+    const normalized = value.trim().slice(0, MAX_SYSTEM_PROMPT_LENGTH);
+
+    setError('');
+    try {
+      const saved = await runtimeClient.saveChatConfig({ systemPrompt: normalized });
+      // Failure detection: the returned config must reflect the submitted value.
+      if (saved.systemPrompt !== normalized) {
+        setError('Failed to save the system prompt. Please try again.');
+        return;
+      }
       setChatConfig(saved);
     } catch (configError) {
       setError(configError instanceof Error ? configError.message : String(configError));
@@ -2281,6 +2319,23 @@ function App() {
                   }}
                 />
               </label>
+
+              <div className="system-prompt-field">
+                <label htmlFor="chat-system-prompt">System prompt</label>
+                <textarea
+                  id="chat-system-prompt"
+                  aria-describedby="chat-system-prompt-hint"
+                  rows={6}
+                  maxLength={MAX_SYSTEM_PROMPT_LENGTH}
+                  value={chatConfig.systemPrompt}
+                  onChange={(event) => setChatConfig((current) => ({ ...current, systemPrompt: event.target.value }))}
+                  onBlur={() => void handleSaveSystemPrompt(chatConfig.systemPrompt)}
+                  placeholder="Add instructions to steer the agent's behavior."
+                />
+                <small id="chat-system-prompt-hint">
+                  Guides the agent in Agent chat. {chatConfig.systemPrompt.length} / {MAX_SYSTEM_PROMPT_LENGTH} characters.
+                </small>
+              </div>
             </div>
           </article>
 

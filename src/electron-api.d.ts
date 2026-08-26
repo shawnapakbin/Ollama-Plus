@@ -110,6 +110,8 @@ type RuntimeChatStreamEvent =
 type RuntimeChatConfig = {
   endpoint: string;
   model: string;
+  autoRenameEnabled: boolean;
+  systemPrompt: string;
 };
 
 type RuntimeOllamaModel = {
