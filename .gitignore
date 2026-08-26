@@ -11,6 +11,7 @@ dist
 dist-ssr
 dist-electron
 *.local
+old-setup
 
 # Local-only planning notes, not shipped with the repo
 Implementation Plan/
