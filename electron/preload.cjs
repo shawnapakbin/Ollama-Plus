@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('agent-chat:stream', subscription);
   },
   stopAgentGeneration: (sessionId) => ipcRenderer.invoke('agent-chat:stop', sessionId),
+  listAgentChatSessions: () => ipcRenderer.invoke('agent-chat:list-sessions'),
+  getAgentChatSession: (sessionId) => ipcRenderer.invoke('agent-chat:get-session', sessionId),
   getLastActiveAgentSession: () => ipcRenderer.invoke('agent-chat:get-last-active-session'),
   deleteAgentSession: (sessionId) => ipcRenderer.invoke('agent-chat:delete-session', sessionId),
   // Auto-updater event listeners (main → renderer)
