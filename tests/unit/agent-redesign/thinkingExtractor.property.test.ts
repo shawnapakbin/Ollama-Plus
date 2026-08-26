@@ -33,6 +33,32 @@ const nonEmptySafeStringArb = fc.string({ minLength: 1, maxLength: 60 }).map((s)
   return cleaned.length > 0 ? cleaned : 'x';
 });
 
+/**
+ * Generates a safe string guaranteed to contain non-whitespace characters
+ * after trimming (and free of think markers). Falls back to 'x' when the
+ * generated value is blank after cleaning, so a genuine thinking block is
+ * always present. The non-trimmed `cleaned` value is returned when non-blank,
+ * so surrounding whitespace around genuine content is still possible while
+ * guaranteeing `.trim().length > 0`.
+ */
+const nonBlankSafeStringArb = fc.string({ minLength: 1, maxLength: 60 }).map((s) => {
+  const cleaned = s
+    .replace(/<\/?think>/gi, '')
+    .replace(/<think/gi, '')
+    .replace(/think>/gi, '');
+  return cleaned.trim().length > 0 ? cleaned : 'x';
+});
+
+/**
+ * Generates a non-empty string composed solely of whitespace characters
+ * (spaces, tabs, newlines, carriage returns). Such a value is non-empty
+ * before trimming but empty after trimming, exercising the documented
+ * null-for-blank contract of extractThinking.
+ */
+const whitespaceOnlyArb = fc
+  .array(fc.constantFrom(' ', '\t', '\n', '\r'), { minLength: 1, maxLength: 10 })
+  .map((chars) => chars.join(''));
+
 describe('Feature: agent-page-redesign, Property 15: Thinking block extraction', () => {
   /**
    * **Validates: Requirements 1.7**
@@ -44,7 +70,7 @@ describe('Feature: agent-page-redesign, Property 15: Thinking block extraction',
   it('extracts thinking content and removes think tags from main content', () => {
     fc.assert(
       fc.property(
-        fc.tuple(safeStringArb, nonEmptySafeStringArb, safeStringArb),
+        fc.tuple(safeStringArb, nonBlankSafeStringArb, safeStringArb),
         ([prefix, thinking, suffix]) => {
           const input = `${prefix}<think>${thinking}</think>${suffix}`;
           const result = extractThinking(input);
@@ -134,9 +160,9 @@ describe('Feature: agent-page-redesign, Property 15: Thinking block extraction',
       fc.property(
         fc.tuple(
           safeStringArb,
-          nonEmptySafeStringArb,
+          nonBlankSafeStringArb,
           safeStringArb,
-          nonEmptySafeStringArb,
+          nonBlankSafeStringArb,
           safeStringArb
         ),
         ([part1, think1, part2, think2, part3]) => {
@@ -197,7 +223,7 @@ describe('Feature: agent-page-redesign, Property 15: Thinking block extraction',
   it('unclosed think tag treats remaining content as thinking', () => {
     fc.assert(
       fc.property(
-        fc.tuple(nonEmptySafeStringArb, nonEmptySafeStringArb),
+        fc.tuple(nonBlankSafeStringArb, nonBlankSafeStringArb),
         ([prefix, thinkContent]) => {
           const input = `${prefix}<think>${thinkContent}`;
           const result = extractThinking(input);
@@ -211,6 +237,30 @@ describe('Feature: agent-page-redesign, Property 15: Thinking block extraction',
 
           // No think tags in main content
           expect(result.mainContent).not.toMatch(/<think>/i);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Validates: Requirements 2.4, 3.6**
+   *
+   * Contract lock-in: for an unclosed <think> tag whose content is whitespace-only
+   * (non-empty before trimming, empty after trimming), extractThinking SHALL treat
+   * it as "no thinking" — returning thinkingContent as null while mainContent is the
+   * trimmed prefix text. This asserts the documented null-for-blank contract as a
+   * property rather than leaving it implicit.
+   */
+  it('unclosed think tag with whitespace-only content yields null thinkingContent', () => {
+    fc.assert(
+      fc.property(
+        fc.tuple(nonBlankSafeStringArb, whitespaceOnlyArb),
+        ([prefix, blank]) => {
+          const input = `${prefix}<think>${blank}`;
+          const result = extractThinking(input);
+          expect(result.thinkingContent).toBeNull();
+          expect(result.mainContent).toBe(prefix.trim());
         }
       ),
       { numRuns: 100 }
@@ -232,7 +282,7 @@ describe('Feature: agent-page-redesign, Property 15: Thinking block extraction',
 
     fc.assert(
       fc.property(
-        fc.tuple(nonEmptySafeStringArb, nonEmptySafeStringArb, nonEmptySafeStringArb, caseVariants, closingVariants),
+        fc.tuple(nonEmptySafeStringArb, nonBlankSafeStringArb, nonEmptySafeStringArb, caseVariants, closingVariants),
         ([prefix, thinking, suffix, openTag, closeTag]) => {
           const input = `${prefix}${openTag}${thinking}${closeTag}${suffix}`;
           const result = extractThinking(input);
