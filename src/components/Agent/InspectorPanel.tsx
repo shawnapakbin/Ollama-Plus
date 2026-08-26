@@ -22,7 +22,7 @@ import {
   Loader,
   PanelRight,
 } from 'lucide-react';
-import type { Artifact, MemoryRecord, Plan } from '../../types/agent';
+import type { Plan } from '../../types/agent';
 import './InspectorPanel.css';
 
 // ─── Props ───────────────────────────────────────────────────────────────────

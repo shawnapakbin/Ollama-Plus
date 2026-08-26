@@ -22,6 +22,40 @@ import {
  * Validates: Requirements 2.1, 2.2, 2.3, 2.4, 3.2
  */
 
+// ─── Local type definitions ──────────────────────────────────────────────────
+
+type IpcHandler = (event: unknown, ...args: unknown[]) => unknown;
+
+interface StreamEvent {
+  channel: string;
+  payload: Record<string, unknown>;
+}
+
+interface ChatRequestBody {
+  model: string;
+  messages: Array<{ role: string; content: string; tool_calls?: unknown[] }>;
+  tools?: Array<{ type: string; function: { name: string; description?: string; parameters?: unknown } }>;
+  stream?: boolean;
+}
+
+interface McpDispatchRequest {
+  server: string;
+  action: string;
+  payload?: Record<string, unknown>;
+}
+
+interface McpDispatchCall {
+  server: string;
+  action: string;
+  payload: unknown;
+}
+
+interface McpTool {
+  name: string;
+  description: string;
+  parameters?: Record<string, unknown>;
+}
+
 // ─── Test Infrastructure (mirrors existing exploration/preservation tests) ────
 
 const tempDirs: string[] = [];
@@ -40,9 +74,9 @@ function createTempStatePath(): string {
 }
 
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -55,11 +89,11 @@ function createMockIpcMain() {
 }
 
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: StreamEvent[] = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) {
+      send(channel: string, payload: Record<string, unknown>) {
         sentEvents.push({ channel, payload });
       }
     },
@@ -78,11 +112,11 @@ function createMockMainWindow() {
  * `tools` is the catalog returned by listTools.
  */
 function createMockMcpGateway(opts: {
-  tools?: any[];
-  dispatchResult?: any;
-  onDispatch?: (req: any) => any;
+  tools?: McpTool[];
+  dispatchResult?: unknown;
+  onDispatch?: (req: McpDispatchRequest) => unknown;
 } = {}) {
-  const calls: Array<{ server: string; action: string; payload: any }> = [];
+  const calls: McpDispatchCall[] = [];
   const tools = opts.tools ?? [
     {
       name: 'folder_read_file',
@@ -95,7 +129,7 @@ function createMockMcpGateway(opts: {
     }
   ];
   return {
-    dispatch: async (request: { server: string; action: string; payload?: any }) => {
+    dispatch: async (request: McpDispatchRequest) => {
       calls.push({ server: request.server, action: request.action, payload: request.payload });
       if (opts.onDispatch) return opts.onDispatch(request);
       return opts.dispatchResult ?? { output: 'TOOL OUTPUT' };
@@ -105,12 +139,12 @@ function createMockMcpGateway(opts: {
   };
 }
 
-function createScriptedFetch(turns: any[][]) {
-  const requestBodies: any[] = [];
+function createScriptedFetch(turns: Record<string, unknown>[][]) {
+  const requestBodies: Array<ChatRequestBody | null> = [];
   let turnIndex = 0;
-  const fetchImpl = async (_url: string, options: any) => {
+  const fetchImpl = async (_url: string, options: { body: string }) => {
     try {
-      requestBodies.push(JSON.parse(options.body));
+      requestBodies.push(JSON.parse(options.body) as ChatRequestBody);
     } catch {
       requestBodies.push(null);
     }
@@ -120,7 +154,7 @@ function createScriptedFetch(turns: any[][]) {
     return {
       ok: true,
       body: new ReadableStream({
-        start(controller) {
+        start(controller: ReadableStreamDefaultController) {
           for (const chunk of chunks) {
             controller.enqueue(encoder.encode(JSON.stringify(chunk) + '\n'));
           }
@@ -135,7 +169,7 @@ function createScriptedFetch(turns: any[][]) {
 async function waitForCompletion(
   window: ReturnType<typeof createMockMainWindow>,
   timeoutMs = 3000
-): Promise<any> {
+): Promise<Record<string, unknown> | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const events = window.getStreamEvents();
@@ -152,7 +186,7 @@ const MODEL = 'qwen3.5:9b';
 const ENDPOINT = 'http://localhost:11434';
 
 /** A model turn requesting one tool call for `toolName` with `args`. */
-function toolCallTurn(toolName: string, args: any): any[] {
+function toolCallTurn(toolName: string, args: Record<string, unknown>): Record<string, unknown>[] {
   return [
     {
       message: {
@@ -167,19 +201,19 @@ function toolCallTurn(toolName: string, args: any): any[] {
 }
 
 /** A final text turn (no tool calls). */
-function finalTextTurn(text: string): any[] {
+function finalTextTurn(text: string): Record<string, unknown>[] {
   return [
     { message: { role: 'assistant', content: text }, done: false },
     { message: { role: 'assistant', content: '' }, done: true, eval_count: 5 }
   ];
 }
 
-function setup(turns: any[][], gateway: any) {
+function setup(turns: Record<string, unknown>[][], gateway: ReturnType<typeof createMockMcpGateway>) {
   const statePath = createTempStatePath();
   const ipcMain = createMockIpcMain();
   const window = createMockMainWindow();
   const scripted = createScriptedFetch(turns);
-  const api = registerAgentChatHandlers(ipcMain as any, window as any, {
+  const api = registerAgentChatHandlers(ipcMain as unknown as Electron.IpcMain, window as unknown as Electron.BrowserWindow, {
     statePath,
     fetchImpl: scripted.fetchImpl,
     defaultEndpoint: ENDPOINT,
@@ -189,7 +223,7 @@ function setup(turns: any[][], gateway: any) {
   return { statePath, ipcMain, window, scripted, api, sendHandler };
 }
 
-async function send(sendHandler: Function, content = 'do the thing', extra: any = {}) {
+async function send(sendHandler: IpcHandler, content = 'do the thing', extra: Record<string, unknown> = {}) {
   return sendHandler({}, { surface: 'agent', content, model: MODEL, endpoint: ENDPOINT, ...extra });
 }
 
@@ -210,15 +244,15 @@ describe('Tool catalog construction (Req 2.1, 3.2)', () => {
     await send(sendHandler);
     await waitForCompletion(window);
 
-    const body = scripted.getRequestBodies()[0];
+    const body = scripted.getRequestBodies()[0]!;
     expect(Array.isArray(body.tools)).toBe(true);
     expect(body.tools).toHaveLength(2);
-    expect(body.tools[0]).toMatchObject({
+    expect(body.tools![0]).toMatchObject({
       type: 'function',
       function: { name: 'folder_read_file', description: 'Read a file' }
     });
-    expect(body.tools[0].function.parameters).toMatchObject({ type: 'object' });
-    expect(body.tools[1].function.name).toBe('terminal_run');
+    expect(body.tools![0].function.parameters).toMatchObject({ type: 'object' });
+    expect(body.tools![1].function.name).toBe('terminal_run');
   });
 
   it('empty catalog (gateway lists no tools) yields no tools field', async () => {
@@ -228,7 +262,7 @@ describe('Tool catalog construction (Req 2.1, 3.2)', () => {
     await send(sendHandler);
     await waitForCompletion(window);
 
-    const body = scripted.getRequestBodies()[0];
+    const body = scripted.getRequestBodies()[0]!;
     expect('tools' in body).toBe(false);
     expect(Object.keys(body).sort()).toEqual(['messages', 'model', 'stream'].sort());
   });
@@ -237,8 +271,8 @@ describe('Tool catalog construction (Req 2.1, 3.2)', () => {
     const gateway = createMockMcpGateway({
       tools: [
         { name: 'folder_read_file', description: 'ok' },
-        { description: 'nameless' },
-        { name: '   ' }
+        { description: 'nameless' } as unknown as McpTool,
+        { name: '   ', description: 'whitespace' }
       ]
     });
     const { window, sendHandler, scripted } = setup([finalTextTurn('done')], gateway);
@@ -246,9 +280,9 @@ describe('Tool catalog construction (Req 2.1, 3.2)', () => {
     await send(sendHandler);
     await waitForCompletion(window);
 
-    const body = scripted.getRequestBodies()[0];
+    const body = scripted.getRequestBodies()[0]!;
     expect(body.tools).toHaveLength(1);
-    expect(body.tools[0].function.name).toBe('folder_read_file');
+    expect(body.tools![0].function.name).toBe('folder_read_file');
   });
 });
 
@@ -302,15 +336,15 @@ describe('Tool-call dispatch mapping and transcript append (Req 2.2, 2.3, 2.4)',
     const bodies = scripted.getRequestBodies();
     expect(bodies.length).toBeGreaterThanOrEqual(2);
 
-    const secondTurn = bodies[1].messages;
-    const toolMessages = secondTurn.filter((m: any) => m.role === 'tool');
+    const secondTurn = bodies[1]!.messages;
+    const toolMessages = secondTurn.filter((m: { role: string; content: string }) => m.role === 'tool');
     expect(toolMessages).toHaveLength(1);
     // The transcript carries the tool output back to the model as role:'tool'.
     expect(toolMessages[0].content).toContain('FILE: version 5.0.3');
 
     // Final answer reflects the tool loop terminating at the tool-less turn.
-    expect(terminal.type).toBe('chat-completed');
-    expect(terminal.assistantMessage.content).toBe('The version is 5.0.3.');
+    expect(terminal!.type).toBe('chat-completed');
+    expect((terminal as Record<string, unknown> & { assistantMessage: { content: string } }).assistantMessage.content).toBe('The version is 5.0.3.');
   });
 
   it('emits tool-call and tool-result stream events to the Agent window (Req 2.4)', async () => {
@@ -329,7 +363,7 @@ describe('Tool-call dispatch mapping and transcript append (Req 2.2, 2.3, 2.4)',
 
     expect(call).toMatchObject({ tool: 'folder_read_file', server: 'folder', action: 'read_file' });
     expect(result).toMatchObject({ tool: 'folder_read_file', status: 'success' });
-    expect(result.output).toContain('RESULT DATA');
+    expect((result as Record<string, unknown>).output).toContain('RESULT DATA');
   });
 });
 
@@ -353,13 +387,13 @@ describe('Tool-loop edge cases (Req 2.2, 2.3)', () => {
     expect(gateway.getCalls()).toHaveLength(0);
 
     const bodies = scripted.getRequestBodies();
-    const toolMsg = bodies[1].messages.find((m: any) => m.role === 'tool');
-    expect(toolMsg.content).toMatch(/unknown tool/i);
+    const toolMsg = bodies[1]!.messages.find((m: { role: string; content: string }) => m.role === 'tool');
+    expect(toolMsg!.content).toMatch(/unknown tool/i);
 
     const events = window.getStreamEvents();
     const result = events.find((e) => e.type === 'tool-result');
-    expect(result.status).toBe('error');
-    expect(terminal.type).toBe('chat-completed');
+    expect((result as Record<string, unknown>).status).toBe('error');
+    expect(terminal!.type).toBe('chat-completed');
   });
 
   it('gateway dispatch error is captured as an error tool message and the loop continues', async () => {
@@ -377,16 +411,16 @@ describe('Tool-loop edge cases (Req 2.2, 2.3)', () => {
     const terminal = await waitForCompletion(window);
 
     const bodies = scripted.getRequestBodies();
-    const toolMsg = bodies[1].messages.find((m: any) => m.role === 'tool');
-    expect(toolMsg.content).toMatch(/error/i);
+    const toolMsg = bodies[1]!.messages.find((m: { role: string; content: string }) => m.role === 'tool');
+    expect(toolMsg!.content).toMatch(/error/i);
 
     const events = window.getStreamEvents();
     const result = events.find((e) => e.type === 'tool-result');
-    expect(result.status).toBe('error');
+    expect((result as Record<string, unknown>).status).toBe('error');
 
     // Loop continues to a final text answer rather than crashing.
-    expect(terminal.type).toBe('chat-completed');
-    expect(terminal.assistantMessage.content).toBe('handled the error');
+    expect(terminal!.type).toBe('chat-completed');
+    expect((terminal as Record<string, unknown> & { assistantMessage: { content: string } }).assistantMessage.content).toBe('handled the error');
   });
 
   it('tool round cap is enforced when the model keeps requesting tools', async () => {
@@ -402,14 +436,14 @@ describe('Tool-loop edge cases (Req 2.2, 2.3)', () => {
     await send(sendHandler);
     const terminal = await waitForCompletion(window, 5000);
 
-    expect(terminal.type).toBe('chat-completed');
+    expect(terminal!.type).toBe('chat-completed');
     // The number of model invocations is bounded (cap + final), not infinite.
     // MAX_TOOL_ROUNDS is 8 => at most ~9 invocations.
     expect(scripted.getTurnCount()).toBeLessThanOrEqual(10);
 
     const events = window.getStreamEvents();
     const capNotice = events.find(
-      (e) => e.type === 'chat-token' && typeof e.delta === 'string' && /round limit reached/i.test(e.delta)
+      (e) => e.type === 'chat-token' && typeof e.delta === 'string' && /round limit reached/i.test(e.delta as string)
     );
     expect(capNotice).toBeTruthy();
   });
@@ -428,12 +462,12 @@ describe('Tool-loop edge cases (Req 2.2, 2.3)', () => {
       gateway
     );
 
-    const result: any = await send(sendHandler);
+    const result = await send(sendHandler) as Record<string, unknown>;
     const stopHandler = ipcMain.getHandler(AGENT_CHAT_CHANNELS.STOP)!;
 
     // Give the loop a moment to enter dispatch, then abort.
     await new Promise((r) => setTimeout(r, 20));
-    await stopHandler({}, result.sessionId);
+    await stopHandler({}, (result as Record<string, unknown>).sessionId as string);
 
     // Allow any in-flight work to settle.
     await new Promise((r) => setTimeout(r, 150));
@@ -444,9 +478,10 @@ describe('Tool-loop edge cases (Req 2.2, 2.3)', () => {
     expect(completed).toBeFalsy();
 
     // Only the user message is persisted; no assistant message committed.
-    const session = api.getSessionStore().get(result.sessionId);
-    const assistant = session.messages.find((m: any) => m.role === 'assistant');
+    const session = api.getSessionStore().get((result as Record<string, unknown>).sessionId as string) as Record<string, unknown>;
+    const messages = session.messages as Array<{ role: string; content: string }>;
+    const assistant = messages.find((m) => m.role === 'assistant');
     expect(assistant).toBeUndefined();
-    expect(session.messages.filter((m: any) => m.role === 'user')).toHaveLength(1);
+    expect(messages.filter((m) => m.role === 'user')).toHaveLength(1);
   });
 });

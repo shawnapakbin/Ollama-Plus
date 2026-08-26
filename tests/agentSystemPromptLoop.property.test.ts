@@ -26,6 +26,13 @@ import {
 // rounds followed by a final text turn, every outgoing /api/chat request body has
 // messages[0].role === 'system' and contains exactly one role:'system' entry.
 
+// ─── Shared test types ───────────────────────────────────────────────────────
+
+type IpcHandler = (...args: unknown[]) => unknown;
+type StreamEvent = { type?: string; [key: string]: unknown };
+type ChatChunk = Record<string, unknown>;
+type FetchOptions = { body?: string; [key: string]: unknown };
+
 // ─── Test Infrastructure (mirrors agentMcpTools*.property.test.ts) ───────────
 
 const tempDirs: string[] = [];
@@ -47,9 +54,9 @@ function createTempStatePath(): string {
 
 /** Mock ipcMain capturing registered handlers. */
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -63,18 +70,18 @@ function createMockIpcMain() {
 
 /** Mock BrowserWindow capturing streamed events. */
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: Array<{ channel: string; payload: unknown }> = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) {
+      send(channel: string, payload: unknown) {
         sentEvents.push({ channel, payload });
       }
     },
-    getStreamEvents() {
+    getStreamEvents(): StreamEvent[] {
       return sentEvents
         .filter((e) => e.channel === AGENT_CHAT_CHANNELS.STREAM)
-        .map((e) => e.payload);
+        .map((e) => e.payload as StreamEvent);
     }
   };
 }
@@ -84,9 +91,9 @@ function createMockMainWindow() {
  * tool-execution loop is engaged whenever the model emits tool_calls.
  */
 function createMockMcpGateway() {
-  const calls: Array<{ server: string; action: string; payload: any }> = [];
+  const calls: Array<{ server: string; action: string; payload: unknown }> = [];
   return {
-    dispatch: async (request: { server: string; action: string; payload?: any }) => {
+    dispatch: async (request: { server: string; action: string; payload?: unknown }) => {
       calls.push({ server: request.server, action: request.action, payload: request.payload });
       return { output: 'tool output' };
     },
@@ -112,13 +119,13 @@ function createMockMcpGateway() {
  *
  * Records every outgoing request body for assertion.
  */
-function createScriptedFetch(turns: any[][]) {
-  const requestBodies: any[] = [];
+function createScriptedFetch(turns: ChatChunk[][]) {
+  const requestBodies: Array<Record<string, unknown> | null> = [];
   let turnIndex = 0;
 
-  const fetchImpl = async (_url: string, options: any) => {
+  const fetchImpl = async (_url: string, options: FetchOptions) => {
     try {
-      requestBodies.push(JSON.parse(options.body));
+      requestBodies.push(JSON.parse(options.body ?? ''));
     } catch {
       requestBodies.push(null);
     }
@@ -151,7 +158,7 @@ function createScriptedFetch(turns: any[][]) {
 async function waitForCompletion(
   window: ReturnType<typeof createMockMainWindow>,
   timeoutMs = 2000
-): Promise<any> {
+): Promise<StreamEvent | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const events = window.getStreamEvents();
@@ -202,8 +209,8 @@ const FINAL_TEXT_TURN = [
  * Builds a scripted turn sequence: `rounds` tool-call turns followed by a final
  * text turn. Fresh copies avoid shared mutable state between fast-check runs.
  */
-function scriptTurns(rounds: number): any[][] {
-  const turns: any[][] = [];
+function scriptTurns(rounds: number): ChatChunk[][] {
+  const turns: ChatChunk[][] = [];
   for (let i = 0; i < rounds; i += 1) {
     turns.push(JSON.parse(JSON.stringify(TOOL_CALL_TURN)));
   }
@@ -211,14 +218,14 @@ function scriptTurns(rounds: number): any[][] {
   return turns;
 }
 
-function setup(turns: any[][], master: string, systemPrompt: string) {
+function setup(turns: ChatChunk[][], master: string, systemPrompt: string) {
   const statePath = createTempStatePath();
   const ipcMain = createMockIpcMain();
   const window = createMockMainWindow();
   const gateway = createMockMcpGateway();
   const scripted = createScriptedFetch(turns);
 
-  const api = registerAgentChatHandlers(ipcMain as any, window as any, {
+  const api = registerAgentChatHandlers(ipcMain as unknown as Parameters<typeof registerAgentChatHandlers>[0], window as unknown as Parameters<typeof registerAgentChatHandlers>[1], {
     statePath,
     fetchImpl: scripted.fetchImpl,
     defaultEndpoint: ENDPOINT,
@@ -267,11 +274,13 @@ describe('Agent System Prompts — system message first across tool loop (Proper
           expect(bodies).toHaveLength(rounds + 1);
 
           for (const body of bodies) {
-            const messages = Array.isArray(body?.messages) ? body.messages : [];
+            const messages: Array<{ role?: string }> = Array.isArray(body?.messages)
+              ? body.messages
+              : [];
             // The Combined_System_Message must be first on every invocation.
             expect(messages[0]?.role).toBe('system');
             // Exactly one system entry — no re-prepend, no duplicate inside the loop.
-            const systemEntries = messages.filter((m: any) => m?.role === 'system');
+            const systemEntries = messages.filter((m) => m?.role === 'system');
             expect(systemEntries).toHaveLength(1);
           }
         }

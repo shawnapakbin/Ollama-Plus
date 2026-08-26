@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import type { ApprovalGateState, ToolCategory } from '../../types/agentChat';
+import type { ApprovalGateState } from '../../types/agentChat';
 import { getCategoryColor } from '../../utils/agent/toolCategoryUtils';
 import './ApprovalGateBlock.css';
 

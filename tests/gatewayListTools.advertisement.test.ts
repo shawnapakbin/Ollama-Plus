@@ -20,6 +20,24 @@ import { createGateway } from '../mcp/lib/gateway.mjs';
  * Validates: Requirements 4.1, 7.3
  */
 
+// ─── Shared test types ───────────────────────────────────────────────────────
+
+type IpcHandler = (...args: unknown[]) => unknown;
+type StreamEvent = { type?: string; [key: string]: unknown };
+type ChatChunk = Record<string, unknown>;
+type FetchOptions = { body?: string; [key: string]: unknown };
+type RequestBody = Record<string, unknown>;
+
+interface ToolFunctionDescriptor {
+  type: string;
+  function: { name: string; [key: string]: unknown };
+}
+
+interface ListedTool {
+  name: string;
+  [key: string]: unknown;
+}
+
 // ─── Test Infrastructure (mirrors tests/agentChatHandlersTools.test.ts) ───────
 
 const tempDirs: string[] = [];
@@ -38,9 +56,9 @@ function createTempStatePath(): string {
 }
 
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -53,11 +71,11 @@ function createMockIpcMain() {
 }
 
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: Array<{ channel: string; payload: StreamEvent }> = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) {
+      send(channel: string, payload: StreamEvent) {
         sentEvents.push({ channel, payload });
       }
     },
@@ -69,12 +87,12 @@ function createMockMainWindow() {
   };
 }
 
-function createScriptedFetch(turns: any[][]) {
-  const requestBodies: any[] = [];
+function createScriptedFetch(turns: ChatChunk[][]) {
+  const requestBodies: Array<RequestBody | null> = [];
   let turnIndex = 0;
-  const fetchImpl = async (_url: string, options: any) => {
+  const fetchImpl = async (_url: string, options: FetchOptions) => {
     try {
-      requestBodies.push(JSON.parse(options.body));
+      requestBodies.push(JSON.parse(options.body ?? ''));
     } catch {
       requestBodies.push(null);
     }
@@ -99,7 +117,7 @@ function createScriptedFetch(turns: any[][]) {
 async function waitForCompletion(
   window: ReturnType<typeof createMockMainWindow>,
   timeoutMs = 3000
-): Promise<any> {
+): Promise<StreamEvent | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const events = window.getStreamEvents();
@@ -116,7 +134,7 @@ const MODEL = 'qwen3.5:9b';
 const ENDPOINT = 'http://localhost:11434';
 
 /** A final text turn (no tool calls) so the tool-execution loop terminates. */
-function finalTextTurn(text: string): any[] {
+function finalTextTurn(text: string): ChatChunk[] {
   return [
     { message: { role: 'assistant', content: text }, done: false },
     { message: { role: 'assistant', content: '' }, done: true, eval_count: 5 }
@@ -162,12 +180,16 @@ describe('Non-empty tool advertisement with a real gateway (Req 4.1, 7.3)', () =
     const window = createMockMainWindow();
     const scripted = createScriptedFetch([finalTextTurn('all done')]);
 
-    registerAgentChatHandlers(ipcMain as any, window as any, {
-      statePath,
-      fetchImpl: scripted.fetchImpl,
-      defaultEndpoint: ENDPOINT,
-      mcpGateway: gateway
-    });
+    registerAgentChatHandlers(
+      ipcMain as unknown as Parameters<typeof registerAgentChatHandlers>[0],
+      window as unknown as Parameters<typeof registerAgentChatHandlers>[1],
+      {
+        statePath,
+        fetchImpl: scripted.fetchImpl,
+        defaultEndpoint: ENDPOINT,
+        mcpGateway: gateway
+      } as unknown as Parameters<typeof registerAgentChatHandlers>[2]
+    );
 
     const sendHandler = ipcMain.getHandler(AGENT_CHAT_CHANNELS.SEND_MESSAGE)!;
     await sendHandler(
@@ -176,22 +198,23 @@ describe('Non-empty tool advertisement with a real gateway (Req 4.1, 7.3)', () =
     );
     await waitForCompletion(window);
 
-    const body = scripted.getRequestBodies()[0];
+    const body = scripted.getRequestBodies()[0] as RequestBody;
+    const tools = body.tools as ToolFunctionDescriptor[];
 
     // The outgoing /api/chat body advertises a non-empty tools array.
-    expect(Array.isArray(body.tools)).toBe(true);
-    expect(body.tools.length).toBeGreaterThan(0);
+    expect(Array.isArray(tools)).toBe(true);
+    expect(tools.length).toBeGreaterThan(0);
 
     // Every advertised tool is an OpenAI/Ollama-style function descriptor.
-    for (const tool of body.tools) {
+    for (const tool of tools) {
       expect(tool.type).toBe('function');
       expect(typeof tool.function.name).toBe('string');
     }
 
     // The advertised function names equal the gateway's own listTools() names
     // (which follow the <server>_<action> convention).
-    const listedNames = gateway.listTools().map((t: any) => t.name).sort();
-    const advertisedNames = body.tools.map((t: any) => t.function.name).sort();
+    const listedNames = (gateway.listTools() as ListedTool[]).map((t) => t.name).sort();
+    const advertisedNames = tools.map((t) => t.function.name).sort();
 
     expect(advertisedNames).toEqual(listedNames);
     expect(advertisedNames).toContain('browser_list_sessions');

@@ -71,7 +71,6 @@ const TEXTAREA_VERTICAL_PADDING = 12;
 
 export function AgentComposer({
   modelId,
-  endpoint,
   isConnected,
   isStreaming,
   isPendingApproval,
@@ -125,20 +124,6 @@ export function AgentComposer({
     []
   );
 
-  // ── Keyboard handling ─────────────────────────────────────────────────────
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (shouldSubmitOnKeyDown(e)) {
-        e.preventDefault();
-        if (canSend && !isStreaming) {
-          handleSendMessage();
-        }
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [canSend, isStreaming, content, attachments]
-  );
-
   // ── Send message ──────────────────────────────────────────────────────────
   const handleSendMessage = useCallback(async () => {
     if (!isValidMessage(content)) return;
@@ -165,6 +150,19 @@ export function AgentComposer({
     // Focus textarea after send
     textareaRef.current?.focus();
   }, [content, attachments, onSend]);
+
+  // ── Keyboard handling ─────────────────────────────────────────────────────
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (shouldSubmitOnKeyDown(e)) {
+        e.preventDefault();
+        if (canSend && !isStreaming) {
+          handleSendMessage();
+        }
+      }
+    },
+    [canSend, isStreaming, handleSendMessage]
+  );
 
   // ── Attachment handling ────────────────────────────────────────────────────
   const addFiles = useCallback(

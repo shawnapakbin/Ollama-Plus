@@ -18,6 +18,23 @@ import { createGateway } from '../mcp/lib/gateway.mjs';
  * Validates: Requirements 4.2, 4.3, 7.3
  */
 
+// ─── Local test types ────────────────────────────────────────────────────────
+
+type IpcHandler = (...args: unknown[]) => unknown;
+type StreamEvent = Record<string, unknown>;
+interface FetchOptions { body: string }
+type ChatChunk = Record<string, unknown>;
+interface ChatMessage { role: string; content?: string; [key: string]: unknown }
+interface Gateway {
+  register: (
+    server: string,
+    action: string,
+    handler: (payload: Record<string, unknown>, context: Record<string, unknown>) => unknown,
+    meta: Record<string, unknown>
+  ) => void;
+  [key: string]: unknown;
+}
+
 // ─── Test Infrastructure (mirrors agentChatHandlersTools.test.ts) ─────────────
 
 const tempDirs: string[] = [];
@@ -36,9 +53,9 @@ function createTempStatePath(): string {
 }
 
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -51,11 +68,11 @@ function createMockIpcMain() {
 }
 
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: Array<{ channel: string; payload: StreamEvent }> = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) {
+      send(channel: string, payload: StreamEvent) {
         sentEvents.push({ channel, payload });
       }
     },
@@ -67,10 +84,10 @@ function createMockMainWindow() {
   };
 }
 
-function createScriptedFetch(turns: any[][]) {
-  const requestBodies: any[] = [];
+function createScriptedFetch(turns: ChatChunk[][]) {
+  const requestBodies: Array<Record<string, unknown> | null> = [];
   let turnIndex = 0;
-  const fetchImpl = async (_url: string, options: any) => {
+  const fetchImpl = async (_url: string, options: FetchOptions) => {
     try {
       requestBodies.push(JSON.parse(options.body));
     } catch {
@@ -97,7 +114,7 @@ function createScriptedFetch(turns: any[][]) {
 async function waitForCompletion(
   window: ReturnType<typeof createMockMainWindow>,
   timeoutMs = 3000
-): Promise<any> {
+): Promise<StreamEvent | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const events = window.getStreamEvents();
@@ -114,7 +131,7 @@ const MODEL = 'qwen3.5:9b';
 const ENDPOINT = 'http://localhost:11434';
 
 /** A model turn requesting one tool call for `toolName` with `args`. */
-function toolCallTurn(toolName: string, args: any): any[] {
+function toolCallTurn(toolName: string, args: Record<string, unknown>): ChatChunk[] {
   return [
     {
       message: {
@@ -129,19 +146,19 @@ function toolCallTurn(toolName: string, args: any): any[] {
 }
 
 /** A final text turn (no tool calls). */
-function finalTextTurn(text: string): any[] {
+function finalTextTurn(text: string): ChatChunk[] {
   return [
     { message: { role: 'assistant', content: text }, done: false },
     { message: { role: 'assistant', content: '' }, done: true, eval_count: 5 }
   ];
 }
 
-function setup(turns: any[][], gateway: any) {
+function setup(turns: ChatChunk[][], gateway: Gateway) {
   const statePath = createTempStatePath();
   const ipcMain = createMockIpcMain();
   const window = createMockMainWindow();
   const scripted = createScriptedFetch(turns);
-  const api = registerAgentChatHandlers(ipcMain as any, window as any, {
+  const api = registerAgentChatHandlers(ipcMain, window, {
     statePath,
     fetchImpl: scripted.fetchImpl,
     defaultEndpoint: ENDPOINT,
@@ -151,7 +168,7 @@ function setup(turns: any[][], gateway: any) {
   return { statePath, ipcMain, window, scripted, api, sendHandler };
 }
 
-async function send(sendHandler: Function, content = 'do the thing', extra: any = {}) {
+async function send(sendHandler: IpcHandler, content = 'do the thing', extra: Record<string, unknown> = {}) {
   return sendHandler({}, { surface: 'agent', content, model: MODEL, endpoint: ENDPOINT, ...extra });
 }
 
@@ -163,12 +180,12 @@ describe('Gateway dispatch to correct route and tool-loop re-invocation (Req 4.2
   it('dispatches a model tool call through the real gateway to the registered route, appends role:tool, and re-invokes the model', async () => {
     // Build a REAL gateway and register a route whose handler is a spy that
     // records the params it received and returns a result.
-    const gateway = createGateway();
-    const handlerCalls: Array<{ payload: any; context: any }> = [];
+    const gateway = createGateway() as Gateway;
+    const handlerCalls: Array<{ payload: Record<string, unknown>; context: Record<string, unknown> }> = [];
     gateway.register(
       'folder',
       'read_file',
-      (payload: any, context: any) => {
+      (payload: Record<string, unknown>, context: Record<string, unknown>) => {
         handlerCalls.push({ payload, context });
         return { output: 'FILE CONTENTS: version 5.0.3' };
       },
@@ -206,7 +223,7 @@ describe('Gateway dispatch to correct route and tool-loop re-invocation (Req 4.2
     const bodies = scripted.getRequestBodies();
     expect(bodies.length).toBeGreaterThanOrEqual(2);
     const secondTurnMessages = bodies[1].messages;
-    const toolMessages = secondTurnMessages.filter((m: any) => m.role === 'tool');
+    const toolMessages = secondTurnMessages.filter((m: ChatMessage) => m.role === 'tool');
     expect(toolMessages).toHaveLength(1);
     expect(toolMessages[0].content).toContain('FILE CONTENTS: version 5.0.3');
 

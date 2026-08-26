@@ -24,6 +24,14 @@ import { createGateway } from '../mcp/lib/gateway.mjs';
  * Validates: Requirements 4.4, 5.6, 7.4
  */
 
+// ─── Shared test types ───────────────────────────────────────────────────────
+
+type IpcHandler = (...args: unknown[]) => unknown;
+type StreamEvent = { type?: string; [key: string]: unknown };
+type ChatChunk = Record<string, unknown>;
+type FetchOptions = { body?: string; [key: string]: unknown };
+type RequestBody = Record<string, unknown>;
+
 // ─── Test Infrastructure (mirrors tests/agentChatHandlersTools.test.ts) ───────
 
 const tempDirs: string[] = [];
@@ -42,9 +50,9 @@ function createTempStatePath(): string {
 }
 
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -57,11 +65,11 @@ function createMockIpcMain() {
 }
 
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: Array<{ channel: string; payload: StreamEvent }> = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) {
+      send(channel: string, payload: StreamEvent) {
         sentEvents.push({ channel, payload });
       }
     },
@@ -77,12 +85,12 @@ function createMockMainWindow() {
  * Fake fetch that captures each /api/chat request body and returns a
  * terminating (tool-less) streamed response.
  */
-function createScriptedFetch(turns: any[][]) {
-  const requestBodies: any[] = [];
+function createScriptedFetch(turns: ChatChunk[][]) {
+  const requestBodies: Array<RequestBody | null> = [];
   let turnIndex = 0;
-  const fetchImpl = async (_url: string, options: any) => {
+  const fetchImpl = async (_url: string, options: FetchOptions) => {
     try {
-      requestBodies.push(JSON.parse(options.body));
+      requestBodies.push(JSON.parse(options.body ?? ''));
     } catch {
       requestBodies.push(null);
     }
@@ -107,7 +115,7 @@ function createScriptedFetch(turns: any[][]) {
 async function waitForCompletion(
   window: ReturnType<typeof createMockMainWindow>,
   timeoutMs = 3000
-): Promise<any> {
+): Promise<StreamEvent | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const events = window.getStreamEvents();
@@ -124,7 +132,7 @@ const MODEL = 'qwen3.5:9b';
 const ENDPOINT = 'http://localhost:11434';
 
 /** A final text turn (no tool calls) — terminates the tool loop immediately. */
-function finalTextTurn(text: string): any[] {
+function finalTextTurn(text: string): ChatChunk[] {
   return [
     { message: { role: 'assistant', content: text }, done: false },
     { message: { role: 'assistant', content: '' }, done: true, eval_count: 5 }
@@ -135,18 +143,22 @@ function finalTextTurn(text: string): any[] {
  * Wire the Agent handlers with the given gateway (which may be undefined),
  * send one message, and return the first captured /api/chat request body.
  */
-async function captureFirstRequestBody(gateway: any): Promise<any> {
+async function captureFirstRequestBody(gateway: unknown): Promise<RequestBody> {
   const statePath = createTempStatePath();
   const ipcMain = createMockIpcMain();
   const window = createMockMainWindow();
   const scripted = createScriptedFetch([finalTextTurn('done')]);
 
-  registerAgentChatHandlers(ipcMain as any, window as any, {
-    statePath,
-    fetchImpl: scripted.fetchImpl,
-    defaultEndpoint: ENDPOINT,
-    mcpGateway: gateway
-  });
+  registerAgentChatHandlers(
+    ipcMain as unknown as Parameters<typeof registerAgentChatHandlers>[0],
+    window as unknown as Parameters<typeof registerAgentChatHandlers>[1],
+    {
+      statePath,
+      fetchImpl: scripted.fetchImpl,
+      defaultEndpoint: ENDPOINT,
+      mcpGateway: gateway
+    } as unknown as Parameters<typeof registerAgentChatHandlers>[2]
+  );
 
   const sendHandler = ipcMain.getHandler(AGENT_CHAT_CHANNELS.SEND_MESSAGE)!;
   await sendHandler(
@@ -155,7 +167,7 @@ async function captureFirstRequestBody(gateway: any): Promise<any> {
   );
   await waitForCompletion(window);
 
-  return scripted.getRequestBodies()[0];
+  return scripted.getRequestBodies()[0] as RequestBody;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

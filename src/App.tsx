@@ -472,7 +472,6 @@ function App() {
   }, [bridgeHealth]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
-  const [isPlanningRun, setIsPlanningRun] = useState(false);
   const [isRefreshingModels, setIsRefreshingModels] = useState(false);
   const [isRefreshingMcpStatus, setIsRefreshingMcpStatus] = useState(false);
   const [isSavingServer, setIsSavingServer] = useState(false);
@@ -987,22 +986,6 @@ function App() {
       setChatConfig(saved);
     } catch (configError) {
       setError(configError instanceof Error ? configError.message : String(configError));
-    }
-  }
-
-  async function handleStartRun(graphId: string) {
-    setIsPlanningRun(true);
-    setError('');
-
-    try {
-      const preferredSessionId = activeSessionId || sessions[0]?.id;
-      const run = await runtimeClient.startRun(graphId, preferredSessionId);
-      setActiveGraphId(run.graphId);
-      await refreshSessionData(run.sessionId);
-    } catch (runError) {
-      setError(runError instanceof Error ? runError.message : String(runError));
-    } finally {
-      setIsPlanningRun(false);
     }
   }
 

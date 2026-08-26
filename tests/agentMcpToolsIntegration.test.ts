@@ -24,6 +24,25 @@ import {
  * Validates: Requirements 2.1, 2.2, 2.3, 2.4, 3.1, 3.3, 3.4
  */
 
+// ─── Local test types ────────────────────────────────────────────────────────
+
+type IpcHandler = (...args: unknown[]) => unknown;
+type StreamEvent = Record<string, unknown>;
+interface FetchOptions { body: string }
+type ChatChunk = Record<string, unknown>;
+interface McpTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+interface DispatchRequest {
+  server: string;
+  action: string;
+  payload?: Record<string, unknown>;
+}
+interface SendResult { sessionId: string; [key: string]: unknown }
+interface ChatMessage { role: string; content?: string; [key: string]: unknown }
+
 // ─── Infrastructure ──────────────────────────────────────────────────────────
 
 const tempDirs: string[] = [];
@@ -42,20 +61,20 @@ function createTempStatePath(): string {
 }
 
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) { handlers.set(channel, handler); },
+    handle(channel: string, handler: IpcHandler) { handlers.set(channel, handler); },
     removeHandler(channel: string) { handlers.delete(channel); },
     getHandler(channel: string) { return handlers.get(channel); }
   };
 }
 
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: Array<{ channel: string; payload: StreamEvent }> = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) { sentEvents.push({ channel, payload }); }
+      send(channel: string, payload: StreamEvent) { sentEvents.push({ channel, payload }); }
     },
     getStreamEvents() {
       return sentEvents
@@ -67,11 +86,11 @@ function createMockMainWindow() {
 
 /** Fake gateway with a scripted per-tool output map. */
 function createMockMcpGateway(opts: {
-  tools?: any[];
+  tools?: McpTool[];
   outputs?: Record<string, string>;
   slowMs?: number;
 } = {}) {
-  const calls: Array<{ server: string; action: string; payload: any }> = [];
+  const calls: Array<{ server: string; action: string; payload?: Record<string, unknown> }> = [];
   const tools = opts.tools ?? [
     {
       name: 'folder_read_file',
@@ -80,7 +99,7 @@ function createMockMcpGateway(opts: {
     }
   ];
   return {
-    dispatch: async (request: { server: string; action: string; payload?: any }) => {
+    dispatch: async (request: DispatchRequest) => {
       calls.push({ server: request.server, action: request.action, payload: request.payload });
       if (opts.slowMs) await new Promise((r) => setTimeout(r, opts.slowMs));
       const key = `${request.server}_${request.action}`;
@@ -95,10 +114,10 @@ function createMockMcpGateway(opts: {
  * Scripted fetch that dispenses turns in order. Once past the scripted turns
  * it keeps returning the last turn (used only when tests script enough turns).
  */
-function createScriptedFetch(turns: any[][]) {
-  const requestBodies: any[] = [];
+function createScriptedFetch(turns: ChatChunk[][]) {
+  const requestBodies: Array<Record<string, unknown> | null> = [];
   let turnIndex = 0;
-  const fetchImpl = async (_url: string, options: any) => {
+  const fetchImpl = async (_url: string, options: FetchOptions) => {
     try { requestBodies.push(JSON.parse(options.body)); } catch { requestBodies.push(null); }
     const chunks = turns[Math.min(turnIndex, turns.length - 1)] || [];
     turnIndex += 1;
@@ -128,7 +147,7 @@ async function waitForCompletion(
   window: ReturnType<typeof createMockMainWindow>,
   count = 1,
   timeoutMs = 4000
-): Promise<any> {
+): Promise<StreamEvent | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const terminals = window
@@ -143,7 +162,7 @@ async function waitForCompletion(
 const ENDPOINT = 'http://localhost:11434';
 const MODEL = 'qwen3.5:9b';
 
-function toolCallTurn(toolName: string, args: any): any[] {
+function toolCallTurn(toolName: string, args: Record<string, unknown>): ChatChunk[] {
   return [
     {
       message: {
@@ -157,7 +176,7 @@ function toolCallTurn(toolName: string, args: any): any[] {
   ];
 }
 
-function finalTextTurn(text: string): any[] {
+function finalTextTurn(text: string): ChatChunk[] {
   return [
     { message: { role: 'assistant', content: text }, done: false },
     { message: { role: 'assistant', content: '' }, done: true, eval_count: 5 }
@@ -180,7 +199,7 @@ describe('Integration: full tool-using Agent flow (Req 2.1-2.4, 3.4)', () => {
       toolCallTurn('folder_read_file', { path: 'package.json' }),
       finalTextTurn('<think>the tool returned 5.0.3</think>The version is 5.0.3.')
     ]);
-    const api = registerAgentChatHandlers(ipcMain as any, window as any, {
+    const api = registerAgentChatHandlers(ipcMain, window, {
       statePath,
       fetchImpl: scripted.fetchImpl,
       defaultEndpoint: ENDPOINT,
@@ -189,8 +208,8 @@ describe('Integration: full tool-using Agent flow (Req 2.1-2.4, 3.4)', () => {
     const sendHandler = ipcMain.getHandler(AGENT_CHAT_CHANNELS.SEND_MESSAGE)!;
 
     const content = 'read package.json and tell me the version';
-    const result: any = await sendHandler({}, { surface: 'agent', content, model: MODEL, endpoint: ENDPOINT });
-    const terminal = await waitForCompletion(window);
+    const result = await sendHandler({}, { surface: 'agent', content, model: MODEL, endpoint: ENDPOINT }) as SendResult;
+    const terminal = await waitForCompletion(window) as StreamEvent;
 
     // Tool advertised on the first turn.
     expect(Array.isArray(scripted.getRequestBodies()[0].tools)).toBe(true);
@@ -201,7 +220,7 @@ describe('Integration: full tool-using Agent flow (Req 2.1-2.4, 3.4)', () => {
 
     // Tool result fed back on the second turn.
     const secondTurn = scripted.getRequestBodies()[1].messages;
-    const toolMsg = secondTurn.find((m: any) => m.role === 'tool');
+    const toolMsg = secondTurn.find((m: ChatMessage) => m.role === 'tool');
     expect(toolMsg.content).toContain('the version field is 5.0.3');
 
     // Final answer reflects the tool result; thinking separated.
@@ -242,7 +261,7 @@ describe('Integration: context switching within one session (Req 2.2, 3.1, 3.4)'
       toolCallTurn('folder_read_file', { path: 'b.txt' }),
       finalTextTurn('answer three uses the file')
     ]);
-    const api = registerAgentChatHandlers(ipcMain as any, window as any, {
+    const api = registerAgentChatHandlers(ipcMain, window, {
       statePath,
       fetchImpl: scripted.fetchImpl,
       defaultEndpoint: ENDPOINT,
@@ -251,7 +270,7 @@ describe('Integration: context switching within one session (Req 2.2, 3.1, 3.4)'
     const sendHandler = ipcMain.getHandler(AGENT_CHAT_CHANNELS.SEND_MESSAGE)!;
 
     // Message 1
-    const r1: any = await sendHandler({}, { surface: 'agent', content: 'read a.txt', model: MODEL, endpoint: ENDPOINT });
+    const r1 = await sendHandler({}, { surface: 'agent', content: 'read a.txt', model: MODEL, endpoint: ENDPOINT }) as SendResult;
     const t1 = await waitForCompletion(window, 1);
     expect(t1.assistantMessage.content).toBe('answer one uses the file');
     const sessionId = r1.sessionId;
@@ -274,7 +293,7 @@ describe('Integration: context switching within one session (Req 2.2, 3.1, 3.4)'
     // Session state consistent: 3 user + 3 assistant messages.
     const session = api.getSessionStore().get(sessionId);
     expect(session.messageCount).toBe(6);
-    const roles = session.messages.map((m: any) => m.role);
+    const roles = session.messages.map((m: ChatMessage) => m.role);
     expect(roles).toEqual(['user', 'assistant', 'user', 'assistant', 'user', 'assistant']);
   });
 });
@@ -295,7 +314,7 @@ describe('Integration: event feedback and abort (Req 2.4)', () => {
       toolCallTurn('folder_read_file', { path: 'notes.md' }),
       finalTextTurn('here is the summary')
     ]);
-    registerAgentChatHandlers(ipcMain as any, window as any, {
+    registerAgentChatHandlers(ipcMain, window, {
       statePath,
       fetchImpl: scripted.fetchImpl,
       defaultEndpoint: ENDPOINT,
@@ -336,7 +355,7 @@ describe('Integration: event feedback and abort (Req 2.4)', () => {
     const scripted = createScriptedFetch([
       toolCallTurn('folder_read_file', { path: 'x' })
     ]);
-    const api = registerAgentChatHandlers(ipcMain as any, window as any, {
+    const api = registerAgentChatHandlers(ipcMain, window, {
       statePath,
       fetchImpl: scripted.fetchImpl,
       defaultEndpoint: ENDPOINT,
@@ -345,7 +364,7 @@ describe('Integration: event feedback and abort (Req 2.4)', () => {
     const sendHandler = ipcMain.getHandler(AGENT_CHAT_CHANNELS.SEND_MESSAGE)!;
     const stopHandler = ipcMain.getHandler(AGENT_CHAT_CHANNELS.STOP)!;
 
-    const result: any = await sendHandler({}, { surface: 'agent', content: 'loop please', model: MODEL, endpoint: ENDPOINT });
+    const result = await sendHandler({}, { surface: 'agent', content: 'loop please', model: MODEL, endpoint: ENDPOINT }) as SendResult;
 
     // Abort while the (slow) tool round is in flight.
     await new Promise((r) => setTimeout(r, 30));
@@ -360,8 +379,8 @@ describe('Integration: event feedback and abort (Req 2.4)', () => {
 
     // Only the user message persisted; no assistant message committed.
     const session = api.getSessionStore().get(result.sessionId);
-    const assistant = session.messages.find((m: any) => m.role === 'assistant');
+    const assistant = session.messages.find((m: ChatMessage) => m.role === 'assistant');
     expect(assistant).toBeUndefined();
-    expect(session.messages.filter((m: any) => m.role === 'user')).toHaveLength(1);
+    expect(session.messages.filter((m: ChatMessage) => m.role === 'user')).toHaveLength(1);
   });
 });

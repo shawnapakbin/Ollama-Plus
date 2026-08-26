@@ -24,6 +24,12 @@ import {
 // combined system message.
 // Validates: Requirements 5.6
 
+// ─── Shared test types ───────────────────────────────────────────────────────
+
+type IpcHandler = (...args: unknown[]) => unknown;
+type StreamEvent = { type?: string; [key: string]: unknown };
+type ChatChunk = Record<string, unknown>;
+
 // ─── Test Infrastructure (mirrors tests/agentChatHandlersTools.test.ts) ───────
 
 const tempDirs: string[] = [];
@@ -42,9 +48,9 @@ function createTempStatePath(): string {
 }
 
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -57,33 +63,33 @@ function createMockIpcMain() {
 }
 
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: Array<{ channel: string; payload: unknown }> = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) {
+      send(channel: string, payload: unknown) {
         sentEvents.push({ channel, payload });
       }
     },
-    getStreamEvents() {
+    getStreamEvents(): StreamEvent[] {
       return sentEvents
         .filter((e) => e.channel === AGENT_CHAT_CHANNELS.STREAM)
-        .map((e) => e.payload);
+        .map((e) => e.payload as StreamEvent);
     }
   };
 }
 
 /** A final text turn (no tool calls) — completes the loop in one round. */
-function finalTextTurn(text: string): any[] {
+function finalTextTurn(text: string): ChatChunk[] {
   return [
     { message: { role: 'assistant', content: text }, done: false },
     { message: { role: 'assistant', content: '' }, done: true, eval_count: 5 }
   ];
 }
 
-function createScriptedFetch(turns: any[][]) {
+function createScriptedFetch(turns: ChatChunk[][]) {
   let turnIndex = 0;
-  const fetchImpl = async (_url: string, _options: any) => {
+  const fetchImpl = async () => {
     const chunks = turns[Math.min(turnIndex, turns.length - 1)] || [];
     turnIndex += 1;
     const encoder = new TextEncoder();
@@ -105,7 +111,7 @@ function createScriptedFetch(turns: any[][]) {
 async function waitForCompletion(
   window: ReturnType<typeof createMockMainWindow>,
   timeoutMs = 3000
-): Promise<any> {
+): Promise<StreamEvent | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const events = window.getStreamEvents();
@@ -145,21 +151,25 @@ describe('Property 8: The combined system message is never persisted as a sessio
           const window = createMockMainWindow();
           const scripted = createScriptedFetch([finalTextTurn('the final answer')]);
 
-          const api = registerAgentChatHandlers(ipcMain as any, window as any, {
-            statePath,
-            fetchImpl: scripted.fetchImpl,
-            defaultEndpoint: ENDPOINT,
-            mcpGateway: null,
-            // Inject the two system-prompt layers under test.
-            getChatConfig: () => ({ systemPrompt: system }),
-            resolveMaster: () => master
-          });
+          const api = registerAgentChatHandlers(
+            ipcMain as unknown as Parameters<typeof registerAgentChatHandlers>[0],
+            window as unknown as Parameters<typeof registerAgentChatHandlers>[1],
+            {
+              statePath,
+              fetchImpl: scripted.fetchImpl,
+              defaultEndpoint: ENDPOINT,
+              mcpGateway: null,
+              // Inject the two system-prompt layers under test.
+              getChatConfig: () => ({ systemPrompt: system }),
+              resolveMaster: () => master
+            }
+          );
 
           const sendHandler = ipcMain.getHandler(AGENT_CHAT_CHANNELS.SEND_MESSAGE)!;
-          const result: any = await sendHandler(
+          const result = (await sendHandler(
             {},
             { surface: 'agent', content: userContent, model: MODEL, endpoint: ENDPOINT }
-          );
+          )) as { sessionId: string };
 
           const terminal = await waitForCompletion(window);
           expect(terminal?.type).toBe('chat-completed');

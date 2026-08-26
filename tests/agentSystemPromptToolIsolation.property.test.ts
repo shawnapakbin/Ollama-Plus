@@ -30,6 +30,26 @@ import {
  * Validates: Requirements 5.3, 5.4 (also covers Req 7.6 preservation)
  */
 
+// ─── Shared test types ───────────────────────────────────────────────────────
+
+type IpcHandler = (...args: unknown[]) => unknown;
+type StreamEvent = { type?: string; [key: string]: unknown };
+type ChatChunk = Record<string, unknown>;
+type FetchOptions = { body?: string; [key: string]: unknown };
+type RequestBody = Record<string, unknown>;
+type ChatMessage = { role?: string; content?: string; [key: string]: unknown };
+
+interface CatalogTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+interface StubGateway {
+  dispatch: (...args: unknown[]) => Promise<unknown>;
+  listTools: () => Promise<CatalogTool[]>;
+}
+
 // ─── Infrastructure ──────────────────────────────────────────────────────────
 
 const tempDirs: string[] = [];
@@ -48,20 +68,20 @@ function createTempStatePath(): string {
 }
 
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) { handlers.set(channel, handler); },
+    handle(channel: string, handler: IpcHandler) { handlers.set(channel, handler); },
     removeHandler(channel: string) { handlers.delete(channel); },
     getHandler(channel: string) { return handlers.get(channel); }
   };
 }
 
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: Array<{ channel: string; payload: StreamEvent }> = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) { sentEvents.push({ channel, payload }); }
+      send(channel: string, payload: StreamEvent) { sentEvents.push({ channel, payload }); }
     },
     getStreamEvents() {
       return sentEvents
@@ -72,14 +92,14 @@ function createMockMainWindow() {
 }
 
 /** A stub MCP gateway advertising a fixed catalog of tools. */
-function createStubMcpGateway(tools: any[]) {
+function createStubMcpGateway(tools: CatalogTool[]): StubGateway {
   return {
     dispatch: async () => ({ output: 'ok' }),
     listTools: async () => tools
   };
 }
 
-function finalTextTurn(text: string): any[] {
+function finalTextTurn(text: string): ChatChunk[] {
   return [
     { message: { role: 'assistant', content: text }, done: false },
     { message: { role: 'assistant', content: '' }, done: true, eval_count: 3 }
@@ -88,9 +108,9 @@ function finalTextTurn(text: string): any[] {
 
 /** A fetch impl that captures each outgoing body and returns a single text turn. */
 function createCapturingFetch() {
-  const requestBodies: any[] = [];
-  const fetchImpl = async (_url: string, options: any) => {
-    try { requestBodies.push(JSON.parse(options.body)); } catch { requestBodies.push(null); }
+  const requestBodies: Array<RequestBody | null> = [];
+  const fetchImpl = async (_url: string, options: FetchOptions) => {
+    try { requestBodies.push(JSON.parse(options.body ?? '')); } catch { requestBodies.push(null); }
     const encoder = new TextEncoder();
     const chunks = finalTextTurn('answer');
     return {
@@ -111,7 +131,7 @@ function createCapturingFetch() {
 async function waitForCompletion(
   window: ReturnType<typeof createMockMainWindow>,
   timeoutMs = 4000
-): Promise<any> {
+): Promise<StreamEvent | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const events = window.getStreamEvents();
@@ -126,7 +146,7 @@ const ENDPOINT = 'http://localhost:11434';
 const MODEL = 'qwen3.5:9b';
 
 // A fixed catalog shared by both runs so buildToolCatalog produces the same tools.
-const CATALOG = [
+const CATALOG: CatalogTool[] = [
   { name: 'folder_read_file', description: 'read a file', parameters: { type: 'object', properties: {} } },
   { name: 'terminal_run', description: 'run a command', parameters: { type: 'object', properties: {} } },
   { name: 'http_fetch', description: 'fetch a url', parameters: { type: 'object', properties: {} } }
@@ -136,22 +156,26 @@ const CATALOG = [
  * Drives one send through a freshly-registered handler with the given master
  * and system prompts, returning the single captured outgoing /api/chat body.
  */
-async function captureOutgoingBody(master: string, system: string): Promise<any> {
+async function captureOutgoingBody(master: string, system: string): Promise<RequestBody> {
   const statePath = createTempStatePath();
   const ipcMain = createMockIpcMain();
   const window = createMockMainWindow();
   const capturing = createCapturingFetch();
   const gateway = createStubMcpGateway(CATALOG);
 
-  registerAgentChatHandlers(ipcMain as any, window as any, {
-    statePath,
-    fetchImpl: capturing.fetchImpl,
-    defaultEndpoint: ENDPOINT,
-    mcpGateway: gateway,
-    // Inject the two layers directly so no env/state mutation is required.
-    getChatConfig: () => ({ systemPrompt: system }),
-    resolveMaster: () => master
-  });
+  registerAgentChatHandlers(
+    ipcMain as unknown as Parameters<typeof registerAgentChatHandlers>[0],
+    window as unknown as Parameters<typeof registerAgentChatHandlers>[1],
+    {
+      statePath,
+      fetchImpl: capturing.fetchImpl,
+      defaultEndpoint: ENDPOINT,
+      mcpGateway: gateway,
+      // Inject the two layers directly so no env/state mutation is required.
+      getChatConfig: () => ({ systemPrompt: system }),
+      resolveMaster: () => master
+    } as unknown as Parameters<typeof registerAgentChatHandlers>[2]
+  );
 
   const sendHandler = ipcMain.getHandler(AGENT_CHAT_CHANNELS.SEND_MESSAGE)!;
   await sendHandler({}, { surface: 'agent', content: 'hello', model: MODEL, endpoint: ENDPOINT });
@@ -159,7 +183,7 @@ async function captureOutgoingBody(master: string, system: string): Promise<any>
 
   const bodies = capturing.getRequestBodies();
   expect(bodies.length).toBeGreaterThanOrEqual(1);
-  return bodies[0];
+  return bodies[0] as RequestBody;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -187,8 +211,8 @@ describe('Property 7: tool advertisement is independent of the system message (R
           expect(withBody.tools).toEqual(withoutBody.tools);
 
           // Both-empty run carries no role:'system' entry (Req 5.3).
-          const systemEntries = (withoutBody.messages || []).filter(
-            (m: any) => m.role === 'system'
+          const systemEntries = ((withoutBody.messages as ChatMessage[]) || []).filter(
+            (m) => m.role === 'system'
           );
           expect(systemEntries).toHaveLength(0);
         }
@@ -208,8 +232,9 @@ describe('Property 7: tool advertisement is independent of the system message (R
           const withoutBody = await captureOutgoingBody('', '');
 
           // A system message must lead the transcript when master is non-empty.
-          expect(withBody.messages[0].role).toBe('system');
-          const systemEntries = withBody.messages.filter((m: any) => m.role === 'system');
+          const messages = withBody.messages as ChatMessage[];
+          expect(messages[0].role).toBe('system');
+          const systemEntries = messages.filter((m) => m.role === 'system');
           expect(systemEntries).toHaveLength(1);
 
           // Yet the advertised tools are byte-identical to the system-less run.

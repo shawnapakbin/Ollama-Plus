@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   registerAgentChatHandlers,
   AGENT_CHAT_CHANNELS
@@ -29,6 +29,34 @@ import {
  * Validates: Requirements 1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4
  */
 
+// ─── Local type definitions ──────────────────────────────────────────────────
+
+type IpcHandler = (event: unknown, ...args: unknown[]) => unknown;
+
+interface StreamEvent {
+  channel: string;
+  payload: Record<string, unknown>;
+}
+
+interface ChatRequestBody {
+  model: string;
+  messages: Array<{ role: string; content: string; tool_calls?: unknown[] }>;
+  tools?: Array<{ type: string; function: { name: string; description?: string; parameters?: unknown } }>;
+  stream?: boolean;
+}
+
+interface McpDispatchRequest {
+  server: string;
+  action: string;
+  payload?: Record<string, unknown>;
+}
+
+interface McpDispatchCall {
+  server: string;
+  action: string;
+  payload: unknown;
+}
+
 // ─── Test Infrastructure ─────────────────────────────────────────────────────
 
 const tempDirs: string[] = [];
@@ -50,9 +78,9 @@ function createTempStatePath(): string {
 
 /** Mock ipcMain capturing registered handlers. */
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -66,11 +94,11 @@ function createMockIpcMain() {
 
 /** Mock BrowserWindow capturing streamed events. */
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: StreamEvent[] = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) {
+      send(channel: string, payload: Record<string, unknown>) {
         sentEvents.push({ channel, payload });
       }
     },
@@ -84,9 +112,9 @@ function createMockMainWindow() {
 
 /** Mock MCP gateway recording dispatch calls. */
 function createMockMcpGateway() {
-  const calls: Array<{ server: string; action: string; payload: any }> = [];
+  const calls: McpDispatchCall[] = [];
   return {
-    dispatch: async (request: { server: string; action: string; payload?: any }) => {
+    dispatch: async (request: McpDispatchRequest) => {
       calls.push({
         server: request.server,
         action: request.action,
@@ -117,13 +145,13 @@ function createMockMcpGateway() {
  *
  * Records every outgoing request body for assertion.
  */
-function createScriptedFetch(turns: any[][]) {
-  const requestBodies: any[] = [];
+function createScriptedFetch(turns: Record<string, unknown>[][]) {
+  const requestBodies: Array<ChatRequestBody | null> = [];
   let turnIndex = 0;
 
-  const fetchImpl = async (_url: string, options: any) => {
+  const fetchImpl = async (_url: string, options: { body: string }) => {
     try {
-      requestBodies.push(JSON.parse(options.body));
+      requestBodies.push(JSON.parse(options.body) as ChatRequestBody);
     } catch {
       requestBodies.push(null);
     }
@@ -135,7 +163,7 @@ function createScriptedFetch(turns: any[][]) {
     return {
       ok: true,
       body: new ReadableStream({
-        start(controller) {
+        start(controller: ReadableStreamDefaultController) {
           for (const chunk of chunks) {
             controller.enqueue(encoder.encode(JSON.stringify(chunk) + '\n'));
           }
@@ -156,7 +184,7 @@ function createScriptedFetch(turns: any[][]) {
 async function waitForCompletion(
   window: ReturnType<typeof createMockMainWindow>,
   timeoutMs = 2000
-): Promise<any> {
+): Promise<Record<string, unknown> | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const events = window.getStreamEvents();
@@ -175,7 +203,7 @@ const MODEL = 'qwen3.5:9b'; // tool-capable model
 const ENDPOINT = 'http://localhost:11434';
 
 /** A model turn that emits a tool call (no text content). */
-const TOOL_CALL_TURN = [
+const TOOL_CALL_TURN: Record<string, unknown>[] = [
   {
     message: {
       role: 'assistant',
@@ -195,7 +223,7 @@ const TOOL_CALL_TURN = [
 ];
 
 /** A final text turn (no tool calls). */
-const FINAL_TEXT_TURN = [
+const FINAL_TEXT_TURN: Record<string, unknown>[] = [
   { message: { role: 'assistant', content: 'The version is 5.0.3.' }, done: false },
   {
     message: { role: 'assistant', content: '' },
@@ -205,14 +233,14 @@ const FINAL_TEXT_TURN = [
   }
 ];
 
-function setup(turns: any[][]) {
+function setup(turns: Record<string, unknown>[][]) {
   const statePath = createTempStatePath();
   const ipcMain = createMockIpcMain();
   const window = createMockMainWindow();
   const gateway = createMockMcpGateway();
   const scripted = createScriptedFetch(turns);
 
-  const api = registerAgentChatHandlers(ipcMain as any, window as any, {
+  const api = registerAgentChatHandlers(ipcMain as unknown as Electron.IpcMain, window as unknown as Electron.BrowserWindow, {
     statePath,
     fetchImpl: scripted.fetchImpl,
     defaultEndpoint: ENDPOINT,
@@ -249,8 +277,8 @@ describe('Agent MCP Tools Exploration (Property 1)', () => {
 
     // EXPECTED BEHAVIOR: the model must be told which tools are available.
     // On unfixed code the body is only { model, stream, messages } — no tools.
-    expect(Array.isArray(bodies[0].tools)).toBe(true);
-    expect(bodies[0].tools.length).toBeGreaterThan(0);
+    expect(Array.isArray(bodies[0]!.tools)).toBe(true);
+    expect(bodies[0]!.tools!.length).toBeGreaterThan(0);
   });
 
   // 2. Tool Call Honored Test
@@ -297,8 +325,8 @@ describe('Agent MCP Tools Exploration (Property 1)', () => {
     // tool message is ever appended.
     expect(bodies.length).toBeGreaterThanOrEqual(2);
 
-    const secondTurnMessages = bodies[1].messages || [];
-    const toolMessages = secondTurnMessages.filter((m: any) => m.role === 'tool');
+    const secondTurnMessages = bodies[1]!.messages || [];
+    const toolMessages = secondTurnMessages.filter((m: { role: string }) => m.role === 'tool');
     expect(toolMessages.length).toBeGreaterThan(0);
   });
 

@@ -33,16 +33,6 @@ function toolCallEventToBlockState(
 }
 
 /**
- * Determines whether an event type is a "separator" that breaks a
- * sequence of consecutive tool calls.
- *
- * Separator events: 'chat-token' and 'chat-completed'
- */
-function isSeparatorEvent(event: AgentChatStreamEvent): boolean {
-  return event.type === 'chat-token' || event.type === 'chat-completed';
-}
-
-/**
  * Groups sequential tool-call-started events from the agent chat stream.
  *
  * - Iterates through events, collecting consecutive tool-call-started events.

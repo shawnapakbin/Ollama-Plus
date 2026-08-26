@@ -16,10 +16,14 @@ import { requestOllamaChat, requestOllamaChatStream } from '../electron/runtime/
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+interface FetchOptions {
+  body: string;
+}
+
 /** Non-streaming fetch that records the outgoing body and returns `payload`. */
-function jsonFetch(payload: any) {
-  const bodies: any[] = [];
-  const fetchImpl = async (_url: string, options: any) => {
+function jsonFetch(payload: unknown) {
+  const bodies: Record<string, unknown>[] = [];
+  const fetchImpl = async (_url: string, options: FetchOptions) => {
     bodies.push(JSON.parse(options.body));
     return { ok: true, json: async () => payload };
   };
@@ -27,10 +31,10 @@ function jsonFetch(payload: any) {
 }
 
 /** Streaming fetch that records the outgoing body and streams NDJSON `chunks`. */
-function streamFetch(chunks: any[]) {
-  const bodies: any[] = [];
+function streamFetch(chunks: unknown[]) {
+  const bodies: Record<string, unknown>[] = [];
   const encoder = new TextEncoder();
-  const fetchImpl = async (_url: string, options: any) => {
+  const fetchImpl = async (_url: string, options: FetchOptions) => {
     bodies.push(JSON.parse(options.body));
     return {
       ok: true,

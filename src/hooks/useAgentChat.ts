@@ -278,7 +278,7 @@ export function useAgentChat(config: UseAgentChatConfig): UseAgentChatReturn {
       });
     },
 
-    onError: (event) => {
+    onError: () => {
       setChatState('error');
 
       // Finalize any in-progress streaming with partial content

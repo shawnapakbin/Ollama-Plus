@@ -24,6 +24,24 @@ import { requestOllamaChatStream } from '../electron/runtime/ollamaClient.js';
  * Validates: Requirements 2.1, 2.2, 2.3, 3.1, 3.2
  */
 
+// ─── Local test types ────────────────────────────────────────────────────────
+
+type IpcHandler = (...args: unknown[]) => unknown;
+type StreamEvent = Record<string, unknown>;
+interface FetchOptions { body: string }
+type ChatChunk = Record<string, unknown>;
+interface McpTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+interface DispatchRequest {
+  server: string;
+  action: string;
+  payload?: Record<string, unknown>;
+}
+interface ToolDescriptor { function: { name: string } }
+
 // ─── Infrastructure ──────────────────────────────────────────────────────────
 
 const tempDirs: string[] = [];
@@ -42,20 +60,20 @@ function createTempStatePath(): string {
 }
 
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) { handlers.set(channel, handler); },
+    handle(channel: string, handler: IpcHandler) { handlers.set(channel, handler); },
     removeHandler(channel: string) { handlers.delete(channel); },
     getHandler(channel: string) { return handlers.get(channel); }
   };
 }
 
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: Array<{ channel: string; payload: StreamEvent }> = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) { sentEvents.push({ channel, payload }); }
+      send(channel: string, payload: StreamEvent) { sentEvents.push({ channel, payload }); }
     },
     getStreamEvents() {
       return sentEvents
@@ -65,10 +83,10 @@ function createMockMainWindow() {
   };
 }
 
-function createMockMcpGateway(tools: any[]) {
-  const calls: Array<{ server: string; action: string; payload: any }> = [];
+function createMockMcpGateway(tools: McpTool[]) {
+  const calls: Array<{ server: string; action: string; payload?: Record<string, unknown> }> = [];
   return {
-    dispatch: async (request: { server: string; action: string; payload?: any }) => {
+    dispatch: async (request: DispatchRequest) => {
       calls.push({ server: request.server, action: request.action, payload: request.payload });
       return { output: 'ok' };
     },
@@ -77,10 +95,10 @@ function createMockMcpGateway(tools: any[]) {
   };
 }
 
-function createScriptedFetch(turns: any[][]) {
-  const requestBodies: any[] = [];
+function createScriptedFetch(turns: ChatChunk[][]) {
+  const requestBodies: Array<Record<string, unknown> | null> = [];
   let turnIndex = 0;
-  const fetchImpl = async (_url: string, options: any) => {
+  const fetchImpl = async (_url: string, options: FetchOptions) => {
     try { requestBodies.push(JSON.parse(options.body)); } catch { requestBodies.push(null); }
     const chunks = turns[Math.min(turnIndex, turns.length - 1)] || [];
     turnIndex += 1;
@@ -103,7 +121,7 @@ function createScriptedFetch(turns: any[][]) {
 async function waitForCompletion(
   window: ReturnType<typeof createMockMainWindow>,
   timeoutMs = 4000
-): Promise<any> {
+): Promise<StreamEvent | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const events = window.getStreamEvents();
@@ -117,14 +135,14 @@ async function waitForCompletion(
 const ENDPOINT = 'http://localhost:11434';
 const MODEL = 'qwen3.5:9b';
 
-function finalTextTurn(text: string): any[] {
+function finalTextTurn(text: string): ChatChunk[] {
   return [
     { message: { role: 'assistant', content: text }, done: false },
     { message: { role: 'assistant', content: '' }, done: true, eval_count: 3 }
   ];
 }
 
-function toolCallTurn(toolName: string): any[] {
+function toolCallTurn(toolName: string): ChatChunk[] {
   return [
     {
       message: {
@@ -178,7 +196,7 @@ describe('Property A: advertised tools match the catalog exactly (Req 2.1, 3.2)'
           const ipcMain = createMockIpcMain();
           const window = createMockMainWindow();
           const scripted = createScriptedFetch([finalTextTurn('answer')]);
-          registerAgentChatHandlers(ipcMain as any, window as any, {
+          registerAgentChatHandlers(ipcMain, window, {
             statePath,
             fetchImpl: scripted.fetchImpl,
             defaultEndpoint: ENDPOINT,
@@ -191,7 +209,7 @@ describe('Property A: advertised tools match the catalog exactly (Req 2.1, 3.2)'
 
           const body = scripted.getRequestBodies()[0];
           expect(Array.isArray(body.tools)).toBe(true);
-          const advertised = body.tools.map((t: any) => t.function.name).sort();
+          const advertised = (body.tools as ToolDescriptor[]).map((t) => t.function.name).sort();
           const expected = catalog.map((t) => t.name).sort();
           expect(advertised).toEqual(expected);
         }
@@ -210,7 +228,7 @@ describe('Property A: advertised tools match the catalog exactly (Req 2.1, 3.2)'
           const ipcMain = createMockIpcMain();
           const window = createMockMainWindow();
           const scripted = createScriptedFetch([finalTextTurn('answer')]);
-          registerAgentChatHandlers(ipcMain as any, window as any, {
+          registerAgentChatHandlers(ipcMain, window, {
             statePath,
             fetchImpl: scripted.fetchImpl,
             defaultEndpoint: ENDPOINT,
@@ -254,14 +272,14 @@ describe('Property B: tool calls dispatched once; loop stops at first tool-less 
           }
           const gateway = createMockMcpGateway(catalog);
 
-          const turns: any[][] = toolNames.map((n) => toolCallTurn(n));
+          const turns: ChatChunk[][] = toolNames.map((n) => toolCallTurn(n));
           turns.push(finalTextTurn('final answer'));
 
           const statePath = createTempStatePath();
           const ipcMain = createMockIpcMain();
           const window = createMockMainWindow();
           const scripted = createScriptedFetch(turns);
-          registerAgentChatHandlers(ipcMain as any, window as any, {
+          registerAgentChatHandlers(ipcMain, window, {
             statePath,
             fetchImpl: scripted.fetchImpl,
             defaultEndpoint: ENDPOINT,
@@ -308,9 +326,9 @@ describe('Property C: non-tool inputs — request and stream match the no-tools 
           ];
 
           // ── Baseline: call requestOllamaChatStream directly with NO tools. ──
-          const baselineBodies: any[] = [];
+          const baselineBodies: Record<string, unknown>[] = [];
           const baselineDeltas: string[] = [];
-          const baselineFetch = async (_url: string, options: any) => {
+          const baselineFetch = async (_url: string, options: FetchOptions) => {
             baselineBodies.push(JSON.parse(options.body));
             const encoder = new TextEncoder();
             return {
@@ -337,7 +355,7 @@ describe('Property C: non-tool inputs — request and stream match the no-tools 
           const ipcMain = createMockIpcMain();
           const window = createMockMainWindow();
           const scripted = createScriptedFetch([turn]);
-          registerAgentChatHandlers(ipcMain as any, window as any, {
+          registerAgentChatHandlers(ipcMain, window, {
             statePath,
             fetchImpl: scripted.fetchImpl,
             defaultEndpoint: ENDPOINT,

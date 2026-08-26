@@ -24,6 +24,23 @@ import {
  * Validates: Requirements 6.3
  */
 
+// ─── Shared test types ───────────────────────────────────────────────────────
+
+type IpcHandler = (...args: unknown[]) => unknown;
+type StreamEvent = { type?: string; [key: string]: unknown };
+type ChatChunk = Record<string, unknown>;
+type FetchOptions = { body?: string; [key: string]: unknown };
+type RequestBody = Record<string, unknown>;
+
+/** Minimal stub gateway shape wired into registerAgentChatHandlers. */
+interface StubGateway {
+  dispatch: (...args: unknown[]) => Promise<unknown>;
+  listTools: () => unknown;
+  getListToolsCalls?: () => number;
+}
+
+type RegisterOptions = Parameters<typeof registerAgentChatHandlers>[2];
+
 // ─── Test Infrastructure (mirrors existing agent chat handler tests) ─────────
 
 const tempDirs: string[] = [];
@@ -42,9 +59,9 @@ function createTempStatePath(): string {
 }
 
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -57,11 +74,11 @@ function createMockIpcMain() {
 }
 
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: Array<{ channel: string; payload: StreamEvent }> = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) {
+      send(channel: string, payload: StreamEvent) {
         sentEvents.push({ channel, payload });
       }
     },
@@ -77,7 +94,7 @@ function createMockMainWindow() {
  * Stub gateway whose `listTools` always throws. It also exposes a working
  * `dispatch` so the toolDispatcher (and therefore buildToolCatalog) is wired.
  */
-function createThrowingListToolsGateway() {
+function createThrowingListToolsGateway(): StubGateway {
   let listToolsCalls = 0;
   return {
     dispatch: async () => ({ output: 'unused' }),
@@ -89,12 +106,12 @@ function createThrowingListToolsGateway() {
   };
 }
 
-function createScriptedFetch(turns: any[][]) {
-  const requestBodies: any[] = [];
+function createScriptedFetch(turns: ChatChunk[][]) {
+  const requestBodies: Array<RequestBody | null> = [];
   let turnIndex = 0;
-  const fetchImpl = async (_url: string, options: any) => {
+  const fetchImpl = async (_url: string, options: FetchOptions) => {
     try {
-      requestBodies.push(JSON.parse(options.body));
+      requestBodies.push(JSON.parse(options.body ?? ''));
     } catch {
       requestBodies.push(null);
     }
@@ -119,7 +136,7 @@ function createScriptedFetch(turns: any[][]) {
 async function waitForCompletion(
   window: ReturnType<typeof createMockMainWindow>,
   timeoutMs = 3000
-): Promise<any> {
+): Promise<StreamEvent | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const events = window.getStreamEvents();
@@ -135,29 +152,33 @@ async function waitForCompletion(
 const MODEL = 'qwen3.5:9b';
 const ENDPOINT = 'http://localhost:11434';
 
-function finalTextTurn(text: string): any[] {
+function finalTextTurn(text: string): ChatChunk[] {
   return [
     { message: { role: 'assistant', content: text }, done: false },
     { message: { role: 'assistant', content: '' }, done: true, eval_count: 5 }
   ];
 }
 
-function setup(turns: any[][], gateway: any) {
+function setup(turns: ChatChunk[][], gateway: StubGateway) {
   const statePath = createTempStatePath();
   const ipcMain = createMockIpcMain();
   const window = createMockMainWindow();
   const scripted = createScriptedFetch(turns);
-  const api = registerAgentChatHandlers(ipcMain as any, window as any, {
-    statePath,
-    fetchImpl: scripted.fetchImpl,
-    defaultEndpoint: ENDPOINT,
-    mcpGateway: gateway
-  });
+  const api = registerAgentChatHandlers(
+    ipcMain as unknown as Parameters<typeof registerAgentChatHandlers>[0],
+    window as unknown as Parameters<typeof registerAgentChatHandlers>[1],
+    {
+      statePath,
+      fetchImpl: scripted.fetchImpl,
+      defaultEndpoint: ENDPOINT,
+      mcpGateway: gateway
+    } as unknown as RegisterOptions
+  );
   const sendHandler = ipcMain.getHandler(AGENT_CHAT_CHANNELS.SEND_MESSAGE)!;
   return { statePath, ipcMain, window, scripted, api, sendHandler };
 }
 
-async function send(sendHandler: Function, content = 'do the thing') {
+async function send(sendHandler: IpcHandler, content = 'do the thing') {
   return sendHandler({}, { surface: 'agent', content, model: MODEL, endpoint: ENDPOINT });
 }
 
@@ -174,17 +195,17 @@ describe('buildToolCatalog fails safe when listTools throws (Req 6.3)', () => {
     const terminal = await waitForCompletion(window);
 
     // listTools was actually consulted (the throw path was exercised).
-    expect(gateway.getListToolsCalls()).toBeGreaterThan(0);
+    expect(gateway.getListToolsCalls?.()).toBeGreaterThan(0);
 
     // The outgoing /api/chat body carries no `tools` field (tool-less request).
-    const body = scripted.getRequestBodies()[0];
+    const body = scripted.getRequestBodies()[0] as RequestBody;
     expect('tools' in body).toBe(false);
     expect(Object.keys(body).sort()).toEqual(['messages', 'model', 'stream'].sort());
 
     // No error is surfaced to the user; the chat completes normally.
     expect(terminal).toBeTruthy();
-    expect(terminal.type).toBe('chat-completed');
-    expect(terminal.assistantMessage.content).toBe('done');
+    expect(terminal?.type).toBe('chat-completed');
+    expect((terminal?.assistantMessage as { content?: string })?.content).toBe('done');
 
     // Defensive: no chat-error stream event was emitted.
     const errorEvent = window

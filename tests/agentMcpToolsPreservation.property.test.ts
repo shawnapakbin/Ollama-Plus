@@ -27,6 +27,25 @@ import {
  * Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5
  */
 
+// ─── Local test types ────────────────────────────────────────────────────────
+
+type IpcHandler = (...args: unknown[]) => unknown;
+type StreamEvent = Record<string, unknown>;
+interface FetchOptions { body: string }
+type ChatChunk = Record<string, unknown>;
+interface DispatchRequest {
+  server: string;
+  action: string;
+  payload?: Record<string, unknown>;
+}
+interface RegisterOptions {
+  statePath: string;
+  fetchImpl: (url: string, options: FetchOptions) => Promise<unknown>;
+  defaultEndpoint: string;
+  mcpGateway?: unknown;
+}
+interface SendResult { sessionId: string; [key: string]: unknown }
+
 // ─── Test Infrastructure (mirrors Task 1 conventions) ────────────────────────
 
 const tempDirs: string[] = [];
@@ -48,9 +67,9 @@ function createTempStatePath(): string {
 
 /** Mock ipcMain capturing registered handlers. */
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -64,11 +83,11 @@ function createMockIpcMain() {
 
 /** Mock BrowserWindow capturing streamed events. */
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: Array<{ channel: string; payload: StreamEvent }> = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) {
+      send(channel: string, payload: StreamEvent) {
         sentEvents.push({ channel, payload });
       }
     },
@@ -91,9 +110,9 @@ function createMockMainWindow() {
  * present, tool-less / empty-catalog inputs never touch it.
  */
 function createMockMcpGateway() {
-  const calls: Array<{ server: string; action: string; payload: any }> = [];
+  const calls: Array<{ server: string; action: string; payload?: Record<string, unknown> }> = [];
   return {
-    dispatch: async (request: { server: string; action: string; payload?: any }) => {
+    dispatch: async (request: DispatchRequest) => {
       calls.push({ server: request.server, action: request.action, payload: request.payload });
       return { output: 'unexpected tool output' };
     },
@@ -106,11 +125,11 @@ function createMockMcpGateway() {
  * Builds a fake fetchImpl returning scripted /api/chat streaming payloads.
  * Records every outgoing request body for assertion.
  */
-function createScriptedFetch(turns: any[][]) {
-  const requestBodies: any[] = [];
+function createScriptedFetch(turns: ChatChunk[][]) {
+  const requestBodies: Array<Record<string, unknown> | null> = [];
   let turnIndex = 0;
 
-  const fetchImpl = async (_url: string, options: any) => {
+  const fetchImpl = async (_url: string, options: FetchOptions) => {
     try {
       requestBodies.push(JSON.parse(options.body));
     } catch {
@@ -145,7 +164,7 @@ function createScriptedFetch(turns: any[][]) {
 async function waitForCompletion(
   window: ReturnType<typeof createMockMainWindow>,
   timeoutMs = 2000
-): Promise<any> {
+): Promise<StreamEvent | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const events = window.getStreamEvents();
@@ -161,8 +180,8 @@ async function waitForCompletion(
 const ENDPOINT = 'http://localhost:11434';
 
 /** Builds a text-only model turn from an array of content chunks. */
-function textTurn(chunks: string[]): any[] {
-  const messages = chunks.map((c) => ({
+function textTurn(chunks: string[]): ChatChunk[] {
+  const messages: ChatChunk[] = chunks.map((c) => ({
     message: { role: 'assistant', content: c },
     done: false
   }));
@@ -171,18 +190,18 @@ function textTurn(chunks: string[]): any[] {
     done: true,
     total_duration: 100,
     eval_count: chunks.length
-  } as any);
+  });
   return messages;
 }
 
-function setup(turns: any[][], opts: { withGateway?: boolean } = {}) {
+function setup(turns: ChatChunk[][], opts: { withGateway?: boolean } = {}) {
   const statePath = createTempStatePath();
   const ipcMain = createMockIpcMain();
   const window = createMockMainWindow();
   const gateway = createMockMcpGateway();
   const scripted = createScriptedFetch(turns);
 
-  const registerOptions: any = {
+  const registerOptions: RegisterOptions = {
     statePath,
     fetchImpl: scripted.fetchImpl,
     defaultEndpoint: ENDPOINT
@@ -192,7 +211,7 @@ function setup(turns: any[][], opts: { withGateway?: boolean } = {}) {
     registerOptions.mcpGateway = gateway;
   }
 
-  const api = registerAgentChatHandlers(ipcMain as any, window as any, registerOptions);
+  const api = registerAgentChatHandlers(ipcMain, window, registerOptions);
   const sendHandler = ipcMain.getHandler(AGENT_CHAT_CHANNELS.SEND_MESSAGE)!;
 
   return { statePath, ipcMain, window, gateway, scripted, api, sendHandler };
@@ -344,12 +363,12 @@ describe('Agent MCP Tools Preservation (Property 2)', () => {
             withGateway: true
           });
 
-          const result: any = await sendHandler({}, {
+          const result = await sendHandler({}, {
             surface: 'agent',
             content,
             model: 'some-model',
             endpoint: ENDPOINT
-          });
+          }) as SendResult;
 
           const terminal = await waitForCompletion(window);
           expect(terminal?.type).toBe('chat-completed');

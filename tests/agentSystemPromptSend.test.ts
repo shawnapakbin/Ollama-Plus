@@ -22,6 +22,14 @@ import {
  * Validates: Requirements 7.2, 4.1, 4.2
  */
 
+// ─── Shared test types ───────────────────────────────────────────────────────
+
+type IpcHandler = (...args: unknown[]) => unknown;
+type StreamEvent = { type?: string; [key: string]: unknown };
+type ChatChunk = Record<string, unknown>;
+type FetchOptions = { body?: string; [key: string]: unknown };
+type ChatMessage = { role?: string; content?: string; [key: string]: unknown };
+
 // ─── Test Infrastructure (mirrors agentChatHandlersTools.test.ts) ─────────────
 
 const tempDirs: string[] = [];
@@ -40,9 +48,9 @@ function createTempStatePath(): string {
 }
 
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -55,29 +63,29 @@ function createMockIpcMain() {
 }
 
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: Array<{ channel: string; payload: unknown }> = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) {
+      send(channel: string, payload: unknown) {
         sentEvents.push({ channel, payload });
       }
     },
-    getStreamEvents() {
+    getStreamEvents(): StreamEvent[] {
       return sentEvents
         .filter((e) => e.channel === AGENT_CHAT_CHANNELS.STREAM)
-        .map((e) => e.payload);
+        .map((e) => e.payload as StreamEvent);
     }
   };
 }
 
 /** Scripted fetch returning a single final text turn; captures request bodies. */
-function createScriptedFetch(turns: any[][]) {
-  const requestBodies: any[] = [];
+function createScriptedFetch(turns: ChatChunk[][]) {
+  const requestBodies: Array<Record<string, unknown> | null> = [];
   let turnIndex = 0;
-  const fetchImpl = async (_url: string, options: any) => {
+  const fetchImpl = async (_url: string, options: FetchOptions) => {
     try {
-      requestBodies.push(JSON.parse(options.body));
+      requestBodies.push(JSON.parse(options.body ?? ''));
     } catch {
       requestBodies.push(null);
     }
@@ -102,7 +110,7 @@ function createScriptedFetch(turns: any[][]) {
 async function waitForCompletion(
   window: ReturnType<typeof createMockMainWindow>,
   timeoutMs = 3000
-): Promise<any> {
+): Promise<StreamEvent | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const events = window.getStreamEvents();
@@ -119,7 +127,7 @@ const MODEL = 'qwen3.5:9b';
 const ENDPOINT = 'http://localhost:11434';
 
 /** A final text turn (no tool calls). */
-function finalTextTurn(text: string): any[] {
+function finalTextTurn(text: string): ChatChunk[] {
   return [
     { message: { role: 'assistant', content: text }, done: false },
     { message: { role: 'assistant', content: '' }, done: true, eval_count: 5 }
@@ -131,7 +139,10 @@ function setup(opts: { master?: string; system?: string } = {}) {
   const ipcMain = createMockIpcMain();
   const window = createMockMainWindow();
   const scripted = createScriptedFetch([finalTextTurn('final answer')]);
-  const api = registerAgentChatHandlers(ipcMain as any, window as any, {
+  const api = registerAgentChatHandlers(
+    ipcMain as unknown as Parameters<typeof registerAgentChatHandlers>[0],
+    window as unknown as Parameters<typeof registerAgentChatHandlers>[1],
+    {
     statePath,
     fetchImpl: scripted.fetchImpl,
     defaultEndpoint: ENDPOINT,
@@ -140,12 +151,13 @@ function setup(opts: { master?: string; system?: string } = {}) {
     // Inject config + master so we don't depend on env/store.
     getChatConfig: () => ({ systemPrompt: opts.system ?? '' }),
     resolveMaster: () => opts.master ?? ''
-  });
+    }
+  );
   const sendHandler = ipcMain.getHandler(AGENT_CHAT_CHANNELS.SEND_MESSAGE)!;
   return { window, scripted, api, sendHandler };
 }
 
-async function send(sendHandler: Function, content = 'hello there') {
+async function send(sendHandler: IpcHandler, content = 'hello there') {
   return sendHandler({}, { surface: 'agent', content, model: MODEL, endpoint: ENDPOINT });
 }
 
@@ -161,8 +173,8 @@ describe('Combined_System_Message on send (Req 7.2, 4.1, 4.2)', () => {
     await send(sendHandler);
     await waitForCompletion(window);
 
-    const messages = scripted.getRequestBodies()[0].messages;
-    const systemMessages = messages.filter((m: any) => m.role === 'system');
+    const messages = scripted.getRequestBodies()[0]!.messages as ChatMessage[];
+    const systemMessages = messages.filter((m) => m.role === 'system');
 
     // Exactly one system entry (Req 4.4), positioned first (Req 4.1).
     expect(systemMessages).toHaveLength(1);
@@ -179,15 +191,15 @@ describe('Combined_System_Message on send (Req 7.2, 4.1, 4.2)', () => {
     await send(sendHandler);
     await waitForCompletion(window);
 
-    const messages = scripted.getRequestBodies()[0].messages;
-    const systemMessages = messages.filter((m: any) => m.role === 'system');
+    const messages = scripted.getRequestBodies()[0]!.messages as ChatMessage[];
+    const systemMessages = messages.filter((m) => m.role === 'system');
 
     // Exactly one leading system message (Req 4.1, 4.4).
     expect(systemMessages).toHaveLength(1);
     expect(messages[0].role).toBe('system');
 
     // Content contains both layers (Req 7.2), master before system (Req 4.2).
-    const content: string = messages[0].content;
+    const content = messages[0].content ?? '';
     expect(content).toContain(master);
     expect(content).toContain(system);
     expect(content.indexOf(master)).toBeLessThan(content.indexOf(system));
@@ -202,8 +214,8 @@ describe('Combined_System_Message on send (Req 7.2, 4.1, 4.2)', () => {
     await send(sendHandler);
     await waitForCompletion(window);
 
-    const messages = scripted.getRequestBodies()[0].messages;
-    expect(messages.some((m: any) => m.role === 'system')).toBe(false);
+    const messages = scripted.getRequestBodies()[0]!.messages as ChatMessage[];
+    expect(messages.some((m) => m.role === 'system')).toBe(false);
     expect(messages[0]).toMatchObject({ role: 'user', content: 'hello there' });
   });
 });

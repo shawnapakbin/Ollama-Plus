@@ -180,12 +180,12 @@ export function AgentPage({ activeTab: controlledTab, onTabChange, registerNewSe
     agentChat.retryLastMessage();
   }, [agentChat]);
 
-  const handleScrollToBlock = useCallback((_blockId: string) => {
+  const handleScrollToBlock = useCallback(() => {
     // Scroll-to-block is handled by the AgentChatStream internally
     // This callback can be extended for inspector→stream synchronization
   }, []);
 
-  const handleStepClick = useCallback((_stepId: string) => {
+  const handleStepClick = useCallback(() => {
     // Inspector step click → scroll chat to corresponding block
     // Implementation deferred to integration pass
   }, []);
