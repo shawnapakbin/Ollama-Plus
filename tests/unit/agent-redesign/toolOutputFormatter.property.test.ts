@@ -26,9 +26,6 @@ const nonOverflowOutputArb = fc
   .array(fc.string(), { minLength: 1, maxLength: 10 })
   .map(lines => lines.join('\n'));
 
-/** Generates a custom maxLines value for parameterized truncation */
-const customMaxLinesArb = fc.integer({ min: 1, max: 100 });
-
 /** Generates a tool output with a parameterized line count exceeding a given maxLines */
 const parameterizedOverflowArb = fc.integer({ min: 2, max: 100 }).chain(maxLines =>
   fc.tuple(

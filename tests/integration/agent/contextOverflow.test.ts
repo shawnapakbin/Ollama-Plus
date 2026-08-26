@@ -1,11 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   ContextManager,
   estimateTokens,
-  extractFilePaths,
-  extractIdentifiers,
   summarizeStepResult,
-  CHARS_PER_TOKEN,
   SUMMARIZATION_TRIGGER_PERCENT,
   SUMMARIZATION_TARGET_PERCENT,
   PRESERVED_RECENT_STEPS,

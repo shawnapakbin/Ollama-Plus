@@ -77,9 +77,9 @@ describe('estimateTokens', () => {
   });
 
   it('returns 0 for non-string input', () => {
-    expect(estimateTokens(null as any)).toBe(0);
-    expect(estimateTokens(undefined as any)).toBe(0);
-    expect(estimateTokens(123 as any)).toBe(0);
+    expect(estimateTokens(null as unknown)).toBe(0);
+    expect(estimateTokens(undefined as unknown)).toBe(0);
+    expect(estimateTokens(123 as unknown)).toBe(0);
   });
 
   it('estimates tokens as ceil(length / CHARS_PER_TOKEN)', () => {
@@ -114,8 +114,8 @@ describe('extractFilePaths', () => {
   });
 
   it('returns empty array for non-string input', () => {
-    expect(extractFilePaths(null as any)).toEqual([]);
-    expect(extractFilePaths(undefined as any)).toEqual([]);
+    expect(extractFilePaths(null as unknown)).toEqual([]);
+    expect(extractFilePaths(undefined as unknown)).toEqual([]);
   });
 
   it('returns empty array when no paths found', () => {
@@ -158,7 +158,7 @@ describe('extractIdentifiers', () => {
   });
 
   it('returns empty for non-string input', () => {
-    expect(extractIdentifiers(null as any)).toEqual([]);
+    expect(extractIdentifiers(null as unknown)).toEqual([]);
   });
 });
 
@@ -183,8 +183,8 @@ describe('extractKeywords', () => {
   });
 
   it('returns empty for non-string input', () => {
-    expect(extractKeywords(null as any)).toEqual([]);
-    expect(extractKeywords('' as any)).toEqual([]);
+    expect(extractKeywords(null as unknown)).toEqual([]);
+    expect(extractKeywords('' as unknown)).toEqual([]);
   });
 
   it('converts to lowercase', () => {
@@ -214,7 +214,7 @@ describe('summarizeStepResult', () => {
   });
 
   it('handles null/undefined input gracefully', () => {
-    const summary = summarizeStepResult(null as any);
+    const summary = summarizeStepResult(null as unknown);
     expect(summary.stepId).toBe('');
     expect(summary.filePaths).toEqual([]);
     expect(summary.identifiers).toEqual([]);
@@ -307,8 +307,8 @@ describe('ContextManager', () => {
     });
 
     it('ignores null/undefined input', () => {
-      cm.addStepResult(null as any);
-      cm.addStepResult(undefined as any);
+      cm.addStepResult(null as unknown);
+      cm.addStepResult(undefined as unknown);
       expect(cm.getStepHistory()).toHaveLength(0);
     });
 
@@ -527,7 +527,7 @@ describe('ContextManager', () => {
 
     it('returns empty for non-string instruction', () => {
       cm.setMemoryRecords([makeMemoryRecord()]);
-      expect(cm.retrieveRelevantMemory(null as any)).toEqual([]);
+      expect(cm.retrieveRelevantMemory(null as unknown)).toEqual([]);
     });
 
     it('returns empty when no records match', () => {
@@ -565,7 +565,7 @@ describe('ContextManager', () => {
     });
 
     it('ignores non-number values', () => {
-      cm.setModelTokenLimit('big' as any);
+      cm.setModelTokenLimit('big' as unknown);
       expect(cm.getTokenUsage().limit).toBe(4096); // unchanged
     });
   });
@@ -583,7 +583,7 @@ describe('ContextManager', () => {
     });
 
     it('handles non-array input', () => {
-      cm.setFileContents(null as any);
+      cm.setFileContents(null as unknown);
       const ctx = cm.buildPrompt(makeTask(), makePlan(), []);
       expect(ctx.fileContents).toEqual([]);
     });
@@ -600,7 +600,7 @@ describe('ContextManager', () => {
     });
 
     it('handles non-array input', () => {
-      cm.setMemoryRecords('bad' as any);
+      cm.setMemoryRecords('bad' as unknown);
       const ctx = cm.buildPrompt(makeTask(), makePlan(), []);
       expect(ctx.memoryRecords).toEqual([]);
     });
@@ -923,8 +923,9 @@ describe('Property 6: Context window summarization bounds', () => {
         const retainedFilePaths = new Set<string>();
         for (const entry of summarizedEntries) {
           // Check filePaths array if present (summarized form)
-          if (Array.isArray((entry as any).filePaths)) {
-            for (const p of (entry as any).filePaths) {
+          const entryFilePaths = (entry as { filePaths?: unknown }).filePaths;
+          if (Array.isArray(entryFilePaths)) {
+            for (const p of entryFilePaths) {
               retainedFilePaths.add(p);
             }
           }

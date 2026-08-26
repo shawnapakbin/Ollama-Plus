@@ -23,35 +23,6 @@ const tokenSequenceArb = fc.array(fc.string({ minLength: 1, maxLength: 100 }), {
   maxLength: 50,
 });
 
-/**
- * Arbitrary for generating a valid StreamingMessage with a given content.
- */
-const streamingMessageArb = (content: string): fc.Arbitrary<StreamingMessage> =>
-  fc.record({
-    id: fc.uuid(),
-    sessionId: fc.uuid(),
-    content: fc.constant(content),
-    thinkingContent: fc.oneof(fc.constant(null), fc.string({ minLength: 1, maxLength: 50 })),
-    startedAt: fc.date({ min: new Date('2000-01-01'), max: new Date('2030-12-31') }).map((d) => d.toISOString()),
-    model: fc.string({ minLength: 1, maxLength: 30 }),
-  });
-
-/**
- * Arbitrary for generating a valid ChatMessage (completed) with a given content.
- */
-const completedMessageArb = (content: string): fc.Arbitrary<ChatMessage> =>
-  fc.record({
-    id: fc.uuid(),
-    sessionId: fc.uuid(),
-    role: fc.constant('assistant' as const),
-    content: fc.constant(content),
-    displayLabel: fc.string({ minLength: 1, maxLength: 30 }),
-    timestamp: fc.date({ min: new Date('2000-01-01'), max: new Date('2030-12-31') }).map((d) => d.toISOString()),
-    attachments: fc.constant([]),
-    thinkingContent: fc.oneof(fc.constant(null), fc.string({ minLength: 1, maxLength: 50 })),
-    isComplete: fc.constant(true),
-  });
-
 describe('Feature: agent-page-redesign, Property 8: Streaming completes without layout shift', () => {
   /**
    * **Validates: Requirements 1.5**

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createExecutionLoop,
   LOOP_STATES,
@@ -24,7 +24,7 @@ function makeStep(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makePlan(steps?: any[]) {
+function makePlan(steps?: unknown[]) {
   return {
     steps: steps || [makeStep({ id: 'step-1' }), makeStep({ id: 'step-2' }), makeStep({ id: 'step-3' })],
     estimatedDuration: 180000,
@@ -81,7 +81,7 @@ function makeToolDispatcher(result?: { status: string; output: string; error: st
   };
 }
 
-function makeTaskPlanner(replanResult?: any) {
+function makeTaskPlanner(replanResult?: unknown) {
   return {
     replan: vi.fn().mockResolvedValue(replanResult || makePlan([makeStep({ id: 'replan-step-1' })]))
   };
@@ -122,19 +122,6 @@ function makeRiskClassifier() {
  */
 function waitForAsync(ms = 50): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * Helper to wait for an event to be emitted on a loop.
- */
-function waitForEvent(loop: any, eventName: string, timeoutMs = 2000): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Timed out waiting for "${eventName}" event`)), timeoutMs);
-    loop.on(eventName, (...args: any[]) => {
-      clearTimeout(timer);
-      resolve(args.length === 1 ? args[0] : args);
-    });
-  });
 }
 
 // ─── Unit Tests: Constants and Interface ─────────────────────────────────────
@@ -198,7 +185,7 @@ describe('executionLoop - createExecutionLoop', () => {
       retryPolicy: makeRetryPolicy()
     });
 
-    expect(() => loop.start(null as any, null as any)).toThrow();
+    expect(() => loop.start(null as unknown as never, null as unknown as never)).toThrow();
     expect(() => loop.start(makeSession(), { steps: [], estimatedDuration: 0, reasoning: '' })).toThrow();
   });
 
@@ -861,7 +848,7 @@ describe('executionLoop - dependency handling', () => {
   it('respects step dependencies and executes in correct order', async () => {
     const executionOrder: string[] = [];
     const toolDispatcher = {
-      dispatch: vi.fn().mockImplementation(async (_call: any, opts: any) => {
+      dispatch: vi.fn().mockImplementation(async (_call: unknown, opts: { stepId: string }) => {
         executionOrder.push(opts.stepId);
         return {
           id: 'tc_001', tool: 'terminal', server: 'terminal-server', action: 'execute',

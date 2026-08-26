@@ -15,10 +15,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { initAgentRuntime, IPC_CHANNELS } from '../../../electron/runtime/agent/agentRuntime.js';
 
 // ─── Test Helpers ────────────────────────────────────────────────────────────
+
+/** Signature of an IPC handler registered via ipcMain.handle. */
+type IpcHandler = (event: unknown, ...args: unknown[]) => unknown;
 
 const tempDirs: string[] = [];
 
@@ -41,9 +44,9 @@ function createTempDir() {
  * Creates a mock ipcMain that captures registered handlers.
  */
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -156,7 +159,7 @@ function createReplanWithoutDeletion() {
  */
 function createMockFetch(plan: object, replan?: object) {
   let callCount = 0;
-  return async (_url: string, _options?: RequestInit) => {
+  return async () => {
     callCount++;
     const planToReturn = callCount === 1 ? plan : (replan || plan);
     return new Response(
@@ -240,7 +243,7 @@ describe('Approval Gate Flow Integration', () => {
     it('triggers an approval gate for a high-risk step and proceeds after approval', async () => {
       const plan = createHighRiskPlan();
 
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
+      runtime = initAgentRuntime(ipcMain, mainWindow, {
         statePath: path.join(tempDir, 'state.json'),
         mcpGateway,
         fetchImpl: createMockFetch(plan),
@@ -302,7 +305,7 @@ describe('Approval Gate Flow Integration', () => {
     it('presents gate event within 500ms of classification (Req 6.1)', async () => {
       const plan = createHighRiskPlan();
 
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
+      runtime = initAgentRuntime(ipcMain, mainWindow, {
         statePath: path.join(tempDir, 'state.json'),
         mcpGateway,
         fetchImpl: createMockFetch(plan),
@@ -331,7 +334,7 @@ describe('Approval Gate Flow Integration', () => {
       const plan = createHighRiskPlan();
       const replan = createReplanWithoutDeletion();
 
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
+      runtime = initAgentRuntime(ipcMain, mainWindow, {
         statePath: path.join(tempDir, 'state.json'),
         mcpGateway,
         fetchImpl: createMockFetch(plan, replan),
@@ -376,7 +379,7 @@ describe('Approval Gate Flow Integration', () => {
       const plan = createHighRiskPlan();
       const replan = createReplanWithoutDeletion();
 
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
+      runtime = initAgentRuntime(ipcMain, mainWindow, {
         statePath: path.join(tempDir, 'state.json'),
         mcpGateway,
         fetchImpl: createMockFetch(plan, replan),
@@ -412,7 +415,7 @@ describe('Approval Gate Flow Integration', () => {
     it('session starts as planned and approval gate event is emitted for high-risk steps', async () => {
       const plan = createHighRiskPlan();
 
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
+      runtime = initAgentRuntime(ipcMain, mainWindow, {
         statePath: path.join(tempDir, 'state.json'),
         mcpGateway,
         fetchImpl: createMockFetch(plan),
@@ -440,7 +443,7 @@ describe('Approval Gate Flow Integration', () => {
     it('gate event does not trigger task cancellation or timeout (Req 6.7)', async () => {
       const plan = createHighRiskPlan();
 
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
+      runtime = initAgentRuntime(ipcMain, mainWindow, {
         statePath: path.join(tempDir, 'state.json'),
         mcpGateway,
         fetchImpl: createMockFetch(plan),
@@ -461,11 +464,11 @@ describe('Approval Gate Flow Integration', () => {
       const events = mainWindow.getActivityEvents();
 
       // Verify no timeout error was emitted for the gate itself
-      const timeoutErrors = events.filter(
-        e => e.type === 'error' &&
-          typeof (e as any)?.error?.type === 'string' &&
-          (e as any).error.type === 'gate_timeout'
-      );
+      const timeoutErrors = events.filter(e => {
+        if (e.type !== 'error') return false;
+        const error = e.error as { type?: unknown } | undefined;
+        return typeof error?.type === 'string' && error.type === 'gate_timeout';
+      });
       expect(timeoutErrors.length).toBe(0);
 
       // Verify the gate event contained proper structure

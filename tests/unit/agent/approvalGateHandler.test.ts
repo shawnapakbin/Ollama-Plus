@@ -2,8 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   createApprovalGateHandler,
   GATE_STATUS,
-  GATE_PRESENTATION_DEADLINE_MS,
-  APPROVAL_PROCEED_DEADLINE_MS
+  GATE_PRESENTATION_DEADLINE_MS
 } from '../../../electron/runtime/agent/approvalGateHandler.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -358,8 +357,8 @@ describe('approvalGateHandler', () => {
     });
 
     it('returns false for null/undefined input', () => {
-      expect(handler.isDeniedAction(null as any)).toBe(false);
-      expect(handler.isDeniedAction(undefined as any)).toBe(false);
+      expect(handler.isDeniedAction(null as unknown as string)).toBe(false);
+      expect(handler.isDeniedAction(undefined as unknown as string)).toBe(false);
     });
 
     it('tracks multiple denied actions', () => {

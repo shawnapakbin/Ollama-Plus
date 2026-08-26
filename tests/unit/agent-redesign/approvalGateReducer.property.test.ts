@@ -27,7 +27,7 @@ const approvalGateStateArb = (status: 'pending' | 'approved' | 'denied') =>
     params: fc.dictionary(fc.string({ minLength: 1, maxLength: 10 }), fc.jsonValue()),
     riskExplanation: fc.string({ minLength: 1, maxLength: 100 }),
     status: fc.constant(status),
-    timestamp: fc.date({ min: new Date('2000-01-01'), max: new Date('2030-12-31') }).map((d) => d.toISOString()),
+    timestamp: fc.date({ min: new Date('2000-01-01'), max: new Date('2030-12-31'), noInvalidDate: true }).map((d) => d.toISOString()),
     afterMessageId: fc.oneof(fc.uuid(), fc.constant(null)),
   }) as fc.Arbitrary<ApprovalGateState>;
 

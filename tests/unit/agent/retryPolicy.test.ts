@@ -143,8 +143,8 @@ describe('retryPolicy - classifyError', () => {
   });
 
   it('handles null/undefined error gracefully', () => {
-    expect(classifyError(null as any)).toBe('permanent');
-    expect(classifyError(undefined as any)).toBe('permanent');
+    expect(classifyError(null as unknown)).toBe('permanent');
+    expect(classifyError(undefined as unknown)).toBe('permanent');
   });
 
   it('prioritizes permanent code over transient message', () => {
@@ -200,14 +200,14 @@ describe('retryPolicy - shouldRetry', () => {
     const error = makeError({ code: 'ETIMEDOUT' });
     const decision = shouldRetry(error, 2);
     expect(decision.action).toBe('replan');
-    expect((decision as any).reason).toContain('replan');
+    expect((decision as { reason?: string }).reason).toContain('replan');
   });
 
   it('never retries permanent errors', () => {
     const error = makeError({ code: 'ENOENT' });
     const decision = shouldRetry(error, 0);
     expect(decision.action).toBe('replan');
-    expect((decision as any).reason).toContain('Permanent');
+    expect((decision as { reason?: string }).reason).toContain('Permanent');
   });
 
   it('never retries permanent HTTP status errors', () => {

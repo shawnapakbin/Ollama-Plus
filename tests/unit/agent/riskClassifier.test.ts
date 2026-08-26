@@ -336,13 +336,13 @@ describe('riskClassifier', () => {
 
   describe('classifyRisk — edge cases', () => {
     it('returns low-risk for null operation', () => {
-      const result = classifyRisk(null as any);
+      const result = classifyRisk(null as unknown);
       expect(result.level).toBe('low');
       expect(result.requiresApproval).toBe(false);
     });
 
     it('returns low-risk for undefined operation', () => {
-      const result = classifyRisk(undefined as any);
+      const result = classifyRisk(undefined as unknown);
       expect(result.level).toBe('low');
       expect(result.requiresApproval).toBe(false);
     });
@@ -380,7 +380,7 @@ describe('riskClassifier', () => {
         action: 'write',
         params: {},
         workingDirectory: '/project'
-      } as any);
+      } as unknown);
       expect(result.level).toBe('low');
       expect(result.requiresApproval).toBe(false);
     });
@@ -388,7 +388,7 @@ describe('riskClassifier', () => {
 
   describe('matchesCustomRule', () => {
     it('returns matched:false for null operation', () => {
-      const result = matchesCustomRule(null as any, []);
+      const result = matchesCustomRule(null as unknown, []);
       expect(result.matched).toBe(false);
       expect(result.rule).toBeNull();
     });
@@ -396,7 +396,7 @@ describe('riskClassifier', () => {
     it('returns matched:false for null rules', () => {
       const result = matchesCustomRule(
         { tool: 'terminal', action: 'execute', params: {}, workingDirectory: '/p', affectedPaths: [] },
-        null as any
+        null as unknown
       );
       expect(result.matched).toBe(false);
     });

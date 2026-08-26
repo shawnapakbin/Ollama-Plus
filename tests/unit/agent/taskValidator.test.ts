@@ -41,19 +41,19 @@ describe('taskValidator - instruction validation', () => {
   });
 
   it('rejects null submission', () => {
-    const result = validateTaskSubmission(null as any);
+    const result = validateTaskSubmission(null as unknown);
     expect(result.valid).toBe(false);
     expect(result.errors[0].field).toBe('submission');
   });
 
   it('rejects undefined submission', () => {
-    const result = validateTaskSubmission(undefined as any);
+    const result = validateTaskSubmission(undefined as unknown);
     expect(result.valid).toBe(false);
     expect(result.errors[0].field).toBe('submission');
   });
 
   it('rejects missing instruction', () => {
-    const result = validateTaskSubmission({} as any);
+    const result = validateTaskSubmission({} as unknown);
     expect(result.valid).toBe(false);
     expect(result.errors[0].field).toBe('instruction');
   });
@@ -89,7 +89,7 @@ describe('taskValidator - instruction validation', () => {
   });
 
   it('rejects non-string instruction', () => {
-    const result = validateTaskSubmission({ instruction: 123 } as any);
+    const result = validateTaskSubmission({ instruction: 123 } as unknown);
     expect(result.valid).toBe(false);
     expect(result.errors[0].field).toBe('instruction');
   });
@@ -140,7 +140,7 @@ describe('taskValidator - attachment validation', () => {
   });
 
   it('rejects non-array attachments', () => {
-    const result = validateTaskSubmission({ instruction: 'test', attachments: 'invalid' } as any);
+    const result = validateTaskSubmission({ instruction: 'test', attachments: 'invalid' } as unknown);
     expect(result.valid).toBe(false);
     expect(result.errors[0].field).toBe('attachments');
   });

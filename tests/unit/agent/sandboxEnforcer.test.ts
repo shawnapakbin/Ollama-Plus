@@ -40,12 +40,12 @@ describe('sandboxEnforcer - setWorkingDirectory', () => {
 
   it('throws on null', () => {
     const enforcer = createSandboxEnforcer();
-    expect(() => enforcer.setWorkingDirectory(null as any)).toThrow();
+    expect(() => enforcer.setWorkingDirectory(null as unknown)).toThrow();
   });
 
   it('throws on undefined', () => {
     const enforcer = createSandboxEnforcer();
-    expect(() => enforcer.setWorkingDirectory(undefined as any)).toThrow();
+    expect(() => enforcer.setWorkingDirectory(undefined as unknown)).toThrow();
   });
 });
 
@@ -156,7 +156,7 @@ describe('sandboxEnforcer - isPathAuthorized', () => {
   });
 
   it('returns false for null', () => {
-    expect(enforcer.isPathAuthorized(null as any)).toBe(false);
+    expect(enforcer.isPathAuthorized(null as unknown)).toBe(false);
   });
 
   it('rejects a path that is a prefix but not a real descendant', () => {
@@ -253,7 +253,7 @@ describe('sandboxEnforcer - validateToolCall', () => {
   });
 
   it('rejects null call', () => {
-    const result = enforcer.validateToolCall(null as any);
+    const result = enforcer.validateToolCall(null as unknown);
     expect(result.valid).toBe(false);
   });
 
@@ -360,7 +360,7 @@ describe('sandboxEnforcer - file modification audit log', () => {
   it('throws on invalid operation', () => {
     expect(() => enforcer.logFileModification({
       sessionId: 'session-1',
-      operation: 'invalid' as any,
+      operation: 'invalid' as unknown,
       path: '/project/file.ts',
       timestamp: '2024-01-15T10:00:00.000Z'
     })).toThrow();
@@ -431,6 +431,7 @@ import fc from 'fast-check';
  * Uses alphanumeric characters and common safe characters.
  */
 const pathSegmentArb = fc.string({ minLength: 1, maxLength: 12, unit: 'grapheme' })
+  // eslint-disable-next-line no-control-regex
   .map(s => s.replace(/[/\\:*?"<>|\x00\s.]/g, 'x'))
   .filter(s => s.length > 0 && s !== '.' && s !== '..');
 

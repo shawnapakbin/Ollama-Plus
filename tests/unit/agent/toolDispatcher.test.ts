@@ -13,7 +13,7 @@ import { MAX_OUTPUT_LENGTH } from '../../../electron/runtime/agent/outputFormatt
  * Creates a mock MCP gateway that resolves with the provided output value.
  */
 function createMockGateway(output: string | (() => string)) {
-  return (_server: string, _action: string, _payload: object) =>
+  return () =>
     Promise.resolve(typeof output === 'function' ? output() : output);
 }
 
@@ -21,7 +21,7 @@ function createMockGateway(output: string | (() => string)) {
  * Creates a mock MCP gateway that delays for a specified duration before resolving.
  */
 function createDelayedGateway(delayMs: number, output = 'delayed-output') {
-  return (_server: string, _action: string, _payload: object) =>
+  return () =>
     new Promise<string>((resolve) => setTimeout(() => resolve(output), delayMs));
 }
 
@@ -30,7 +30,7 @@ function createDelayedGateway(delayMs: number, output = 'delayed-output') {
  */
 function createAcceptingEnforcer() {
   return {
-    validateToolCall: (call: any) => ({
+    validateToolCall: (call: unknown) => ({
       valid: true as const,
       sanitizedCall: call
     })
@@ -42,7 +42,7 @@ function createAcceptingEnforcer() {
  */
 function createRejectingEnforcer(reason = 'Sandbox violation: path outside boundary') {
   return {
-    validateToolCall: (_call: any) => ({
+    validateToolCall: () => ({
       valid: false as const,
       reason,
       requiresApproval: true

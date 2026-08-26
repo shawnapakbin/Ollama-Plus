@@ -15,6 +15,28 @@ import { initAgentRuntime, IPC_CHANNELS } from '../../../electron/runtime/agent/
  * Requirements: 10.1, 10.2, 10.5, 10.7
  */
 
+// ─── Shared test types ───────────────────────────────────────────────────────
+
+type IpcHandler = (...args: unknown[]) => unknown;
+type ActivityEvent = {
+  type?: string;
+  outcome?: { type?: string; [key: string]: unknown };
+  error?: { classification?: string; type?: string; [key: string]: unknown };
+  [key: string]: unknown;
+};
+interface PlanStep {
+  id: string;
+  title: string;
+  description: string;
+  riskLevel: string;
+  requiredTools: Array<{ name: string; server: string; category: string }>;
+  parallelSafe: boolean;
+  timeout: number;
+  dependsOn: string[];
+}
+
+type RuntimeOptions = Parameters<typeof initAgentRuntime>[2];
+
 // ─── Test Helpers ────────────────────────────────────────────────────────────
 
 const tempDirs: string[] = [];
@@ -39,9 +61,9 @@ function createTempDir() {
  * Creates a mock ipcMain that captures registered handlers.
  */
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -60,11 +82,11 @@ function createMockIpcMain() {
  * Creates a mock BrowserWindow with webContents.send that collects events.
  */
 function createMockMainWindow() {
-  const sentEvents: Array<{ channel: string; payload: any }> = [];
+  const sentEvents: Array<{ channel: string; payload: ActivityEvent }> = [];
   return {
     isDestroyed: () => false,
     webContents: {
-      send(channel: string, payload: any) {
+      send(channel: string, payload: ActivityEvent) {
         sentEvents.push({ channel, payload });
       }
     },
@@ -84,7 +106,7 @@ function createMockMainWindow() {
  */
 function createMockFetchWithPlan(steps: Array<{ title: string; tool: string }>) {
   const planResponse = {
-    steps: steps.map((s, i) => ({
+    steps: steps.map((s, i): PlanStep => ({
       id: `step-${i + 1}`,
       title: s.title,
       description: `Execute ${s.title}`,
@@ -98,7 +120,7 @@ function createMockFetchWithPlan(steps: Array<{ title: string; tool: string }>) 
     reasoning: 'Generated test plan'
   };
 
-  return async (url: string, options?: any) => {
+  return async () => {
     return new Response(JSON.stringify({
       message: { content: JSON.stringify(planResponse) }
     }), { status: 200 });
@@ -120,9 +142,9 @@ function createValidSubmission(workingDir: string) {
  */
 async function waitForEvents(
   mainWindow: ReturnType<typeof createMockMainWindow>,
-  predicate: (events: any[]) => boolean,
+  predicate: (events: ActivityEvent[]) => boolean,
   timeoutMs = 5000
-): Promise<any[]> {
+): Promise<ActivityEvent[]> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const events = mainWindow.getActivityStreamEvents();
@@ -160,7 +182,7 @@ describe('Integration: Error Recovery', () => {
       let callCount = 0;
 
       const mockMcpGateway = {
-        dispatch: async (request: { server: string; action: string; payload?: any }) => {
+        dispatch: async () => {
           callCount++;
           if (callCount <= 2) {
             // First 2 calls fail with transient error (connection timeout)
@@ -178,12 +200,16 @@ describe('Integration: Error Recovery', () => {
         { title: 'Run build script', tool: 'terminal' }
       ]);
 
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
-        statePath: path.join(tempDir, 'state.json'),
-        mcpGateway: mockMcpGateway,
-        fetchImpl: mockFetch,
-        defaultEndpoint: 'http://localhost:11434'
-      });
+      runtime = initAgentRuntime(
+        ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+        mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+        {
+          statePath: path.join(tempDir, 'state.json'),
+          mcpGateway: mockMcpGateway,
+          fetchImpl: mockFetch,
+          defaultEndpoint: 'http://localhost:11434'
+        } as unknown as RuntimeOptions
+      );
 
       const handler = ipcMain.getHandler(IPC_CHANNELS.SUBMIT_TASK)!;
       const result = await handler({}, createValidSubmission(tempDir));
@@ -228,7 +254,7 @@ describe('Integration: Error Recovery', () => {
       let callCount = 0;
 
       const mockMcpGateway = {
-        dispatch: async (request: { server: string; action: string; payload?: any }) => {
+        dispatch: async () => {
           callCount++;
           // Fail with permanent error (file not found)
           throw Object.assign(
@@ -240,7 +266,7 @@ describe('Integration: Error Recovery', () => {
 
       // Provide a plan, and also handle replan calls
       let planCallCount = 0;
-      const mockFetch = async (url: string, options?: any) => {
+      const mockFetch = async () => {
         planCallCount++;
         const steps = planCallCount === 1
           ? [{ id: 'step-1', title: 'Read source file', description: 'Read the source', riskLevel: 'low', requiredTools: [{ name: 'folder', server: 'folder', category: 'folder' }], parallelSafe: false, timeout: 120000, dependsOn: [] }]
@@ -257,12 +283,16 @@ describe('Integration: Error Recovery', () => {
         }), { status: 200 });
       };
 
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
-        statePath: path.join(tempDir, 'state.json'),
-        mcpGateway: mockMcpGateway,
-        fetchImpl: mockFetch,
-        defaultEndpoint: 'http://localhost:11434'
-      });
+      runtime = initAgentRuntime(
+        ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+        mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+        {
+          statePath: path.join(tempDir, 'state.json'),
+          mcpGateway: mockMcpGateway,
+          fetchImpl: mockFetch,
+          defaultEndpoint: 'http://localhost:11434'
+        } as unknown as RuntimeOptions
+      );
 
       const handler = ipcMain.getHandler(IPC_CHANNELS.SUBMIT_TASK)!;
       const result = await handler({}, createValidSubmission(tempDir));
@@ -306,7 +336,7 @@ describe('Integration: Error Recovery', () => {
       let step2Attempts = 0;
 
       const mockMcpGateway = {
-        dispatch: async (request: { server: string; action: string; payload?: any }) => {
+        dispatch: async () => {
           stepCallCount++;
 
           // For the first step (terminal): always succeed
@@ -334,12 +364,16 @@ describe('Integration: Error Recovery', () => {
         { title: 'Write output file', tool: 'folder' }
       ]);
 
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
-        statePath: path.join(tempDir, 'state.json'),
-        mcpGateway: mockMcpGateway,
-        fetchImpl: mockFetch,
-        defaultEndpoint: 'http://localhost:11434'
-      });
+      runtime = initAgentRuntime(
+        ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+        mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+        {
+          statePath: path.join(tempDir, 'state.json'),
+          mcpGateway: mockMcpGateway,
+          fetchImpl: mockFetch,
+          defaultEndpoint: 'http://localhost:11434'
+        } as unknown as RuntimeOptions
+      );
 
       const handler = ipcMain.getHandler(IPC_CHANNELS.SUBMIT_TASK)!;
       const result = await handler({}, createValidSubmission(tempDir));
@@ -394,7 +428,7 @@ describe('Integration: Error Recovery', () => {
       const callTimestamps: number[] = [];
 
       const mockMcpGateway = {
-        dispatch: async (request: { server: string; action: string; payload?: any }) => {
+        dispatch: async () => {
           callTimestamps.push(Date.now());
           if (callTimestamps.length <= 2) {
             throw Object.assign(
@@ -410,12 +444,16 @@ describe('Integration: Error Recovery', () => {
         { title: 'Call service', tool: 'http' }
       ]);
 
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
-        statePath: path.join(tempDir, 'state.json'),
-        mcpGateway: mockMcpGateway,
-        fetchImpl: mockFetch,
-        defaultEndpoint: 'http://localhost:11434'
-      });
+      runtime = initAgentRuntime(
+        ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+        mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+        {
+          statePath: path.join(tempDir, 'state.json'),
+          mcpGateway: mockMcpGateway,
+          fetchImpl: mockFetch,
+          defaultEndpoint: 'http://localhost:11434'
+        } as unknown as RuntimeOptions
+      );
 
       const handler = ipcMain.getHandler(IPC_CHANNELS.SUBMIT_TASK)!;
       const result = await handler({}, createValidSubmission(tempDir));

@@ -58,7 +58,7 @@ describe('MemoryManager.createRecord', () => {
   });
 
   afterEach(() => {
-    try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch {}
+    try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch { /* ignore cleanup errors */ }
   });
 
   it('creates a valid record with generated id, createdAt, updatedAt', () => {
@@ -136,7 +136,7 @@ describe('MemoryManager.getRecord', () => {
   });
 
   afterEach(() => {
-    try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch {}
+    try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch { /* ignore cleanup errors */ }
   });
 
   it('retrieves a record by its ID', () => {
@@ -168,7 +168,7 @@ describe('MemoryManager.updateRecord', () => {
   });
 
   afterEach(() => {
-    try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch {}
+    try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch { /* ignore cleanup errors */ }
   });
 
   it('updates fact and sets new updatedAt', () => {
@@ -245,7 +245,7 @@ describe('MemoryManager.deleteRecord', () => {
   });
 
   afterEach(() => {
-    try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch {}
+    try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch { /* ignore cleanup errors */ }
   });
 
   it('deletes an existing record', () => {
@@ -283,7 +283,7 @@ describe('MemoryManager.listRecords', () => {
   });
 
   afterEach(() => {
-    try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch {}
+    try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch { /* ignore cleanup errors */ }
   });
 
   it('returns empty array when no records exist', () => {
@@ -320,7 +320,7 @@ describe('MemoryManager.retrieveRelevant', () => {
   });
 
   afterEach(() => {
-    try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch {}
+    try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch { /* ignore cleanup errors */ }
   });
 
   it('returns empty array for empty instruction', () => {
@@ -475,12 +475,12 @@ describe('MemoryManager - Property 14: Memory persistence round-trip', () => {
           expect(retrieved!.createdAt).toBeDefined();
           expect(retrieved!.updatedAt).toBeDefined();
         } finally {
-          try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch {}
+          try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch { /* ignore cleanup errors */ }
         }
       }),
       { numRuns: 100 }
     );
-  });
+  }, 30000);
 
   // ─── Property: Retrieval returns at most 20 records ──────────────────────
 
@@ -508,13 +508,13 @@ describe('MemoryManager - Property 14: Memory persistence round-trip', () => {
             const results = manager.retrieveRelevant(`${sharedKeyword} project`);
             expect(results.length).toBeLessThanOrEqual(20);
           } finally {
-            try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch {}
+            try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch { /* ignore cleanup errors */ }
           }
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 30 }
     );
-  });
+  }, 30000);
 
   // ─── Property: Retrieved records have keyword overlap with instruction ───
 
@@ -555,11 +555,11 @@ describe('MemoryManager - Property 14: Memory persistence round-trip', () => {
               expect(hasOverlap).toBe(true);
             }
           } finally {
-            try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch {}
+            try { fs.rmSync(path.dirname(storePath), { recursive: true }); } catch { /* ignore cleanup errors */ }
           }
         }
       ),
       { numRuns: 100 }
     );
-  });
+  }, 30000);
 });

@@ -128,11 +128,10 @@ describe('Feature: agent-page-redesign, Property 15: Thinking block extraction',
           const input = `${prefix}<think>${thinking}</think>${suffix}`;
           const result = extractThinking(input);
 
-          // The prefix and suffix should appear in main content in order
+          // The prefix and suffix should appear in main content in order.
+          // After trimming the main content, it should contain prefix content
+          // and suffix content.
           const mainContent = result.mainContent;
-          const prefixIndex = mainContent.indexOf(prefix.trim());
-          // After trimming the main content, it should start with prefix content
-          // and end with suffix content
           expect(mainContent).toContain(prefix.trim());
           expect(mainContent).toContain(suffix.trim());
 

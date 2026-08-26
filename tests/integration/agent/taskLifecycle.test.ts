@@ -14,6 +14,12 @@ import { initAgentRuntime, IPC_CHANNELS } from '../../../electron/runtime/agent/
 
 // ─── Test Helpers ────────────────────────────────────────────────────────────
 
+/** Signature of an IPC handler registered via ipcMain.handle. */
+type IpcHandler = (event: unknown, ...args: unknown[]) => unknown;
+
+/** Shape of an activity-stream event payload (arbitrary keyed map with a type tag). */
+type ActivityEvent = Record<string, unknown> & { type?: string };
+
 const tempDirs: string[] = [];
 
 afterEach(() => {
@@ -35,9 +41,9 @@ function createTempDir() {
  * Creates a mock ipcMain that captures registered handlers.
  */
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -70,7 +76,7 @@ function createMockMainWindow() {
     getEventsByType(type: string) {
       return sentEvents
         .filter(e => e.channel === IPC_CHANNELS.ACTIVITY_STREAM)
-        .filter(e => (e.payload as any)?.type === type);
+        .filter(e => (e.payload as ActivityEvent)?.type === type);
     }
   };
 }
@@ -94,7 +100,7 @@ function createMockMcpGateway() {
  * The plan mimics the Ollama chat API response: { message: { content: JSON.stringify(plan) } }
  */
 function createMockFetch(plan: object) {
-  return async (_url: string, _options?: any) => {
+  return async () => {
     return new Response(JSON.stringify({
       message: {
         content: JSON.stringify(plan)
@@ -179,7 +185,7 @@ describe('Integration: Full Task Lifecycle', () => {
     const plan = createSimplePlan();
     const mockFetch = createMockFetch(plan);
 
-    runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
+    runtime = initAgentRuntime(ipcMain, mainWindow, {
       statePath: path.join(tempDir, 'state.json'),
       mcpGateway,
       fetchImpl: mockFetch,
@@ -229,7 +235,7 @@ describe('Integration: Full Task Lifecycle', () => {
 
     await waitFor(() => {
       const sessions = JSON.parse(fs.readFileSync(sessionsPath, 'utf8'));
-      const session = sessions.find((s: any) => s.id === sessionId);
+      const session = sessions.find((s: { id: string; status?: string }) => s.id === sessionId);
       return session?.status === 'completed';
     }, { timeout: 15000, interval: 100 });
 
@@ -238,7 +244,7 @@ describe('Integration: Full Task Lifecycle', () => {
     const planEvents = mainWindow.getEventsByType('plan-generated');
     expect(planEvents.length).toBeGreaterThanOrEqual(1);
 
-    const planEvent = planEvents[0].payload as any;
+    const planEvent = planEvents[0].payload as { plan: { steps: Array<{ title: string }> } };
     expect(planEvent.plan).toBeDefined();
     expect(planEvent.plan.steps).toBeDefined();
     expect(planEvent.plan.steps.length).toBe(2);
@@ -248,7 +254,7 @@ describe('Integration: Full Task Lifecycle', () => {
     // ─── Verify: Session reaches completed status (Req 3.4) ──────────────────
 
     const completedSessions = JSON.parse(fs.readFileSync(sessionsPath, 'utf8'));
-    const completedSession = completedSessions.find((s: any) => s.id === sessionId);
+    const completedSession = completedSessions.find((s: { id: string }) => s.id === sessionId);
 
     expect(completedSession).toBeDefined();
     expect(completedSession.status).toBe('completed');
@@ -272,9 +278,6 @@ describe('Integration: Full Task Lifecycle', () => {
 
     // ─── Verify: Events were streamed to mainWindow (activity stream) ────────
 
-    const allStreamEvents = mainWindow.getSentEvents()
-      .filter(e => e.channel === IPC_CHANNELS.ACTIVITY_STREAM);
-
     // Should have plan-generated, step-started, step-completed events, and task-complete
     const stepStartEvents = mainWindow.getEventsByType('step-started');
     const stepCompleteEvents = mainWindow.getEventsByType('step-completed');
@@ -286,7 +289,17 @@ describe('Integration: Full Task Lifecycle', () => {
 
     // ─── Verify: Final summary contains artifact count (Req 9.5) ─────────────
 
-    const taskCompletePayload = taskCompleteEvents[0].payload as any;
+    const taskCompletePayload = taskCompleteEvents[0].payload as {
+      summary: {
+        sessionId: string;
+        status: string;
+        stepsCompleted: number;
+        stepsTotal: number;
+        artifactCount: number;
+        totalDuration: number;
+        completedAt: string;
+      };
+    };
     expect(taskCompletePayload.summary).toBeDefined();
     expect(taskCompletePayload.summary.sessionId).toBe(sessionId);
     expect(taskCompletePayload.summary.status).toBe('completed');
@@ -301,7 +314,7 @@ describe('Integration: Full Task Lifecycle', () => {
     const plan = createSimplePlan();
     const mockFetch = createMockFetch(plan);
 
-    runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
+    runtime = initAgentRuntime(ipcMain, mainWindow, {
       statePath: path.join(tempDir, 'state.json'),
       mcpGateway,
       fetchImpl: mockFetch,
@@ -331,7 +344,7 @@ describe('Integration: Full Task Lifecycle', () => {
     const plan = createSimplePlan();
     const mockFetch = createMockFetch(plan);
 
-    runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
+    runtime = initAgentRuntime(ipcMain, mainWindow, {
       statePath: path.join(tempDir, 'state.json'),
       mcpGateway,
       fetchImpl: mockFetch,
@@ -353,7 +366,7 @@ describe('Integration: Full Task Lifecycle', () => {
     // Wait for execution to complete
     await waitFor(() => {
       const sessions = JSON.parse(fs.readFileSync(sessionsPath, 'utf8'));
-      const session = sessions.find((s: any) => s.id === sessionId);
+      const session = sessions.find((s: { id: string; status?: string }) => s.id === sessionId);
       return session?.status === 'completed';
     }, { timeout: 15000, interval: 100 });
 
@@ -368,7 +381,7 @@ describe('Integration: Full Task Lifecycle', () => {
     const plan = createSimplePlan();
     const mockFetch = createMockFetch(plan);
 
-    runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
+    runtime = initAgentRuntime(ipcMain, mainWindow, {
       statePath: path.join(tempDir, 'state.json'),
       mcpGateway,
       fetchImpl: mockFetch,
@@ -390,7 +403,7 @@ describe('Integration: Full Task Lifecycle', () => {
     // Wait for completion
     await waitFor(() => {
       const sessions = JSON.parse(fs.readFileSync(sessionsPath, 'utf8'));
-      const session = sessions.find((s: any) => s.id === sessionId);
+      const session = sessions.find((s: { id: string; status?: string }) => s.id === sessionId);
       return session?.status === 'completed';
     }, { timeout: 15000, interval: 100 });
 
@@ -410,7 +423,7 @@ describe('Integration: Full Task Lifecycle', () => {
     const plan = createSimplePlan();
     const mockFetch = createMockFetch(plan);
 
-    runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
+    runtime = initAgentRuntime(ipcMain, mainWindow, {
       statePath: path.join(tempDir, 'state.json'),
       mcpGateway,
       fetchImpl: mockFetch,
@@ -432,7 +445,7 @@ describe('Integration: Full Task Lifecycle', () => {
     // Wait for first to complete
     await waitFor(() => {
       const sessions = JSON.parse(fs.readFileSync(sessionsPath, 'utf8'));
-      const session = sessions.find((s: any) => s.id === result1.session.id);
+      const session = sessions.find((s: { id: string; status?: string }) => s.id === result1.session.id);
       return session?.status === 'completed';
     }, { timeout: 15000, interval: 100 });
 
@@ -451,7 +464,7 @@ describe('Integration: Full Task Lifecycle', () => {
     // Wait for second to complete
     await waitFor(() => {
       const sessions = JSON.parse(fs.readFileSync(sessionsPath, 'utf8'));
-      const session = sessions.find((s: any) => s.id === result2.session.id);
+      const session = sessions.find((s: { id: string; status?: string }) => s.id === result2.session.id);
       return session?.status === 'completed';
     }, { timeout: 15000, interval: 100 });
 

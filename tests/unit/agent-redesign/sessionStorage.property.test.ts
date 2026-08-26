@@ -32,7 +32,7 @@ import type {
   CompletionSummaryData,
   AttachmentFile,
 } from '../../../src/types/agentChat';
-import type { Plan, Artifact, MemoryRecord } from '../../../src/types/agent';
+import type { Artifact, MemoryRecord } from '../../../src/types/agent';
 
 // ─── Pure State Transition Functions (mirrors useSessionStorage logic) ────────
 

@@ -13,6 +13,12 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { initAgentRuntime, IPC_CHANNELS } from '../../../electron/runtime/agent/agentRuntime.js';
 
+// ─── Shared test types ───────────────────────────────────────────────────────
+
+type IpcHandler = (...args: unknown[]) => unknown;
+type PersistedSession = { id: string; [key: string]: unknown };
+type RuntimeOptions = Parameters<typeof initAgentRuntime>[2];
+
 // ─── Test Helpers ────────────────────────────────────────────────────────────
 
 const tempDirs: string[] = [];
@@ -36,9 +42,9 @@ function createTempDir() {
  * Creates a mock ipcMain that captures registered handlers.
  */
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, IpcHandler>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: IpcHandler) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -178,12 +184,16 @@ describe('Integration: Pause / Resume / Cancel', () => {
 
   describe('Test 1: Pause and Resume flow', () => {
     it('should transition through submit → running → paused → resumed → completed', async () => {
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
-        statePath: path.join(tempDir, 'state.json'),
-        mcpGateway,
-        fetchImpl: createMockFetch(3),
-        defaultEndpoint: 'http://localhost:11434'
-      });
+      runtime = initAgentRuntime(
+        ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+        mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+        {
+          statePath: path.join(tempDir, 'state.json'),
+          mcpGateway,
+          fetchImpl: createMockFetch(3),
+          defaultEndpoint: 'http://localhost:11434'
+        } as unknown as RuntimeOptions
+      );
 
       const submitHandler = ipcMain.getHandler(IPC_CHANNELS.SUBMIT_TASK)!;
       const pauseHandler = ipcMain.getHandler(IPC_CHANNELS.PAUSE_TASK)!;
@@ -244,12 +254,16 @@ describe('Integration: Pause / Resume / Cancel', () => {
     });
 
     it('should complete execution after resume from the exact paused point (Req 13.5)', async () => {
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
-        statePath: path.join(tempDir, 'state.json'),
-        mcpGateway: createMockMcpGateway(50),
-        fetchImpl: createMockFetch(2),
-        defaultEndpoint: 'http://localhost:11434'
-      });
+      runtime = initAgentRuntime(
+        ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+        mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+        {
+          statePath: path.join(tempDir, 'state.json'),
+          mcpGateway: createMockMcpGateway(50),
+          fetchImpl: createMockFetch(2),
+          defaultEndpoint: 'http://localhost:11434'
+        } as unknown as RuntimeOptions
+      );
 
       const submitHandler = ipcMain.getHandler(IPC_CHANNELS.SUBMIT_TASK)!;
       const pauseHandler = ipcMain.getHandler(IPC_CHANNELS.PAUSE_TASK)!;
@@ -299,12 +313,16 @@ describe('Integration: Pause / Resume / Cancel', () => {
   describe('Test 2: Cancel preserves partial results', () => {
     it('should cancel a running task and preserve completed step results (Req 13.4, 13.7)', async () => {
       // Use a moderate delay so steps complete but we can cancel mid-execution
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
-        statePath: path.join(tempDir, 'state.json'),
-        mcpGateway: createMockMcpGateway(200),
-        fetchImpl: createMockFetch(5),
-        defaultEndpoint: 'http://localhost:11434'
-      });
+      runtime = initAgentRuntime(
+        ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+        mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+        {
+          statePath: path.join(tempDir, 'state.json'),
+          mcpGateway: createMockMcpGateway(200),
+          fetchImpl: createMockFetch(5),
+          defaultEndpoint: 'http://localhost:11434'
+        } as unknown as RuntimeOptions
+      );
 
       const submitHandler = ipcMain.getHandler(IPC_CHANNELS.SUBMIT_TASK)!;
       const cancelHandler = ipcMain.getHandler(IPC_CHANNELS.CANCEL_TASK)!;
@@ -348,8 +366,8 @@ describe('Integration: Pause / Resume / Cancel', () => {
 
       // Verify session is persisted with partial results
       const sessionsPath = path.join(path.dirname(path.join(tempDir, 'state.json')), 'agent', 'sessions.json');
-      const persisted = JSON.parse(fs.readFileSync(sessionsPath, 'utf8'));
-      const persistedSession = persisted.find((s: any) => s.id === session.id);
+      const persisted = JSON.parse(fs.readFileSync(sessionsPath, 'utf8')) as PersistedSession[];
+      const persistedSession = persisted.find((s) => s.id === (session as { id: string }).id);
       expect(persistedSession).toBeDefined();
       expect(persistedSession.status).toBe('canceled');
       expect(persistedSession.completedAt).not.toBeNull();
@@ -357,12 +375,16 @@ describe('Integration: Pause / Resume / Cancel', () => {
     }, 30_000);
 
     it('should cancel within deadline and stop execution (Req 12.7)', async () => {
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
-        statePath: path.join(tempDir, 'state.json'),
-        mcpGateway: createMockMcpGateway(300),
-        fetchImpl: createMockFetch(4),
-        defaultEndpoint: 'http://localhost:11434'
-      });
+      runtime = initAgentRuntime(
+        ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+        mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+        {
+          statePath: path.join(tempDir, 'state.json'),
+          mcpGateway: createMockMcpGateway(300),
+          fetchImpl: createMockFetch(4),
+          defaultEndpoint: 'http://localhost:11434'
+        } as unknown as RuntimeOptions
+      );
 
       const submitHandler = ipcMain.getHandler(IPC_CHANNELS.SUBMIT_TASK)!;
       const cancelHandler = ipcMain.getHandler(IPC_CHANNELS.CANCEL_TASK)!;
@@ -393,12 +415,16 @@ describe('Integration: Pause / Resume / Cancel', () => {
 
   describe('Test 3: Paused session retained indefinitely (Req 13.7)', () => {
     it('should retain paused session state without timeout or data loss', async () => {
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
-        statePath: path.join(tempDir, 'state.json'),
-        mcpGateway: createMockMcpGateway(100),
-        fetchImpl: createMockFetch(3),
-        defaultEndpoint: 'http://localhost:11434'
-      });
+      runtime = initAgentRuntime(
+        ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+        mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+        {
+          statePath: path.join(tempDir, 'state.json'),
+          mcpGateway: createMockMcpGateway(100),
+          fetchImpl: createMockFetch(3),
+          defaultEndpoint: 'http://localhost:11434'
+        } as unknown as RuntimeOptions
+      );
 
       const submitHandler = ipcMain.getHandler(IPC_CHANNELS.SUBMIT_TASK)!;
       const pauseHandler = ipcMain.getHandler(IPC_CHANNELS.PAUSE_TASK)!;
@@ -450,20 +476,24 @@ describe('Integration: Pause / Resume / Cancel', () => {
 
       // Verify session is also persisted on disk with correct state
       const sessionsPath = path.join(path.dirname(path.join(tempDir, 'state.json')), 'agent', 'sessions.json');
-      const persisted = JSON.parse(fs.readFileSync(sessionsPath, 'utf8'));
-      const persistedSession = persisted.find((s: any) => s.id === session.id);
+      const persisted = JSON.parse(fs.readFileSync(sessionsPath, 'utf8')) as PersistedSession[];
+      const persistedSession = persisted.find((s) => s.id === (session as { id: string }).id);
       expect(persistedSession).toBeDefined();
       expect(persistedSession.status).toBe('paused');
       expect(persistedSession.instruction).toBe(pausedInstruction);
     });
 
     it('should allow cancel from paused state', async () => {
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
-        statePath: path.join(tempDir, 'state.json'),
-        mcpGateway: createMockMcpGateway(100),
-        fetchImpl: createMockFetch(3),
-        defaultEndpoint: 'http://localhost:11434'
-      });
+      runtime = initAgentRuntime(
+        ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+        mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+        {
+          statePath: path.join(tempDir, 'state.json'),
+          mcpGateway: createMockMcpGateway(100),
+          fetchImpl: createMockFetch(3),
+          defaultEndpoint: 'http://localhost:11434'
+        } as unknown as RuntimeOptions
+      );
 
       const submitHandler = ipcMain.getHandler(IPC_CHANNELS.SUBMIT_TASK)!;
       const pauseHandler = ipcMain.getHandler(IPC_CHANNELS.PAUSE_TASK)!;
@@ -501,20 +531,24 @@ describe('Integration: Pause / Resume / Cancel', () => {
 
       // Verify partial results preserved after cancel from pause
       const sessionsPath = path.join(path.dirname(path.join(tempDir, 'state.json')), 'agent', 'sessions.json');
-      const persisted = JSON.parse(fs.readFileSync(sessionsPath, 'utf8'));
-      const persistedSession = persisted.find((s: any) => s.id === session.id);
+      const persisted = JSON.parse(fs.readFileSync(sessionsPath, 'utf8')) as PersistedSession[];
+      const persistedSession = persisted.find((s) => s.id === (session as { id: string }).id);
       expect(persistedSession.status).toBe('canceled');
     });
   });
 
   describe('Status transitions and timing constraints', () => {
     it('should reject pause when not running', async () => {
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
-        statePath: path.join(tempDir, 'state.json'),
-        mcpGateway,
-        fetchImpl: createMockFetch(2),
-        defaultEndpoint: 'http://localhost:11434'
-      });
+      runtime = initAgentRuntime(
+        ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+        mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+        {
+          statePath: path.join(tempDir, 'state.json'),
+          mcpGateway,
+          fetchImpl: createMockFetch(2),
+          defaultEndpoint: 'http://localhost:11434'
+        } as unknown as RuntimeOptions
+      );
 
       const pauseHandler = ipcMain.getHandler(IPC_CHANNELS.PAUSE_TASK)!;
 
@@ -524,12 +558,16 @@ describe('Integration: Pause / Resume / Cancel', () => {
     });
 
     it('should reject resume when not paused', async () => {
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
-        statePath: path.join(tempDir, 'state.json'),
-        mcpGateway,
-        fetchImpl: createMockFetch(2),
-        defaultEndpoint: 'http://localhost:11434'
-      });
+      runtime = initAgentRuntime(
+        ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+        mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+        {
+          statePath: path.join(tempDir, 'state.json'),
+          mcpGateway,
+          fetchImpl: createMockFetch(2),
+          defaultEndpoint: 'http://localhost:11434'
+        } as unknown as RuntimeOptions
+      );
 
       const resumeHandler = ipcMain.getHandler(IPC_CHANNELS.RESUME_TASK)!;
 
@@ -539,12 +577,16 @@ describe('Integration: Pause / Resume / Cancel', () => {
     });
 
     it('session should have totalDuration set after cancel', async () => {
-      runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
-        statePath: path.join(tempDir, 'state.json'),
-        mcpGateway: createMockMcpGateway(200),
-        fetchImpl: createMockFetch(3),
-        defaultEndpoint: 'http://localhost:11434'
-      });
+      runtime = initAgentRuntime(
+        ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+        mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+        {
+          statePath: path.join(tempDir, 'state.json'),
+          mcpGateway: createMockMcpGateway(200),
+          fetchImpl: createMockFetch(3),
+          defaultEndpoint: 'http://localhost:11434'
+        } as unknown as RuntimeOptions
+      );
 
       const submitHandler = ipcMain.getHandler(IPC_CHANNELS.SUBMIT_TASK)!;
       const cancelHandler = ipcMain.getHandler(IPC_CHANNELS.CANCEL_TASK)!;

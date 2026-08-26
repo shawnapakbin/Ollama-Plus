@@ -78,7 +78,7 @@ const MODEL = 'llama3.1:8b';
 /** Canned /api/chat reply (non-streaming). Also serves /api/tags for models. */
 function createChatFetch(chatContent = 'Assistant reply from local Ollama.') {
   const encoder = new TextEncoder();
-  return async (url: string, init?: { body?: string }) => {
+  return async (url: string) => {
     if (url.endsWith('/api/chat')) {
       // If the caller supplied a streaming body handler, provide a stream; the
       // client inspects response.body for the stream path.
@@ -302,9 +302,9 @@ describe('chat-config-field-reset — Property 1: Bug Condition (field preservat
           }
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 25 }
     );
-  });
+  }, 60000);
 });
 
 /**

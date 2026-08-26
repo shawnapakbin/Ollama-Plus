@@ -150,7 +150,7 @@ describe('Property 6: Sequential tool calls are grouped', () => {
           const result = groupSequentialToolCalls(toolEvents);
           expect(result).toHaveLength(1);
           expect(Array.isArray(result[0])).toBe(true);
-          expect((result[0] as any[]).length).toBe(toolEvents.length);
+          expect((result[0] as unknown[]).length).toBe(toolEvents.length);
         }
       ),
       { numRuns: 100 }
@@ -193,8 +193,8 @@ describe('Property 6: Sequential tool calls are grouped', () => {
           expect(result).toHaveLength(2);
           expect(Array.isArray(result[0])).toBe(true);
           expect(Array.isArray(result[1])).toBe(true);
-          expect((result[0] as any[]).length).toBe(group1.length);
-          expect((result[1] as any[]).length).toBe(group2.length);
+          expect((result[0] as unknown[]).length).toBe(group1.length);
+          expect((result[1] as unknown[]).length).toBe(group2.length);
         }
       ),
       { numRuns: 100 }

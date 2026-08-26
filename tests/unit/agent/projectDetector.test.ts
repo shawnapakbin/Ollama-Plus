@@ -29,7 +29,7 @@ afterEach(() => {
 describe('detectProject', () => {
   describe('invalid inputs', () => {
     it('returns detected: false for null input', () => {
-      const result = detectProject(null as any);
+      const result = detectProject(null as unknown);
       expect(result.detected).toBe(false);
       expect(result.configFiles).toEqual([]);
     });

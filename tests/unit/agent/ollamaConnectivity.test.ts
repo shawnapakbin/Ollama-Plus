@@ -28,7 +28,7 @@ function createSuccessFetch() {
 function createFailingFetch(errorMessage = 'Connection refused', code?: string) {
   const error = new Error(errorMessage);
   if (code) {
-    (error as any).cause = { code };
+    (error as Error & { cause?: { code: string } }).cause = { code };
   }
   return vi.fn().mockRejectedValue(error);
 }
@@ -57,11 +57,6 @@ function createEventuallySucceedsFetch(failCount: number, errorMessage = 'Connec
     return Promise.resolve({ ok: true, status: 200, statusText: 'OK' });
   });
 }
-
-/**
- * A delay function that resolves immediately (for testing).
- */
-const instantDelay = vi.fn().mockResolvedValue(undefined);
 
 // ─── Unit Tests: checkOllamaConnectivity ─────────────────────────────────────
 
@@ -112,7 +107,7 @@ describe('ollamaConnectivity - checkOllamaConnectivity', () => {
 
   it('extracts ECONNREFUSED error as "Connection refused"', async () => {
     const error = new Error('fetch failed');
-    (error as any).cause = { code: 'ECONNREFUSED' };
+    (error as Error & { cause?: { code: string } }).cause = { code: 'ECONNREFUSED' };
     const fetchImpl = vi.fn().mockRejectedValue(error);
 
     const result = await checkOllamaConnectivity('http://localhost:11434', { fetchImpl });

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { initAgentRuntime, IPC_CHANNELS } from '../electron/runtime/agent/agentRuntime.js';
 
 // ─── Test Helpers ────────────────────────────────────────────────────────────
@@ -27,9 +27,9 @@ function createTempDir() {
  * Creates a mock ipcMain that captures registered handlers.
  */
 function createMockIpcMain() {
-  const handlers = new Map<string, Function>();
+  const handlers = new Map<string, (...args: unknown[]) => unknown>();
   return {
-    handle(channel: string, handler: Function) {
+    handle(channel: string, handler: (...args: unknown[]) => unknown) {
       handlers.set(channel, handler);
     },
     removeHandler(channel: string) {
@@ -101,7 +101,10 @@ describe('agentRuntime', () => {
     mainWindow = createMockMainWindow();
     mcpGateway = createMockMcpGateway();
 
-    runtime = initAgentRuntime(ipcMain as any, mainWindow as any, {
+    runtime = initAgentRuntime(
+      ipcMain as unknown as Parameters<typeof initAgentRuntime>[0],
+      mainWindow as unknown as Parameters<typeof initAgentRuntime>[1],
+      {
       statePath: path.join(tempDir, 'state.json'),
       mcpGateway,
       fetchImpl: async () => new Response(JSON.stringify({ message: { content: '{}' } })),

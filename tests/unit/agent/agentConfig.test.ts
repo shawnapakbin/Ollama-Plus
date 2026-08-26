@@ -59,7 +59,7 @@ describe('validateAgentConfig', () => {
     });
 
     it('accepts value at upper boundary (600)', () => {
-      const { valid, errors, sanitizedConfig } = validateAgentConfig({ stepTimeout: 600 });
+      const { valid, sanitizedConfig } = validateAgentConfig({ stepTimeout: 600 });
       expect(valid).toBe(true);
       expect(sanitizedConfig.stepTimeout).toBe(600);
     });
@@ -82,7 +82,7 @@ describe('validateAgentConfig', () => {
     });
 
     it('rejects non-number types', () => {
-      const { valid, errors } = validateAgentConfig({ stepTimeout: '120' as any });
+      const { valid, errors } = validateAgentConfig({ stepTimeout: '120' as unknown });
       expect(valid).toBe(false);
       expect(errors[0]).toContain('finite number');
     });
@@ -218,13 +218,13 @@ describe('validateAgentConfig', () => {
       const rules = [
         { id: 'rule-1', pattern: 'test', type: 'invalid', description: '' }
       ];
-      const { valid, errors } = validateAgentConfig({ customApprovalRules: rules as any });
+      const { valid, errors } = validateAgentConfig({ customApprovalRules: rules as unknown });
       expect(valid).toBe(false);
       expect(errors[0]).toContain('type');
     });
 
     it('rejects non-array customApprovalRules', () => {
-      const { valid, errors } = validateAgentConfig({ customApprovalRules: 'not-array' as any });
+      const { valid, errors } = validateAgentConfig({ customApprovalRules: 'not-array' as unknown });
       expect(valid).toBe(false);
       expect(errors[0]).toContain('array');
     });
@@ -233,7 +233,7 @@ describe('validateAgentConfig', () => {
       const rules = [
         { pattern: 'test', type: 'glob', description: 'desc' }
       ];
-      const { valid, sanitizedConfig } = validateAgentConfig({ customApprovalRules: rules as any });
+      const { valid, sanitizedConfig } = validateAgentConfig({ customApprovalRules: rules as unknown });
       expect(valid).toBe(true);
       expect(sanitizedConfig.customApprovalRules[0].id).toBeTruthy();
       expect(typeof sanitizedConfig.customApprovalRules[0].id).toBe('string');
@@ -254,7 +254,7 @@ describe('validateAgentConfig', () => {
     });
 
     it('rejects non-boolean', () => {
-      const { valid, errors } = validateAgentConfig({ autoApprovalLowRisk: 'yes' as any });
+      const { valid, errors } = validateAgentConfig({ autoApprovalLowRisk: 'yes' as unknown });
       expect(valid).toBe(false);
       expect(errors[0]).toContain('boolean');
     });
@@ -281,7 +281,7 @@ describe('validateAgentConfig', () => {
     });
 
     it('rejects non-object toolTimeouts', () => {
-      const { valid, errors } = validateAgentConfig({ toolTimeouts: 'bad' as any });
+      const { valid, errors } = validateAgentConfig({ toolTimeouts: 'bad' as unknown });
       expect(valid).toBe(false);
       expect(errors[0]).toContain('object');
     });
@@ -289,13 +289,13 @@ describe('validateAgentConfig', () => {
 
   describe('general validation', () => {
     it('rejects null config', () => {
-      const { valid, errors } = validateAgentConfig(null as any);
+      const { valid, errors } = validateAgentConfig(null as unknown);
       expect(valid).toBe(false);
       expect(errors[0]).toContain('object');
     });
 
     it('rejects undefined config', () => {
-      const { valid, errors } = validateAgentConfig(undefined as any);
+      const { valid, errors } = validateAgentConfig(undefined as unknown);
       expect(valid).toBe(false);
       expect(errors[0]).toContain('object');
     });
@@ -310,7 +310,7 @@ describe('validateAgentConfig', () => {
       const { valid, errors } = validateAgentConfig({
         stepTimeout: -1,
         taskTimeout: 99999,
-        retryCount: 'bad' as any
+        retryCount: 'bad' as unknown
       });
       expect(valid).toBe(false);
       expect(errors.length).toBe(3);

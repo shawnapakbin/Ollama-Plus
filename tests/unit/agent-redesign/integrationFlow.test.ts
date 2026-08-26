@@ -52,7 +52,7 @@ function setupMockElectronAPI() {
   mockGetLastActiveAgentSession = vi.fn().mockResolvedValue(null);
   mockDeleteAgentSession = vi.fn().mockResolvedValue(undefined);
 
-  (window as any).electronAPI = {
+  (window as unknown as { electronAPI: unknown }).electronAPI = {
     sendAgentChatMessage: mockSendAgentChatMessage,
     onAgentChatStream: (listener: StreamListener) => {
       streamListener = listener;
@@ -146,7 +146,7 @@ describe('Integration: Full Conversation Flow', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    delete (window as any).electronAPI;
+    delete (window as unknown as { electronAPI?: unknown }).electronAPI;
   });
 
   // ─── Test 1: Send message → receive tokens → complete → message persisted ──
