@@ -4,18 +4,50 @@ export function createGateway(options = {}) {
     ? options.sanitizeError
     : (err) => (err && typeof err.message === 'string' ? err.message : String(err || 'Operation failed.'));
 
+  // Logger is injectable so tests can spy on it; defaults to the module's
+  // existing console-based logging path (matching repo convention).
+  const logger = options.logger && typeof options.logger.warn === 'function'
+    ? options.logger
+    : console;
+
+  // Track entries already logged so each offending route is only reported once.
+  const loggedMalformed = new Set();
+
+  function logMalformedMetadata(key, offending) {
+    if (loggedMalformed.has(key)) {
+      return;
+    }
+    loggedMalformed.add(key);
+    // Guarded so a logger failure can never break enumeration.
+    try {
+      logger.warn('[gateway] Malformed tool metadata for route; substituting defaults.', {
+        route: key,
+        ...offending
+      });
+    } catch {
+      // Intentionally ignore logger failures.
+    }
+  }
+
   let statusProvider = async () => ({ ok: true });
 
   function routeKey(server, action) {
     return `${String(server || '').toLowerCase()}::${String(action || '').toLowerCase()}`;
   }
 
-  function register(server, action, handler) {
+  function register(server, action, handler, metadata) {
     if (typeof handler !== 'function') {
       throw new Error('Gateway handler must be a function.');
     }
+    const meta = metadata && typeof metadata === 'object' ? metadata : {};
+    const description = typeof meta.description === 'string' ? meta.description : '';
+    const parameters = meta.parameters
+      && typeof meta.parameters === 'object'
+      && !Array.isArray(meta.parameters)
+      ? meta.parameters
+      : { type: 'object', properties: {} };
     const key = routeKey(server, action);
-    routes.set(key, handler);
+    routes.set(key, { handler, description, parameters });
   }
 
   function setStatusProvider(provider) {
@@ -35,8 +67,9 @@ export function createGateway(options = {}) {
     }
 
     const key = routeKey(server, action);
-    const handler = routes.get(key);
-    if (!handler) {
+    const entry = routes.get(key);
+    const handler = entry && entry.handler;
+    if (!entry || typeof entry.handler !== 'function') {
       throw new Error(`Unknown MCP route: ${server}/${action}`);
     }
 
@@ -71,11 +104,49 @@ export function createGateway(options = {}) {
     }
   }
 
+  function listTools() {
+    const tools = [];
+    for (const [key, entry] of routes) {
+      const separatorIndex = key.indexOf('::');
+      const server = separatorIndex >= 0 ? key.slice(0, separatorIndex) : key;
+      const action = separatorIndex >= 0 ? key.slice(separatorIndex + 2) : '';
+      const name = `${server}_${action}`;
+
+      const descriptionValid = entry && typeof entry.description === 'string';
+      const parametersValid = entry
+        && entry.parameters
+        && typeof entry.parameters === 'object'
+        && !Array.isArray(entry.parameters);
+
+      const description = descriptionValid ? entry.description : '';
+      const parameters = parametersValid
+        ? entry.parameters
+        : { type: 'object', properties: {} };
+
+      // If defaults were substituted for malformed stored metadata, log the
+      // offending entry once for debugging (guarded so it cannot break us).
+      if (entry && (!descriptionValid || !parametersValid)) {
+        const offending = {};
+        if (!descriptionValid) {
+          offending.description = entry.description;
+        }
+        if (!parametersValid) {
+          offending.parameters = entry.parameters;
+        }
+        logMalformedMetadata(key, offending);
+      }
+
+      tools.push({ name, description, parameters });
+    }
+    return tools;
+  }
+
   return {
     register,
     setStatusProvider,
     dispatch,
     dispatchSafe,
-    statusSafe
+    statusSafe,
+    listTools
   };
 }

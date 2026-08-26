@@ -162,14 +162,122 @@ function probeMcpServices() {
   };
 }
 
-mcpGateway.register('browser', 'create_session', async (payload) => createBrowserSession(payload));
-mcpGateway.register('browser', 'list_sessions', async () => listBrowserSessions());
-mcpGateway.register('browser', 'close_session', async (payload) => closeBrowserSession(String(payload.sessionId || '')));
-mcpGateway.register('browser', 'create_page', async (payload) => createBrowserPage(String(payload.sessionId || ''), payload));
-mcpGateway.register('browser', 'list_pages', async (payload) => listBrowserPages(String(payload.sessionId || '')));
-mcpGateway.register('browser', 'activate_page', async (payload) => activateBrowserPage(String(payload.sessionId || ''), String(payload.pageId || '')));
-mcpGateway.register('browser', 'close_page', async (payload) => closeBrowserPage(String(payload.sessionId || ''), String(payload.pageId || '')));
-mcpGateway.register('browser', 'action', async (payload) => executeBrowserSessionAction(String(payload.sessionId || ''), payload));
+mcpGateway.register('browser', 'create_session', async (payload) => createBrowserSession(payload), {
+  description: 'Launch a new headless browser session and open its first page. Returns the session summary and the initial page.',
+  parameters: {
+    type: 'object',
+    properties: {
+      headless: { type: 'boolean', description: 'Run the browser without a visible window. Defaults to true.' },
+      executablePath: { type: 'string', description: 'Absolute path to the browser executable to launch. Optional; a platform default is used when omitted.' },
+      userAgent: { type: 'string', description: 'Override the browser context User-Agent string.' },
+      viewport: {
+        type: 'object',
+        description: 'Initial viewport dimensions for the browser context.',
+        properties: {
+          width: { type: 'number' },
+          height: { type: 'number' }
+        }
+      },
+      firstPage: {
+        type: 'object',
+        description: 'Options for the first page opened in the session (e.g. an initial url to navigate to and a navigation timeoutMs).',
+        properties: {
+          url: { type: 'string' },
+          timeoutMs: { type: 'number' }
+        }
+      }
+    }
+  }
+});
+mcpGateway.register('browser', 'list_sessions', async () => listBrowserSessions(), {
+  description: 'List all active browser sessions with their summaries. Takes no parameters.',
+  parameters: { type: 'object', properties: {} }
+});
+mcpGateway.register('browser', 'close_session', async (payload) => closeBrowserSession(String(payload.sessionId || '')), {
+  description: 'Close a browser session by id, releasing its browser, context, and pages.',
+  parameters: {
+    type: 'object',
+    properties: {
+      sessionId: { type: 'string', description: 'Identifier of the session to close.' }
+    },
+    required: ['sessionId']
+  }
+});
+mcpGateway.register('browser', 'create_page', async (payload) => createBrowserPage(String(payload.sessionId || ''), payload), {
+  description: 'Open a new page in an existing browser session and make it the active page.',
+  parameters: {
+    type: 'object',
+    properties: {
+      sessionId: { type: 'string', description: 'Identifier of the session to open the page in.' },
+      url: { type: 'string', description: 'Optional URL to navigate the new page to immediately.' },
+      timeoutMs: { type: 'number', description: 'Navigation timeout in milliseconds when a url is provided.' }
+    },
+    required: ['sessionId']
+  }
+});
+mcpGateway.register('browser', 'list_pages', async (payload) => listBrowserPages(String(payload.sessionId || '')), {
+  description: 'List all pages in a browser session along with the session summary.',
+  parameters: {
+    type: 'object',
+    properties: {
+      sessionId: { type: 'string', description: 'Identifier of the session whose pages to list.' }
+    },
+    required: ['sessionId']
+  }
+});
+mcpGateway.register('browser', 'activate_page', async (payload) => activateBrowserPage(String(payload.sessionId || ''), String(payload.pageId || '')), {
+  description: 'Make a specific page the active page within its browser session.',
+  parameters: {
+    type: 'object',
+    properties: {
+      sessionId: { type: 'string', description: 'Identifier of the session that owns the page.' },
+      pageId: { type: 'string', description: 'Identifier of the page to activate.' }
+    },
+    required: ['sessionId', 'pageId']
+  }
+});
+mcpGateway.register('browser', 'close_page', async (payload) => closeBrowserPage(String(payload.sessionId || ''), String(payload.pageId || '')), {
+  description: 'Close a specific page within a browser session.',
+  parameters: {
+    type: 'object',
+    properties: {
+      sessionId: { type: 'string', description: 'Identifier of the session that owns the page.' },
+      pageId: { type: 'string', description: 'Identifier of the page to close.' }
+    },
+    required: ['sessionId', 'pageId']
+  }
+});
+mcpGateway.register('browser', 'action', async (payload) => executeBrowserSessionAction(String(payload.sessionId || ''), payload), {
+  description: 'Perform a browser action (navigation, interaction, capture, or cookie/header management) on the active or specified page of a session.',
+  parameters: {
+    type: 'object',
+    properties: {
+      action: {
+        type: 'string',
+        description: 'The browser action to perform.',
+        enum: [
+          'goto', 'click', 'type', 'press', 'scroll', 'wait', 'back', 'forward',
+          'reload', 'evaluate', 'screenshot', 'content', 'extract-text',
+          'set-headers', 'get-cookies', 'set-cookies'
+        ]
+      },
+      sessionId: { type: 'string', description: 'Identifier of the target session.' },
+      pageId: { type: 'string', description: 'Identifier of the target page. Defaults to the session active page when omitted.' },
+      url: { type: 'string', description: 'Target URL for the "goto" action.' },
+      selector: { type: 'string', description: 'CSS selector for "click", "type", "press", or "scroll" actions.' },
+      text: { type: 'string', description: 'Text to type for "type", or scroll direction ("down"/"up") for "scroll".' },
+      key: { type: 'string', description: 'Key to press for the "press" action (e.g. "Enter").' },
+      timeoutMs: { type: 'number', description: 'Action timeout in milliseconds.' },
+      wait_for: { type: 'string', description: 'For the "wait" action: a URL (http...) to wait for, or a selector to wait to appear.' },
+      ms: { type: 'number', description: 'For the "wait" action: milliseconds to wait when no wait_for is provided.' },
+      script: { type: 'string', description: 'JavaScript to run in the page for the "evaluate" action.' },
+      fullPage: { type: 'boolean', description: 'Capture the full scrollable page for the "screenshot" action.' },
+      headers: { type: 'object', description: 'Extra HTTP headers to set for the "set-headers" action.' },
+      cookies: { type: 'array', description: 'Cookies to add for the "set-cookies" action.', items: { type: 'object' } }
+    },
+    required: ['action']
+  }
+});
 
 mcpGateway.setStatusProvider(async () => probeMcpServices());
 
