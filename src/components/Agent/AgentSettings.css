@@ -1,0 +1,470 @@
+/**
+ * AgentSettings Styles
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ */
+
+.agent-settings {
+  display: grid;
+  gap: 20px;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(184, 216, 200, 0.2);
+  background: rgba(8, 14, 17, 0.96);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+  max-width: 720px;
+}
+
+.agent-settings-title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #effff7;
+  font-weight: 650;
+}
+
+/* ─── Section Groups ──────────────────────────────────────────────────── */
+
+.agent-settings-section {
+  display: grid;
+  gap: 12px;
+}
+
+.agent-settings-section-title {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #d6e9dd;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Field Rows ──────────────────────────────────────────────────────── */
+
+.agent-settings-field {
+  display: grid;
+  gap: 4px;
+}
+
+.agent-settings-field label {
+  font-size: 0.76rem;
+  color: #c4dccb;
+  font-weight: 500;
+}
+
+.agent-settings-field input[type='text'],
+.agent-settings-field input[type='number'] {
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(11, 17, 21, 0.8);
+  color: #effff7;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.agent-settings-field input[type='text']:focus,
+.agent-settings-field input[type='number']:focus {
+  outline: none;
+  border-color: rgba(212, 227, 159, 0.45);
+}
+
+.agent-settings-field input[type='text']::placeholder,
+.agent-settings-field input[type='number']::placeholder {
+  color: rgba(220, 236, 228, 0.4);
+}
+
+.agent-settings-field input.field-error {
+  border-color: rgba(255, 145, 145, 0.55);
+}
+
+.agent-settings-field-hint {
+  font-size: 0.68rem;
+  color: var(--text-muted, rgba(200, 220, 210, 0.55));
+}
+
+.agent-settings-field-error {
+  font-size: 0.72rem;
+  color: #ffd2ca;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(101, 22, 22, 0.25);
+  border: 1px solid rgba(255, 145, 145, 0.2);
+}
+
+/* ─── Toggle / Checkbox ───────────────────────────────────────────────── */
+
+.agent-settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.agent-settings-toggle-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  transition: background 160ms ease, border-color 160ms ease;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.agent-settings-toggle-track.active {
+  background: rgba(134, 196, 162, 0.35);
+  border-color: rgba(134, 196, 162, 0.5);
+}
+
+.agent-settings-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #b8d8c8;
+  transition: transform 160ms ease;
+}
+
+.agent-settings-toggle-track.active .agent-settings-toggle-thumb {
+  transform: translateX(16px);
+  background: #d4e39f;
+}
+
+.agent-settings-toggle-label {
+  font-size: 0.78rem;
+  color: #d6e9dd;
+}
+
+/* ─── Tool Timeouts Grid ──────────────────────────────────────────────── */
+
+.agent-settings-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.agent-settings-tool-item {
+  display: grid;
+  gap: 4px;
+}
+
+.agent-settings-tool-item label {
+  font-size: 0.72rem;
+  color: #c4dccb;
+  text-transform: capitalize;
+}
+
+.agent-settings-tool-item input {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(11, 17, 21, 0.8);
+  color: #effff7;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.agent-settings-tool-item input:focus {
+  outline: none;
+  border-color: rgba(212, 227, 159, 0.45);
+}
+
+.agent-settings-tool-item input.field-error {
+  border-color: rgba(255, 145, 145, 0.55);
+}
+
+/* ─── Approval Rules ──────────────────────────────────────────────────── */
+
+.agent-settings-rules-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.agent-settings-rules-count {
+  font-size: 0.7rem;
+  color: var(--text-muted, rgba(200, 220, 210, 0.55));
+}
+
+.agent-settings-add-rule {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 5px 11px;
+  border: 1px solid rgba(161, 201, 182, 0.35);
+  background: rgba(144, 185, 165, 0.16);
+  color: #defff1;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.agent-settings-add-rule:hover:not(:disabled) {
+  background: rgba(144, 185, 165, 0.28);
+}
+
+.agent-settings-add-rule:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.agent-settings-rules-list {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-settings-rule-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.agent-settings-rule-info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.agent-settings-rule-pattern {
+  font-size: 0.78rem;
+  color: #e8f9c2;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-settings-rule-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 0.68rem;
+  color: var(--text-muted, rgba(200, 220, 210, 0.55));
+}
+
+.agent-settings-rule-type {
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: rgba(212, 227, 159, 0.12);
+  color: #dbf0b4;
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.agent-settings-rule-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.agent-settings-rule-btn {
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #d6e9dd;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.agent-settings-rule-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.agent-settings-rule-btn.delete:hover {
+  background: rgba(255, 100, 100, 0.25);
+  color: #ffd6d6;
+}
+
+/* ─── Rule Form (Add/Edit) ────────────────────────────────────────────── */
+
+.agent-settings-rule-form {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(212, 227, 159, 0.2);
+  background: rgba(14, 22, 26, 0.9);
+}
+
+.agent-settings-rule-form-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.agent-settings-rule-form-field {
+  display: grid;
+  gap: 3px;
+}
+
+.agent-settings-rule-form-field label {
+  font-size: 0.7rem;
+  color: #c4dccb;
+}
+
+.agent-settings-rule-form-field input,
+.agent-settings-rule-form-field select {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(11, 17, 21, 0.8);
+  color: #effff7;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.agent-settings-rule-form-field select {
+  appearance: none;
+  cursor: pointer;
+}
+
+.agent-settings-rule-form-field input:focus,
+.agent-settings-rule-form-field select:focus {
+  outline: none;
+  border-color: rgba(212, 227, 159, 0.45);
+}
+
+.agent-settings-rule-form-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.agent-settings-rule-form-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 5px 12px;
+  border: none;
+  background: linear-gradient(135deg, #d4e39f, #86c4a2);
+  color: #0f1f16;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agent-settings-rule-form-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-settings-rule-form-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: #d6e9dd;
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.agent-settings-rule-form-cancel:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Empty State ─────────────────────────────────────────────────────── */
+
+.agent-settings-rules-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 0.76rem;
+  color: var(--text-muted, rgba(200, 220, 210, 0.55));
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+/* ─── Save Area ───────────────────────────────────────────────────────── */
+
+.agent-settings-save-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.agent-settings-save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  padding: 9px 18px;
+  border: none;
+  background: linear-gradient(135deg, #d4e39f, #86c4a2);
+  color: #0f1f16;
+  font: inherit;
+  font-weight: 650;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: opacity 160ms ease, transform 80ms ease;
+}
+
+.agent-settings-save-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.agent-settings-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-settings-save-feedback {
+  font-size: 0.76rem;
+  padding: 5px 10px;
+  border-radius: 8px;
+}
+
+.agent-settings-save-feedback.success {
+  background: rgba(134, 196, 162, 0.15);
+  color: #c4f0d4;
+  border: 1px solid rgba(134, 196, 162, 0.25);
+}
+
+.agent-settings-save-feedback.error {
+  background: rgba(101, 22, 22, 0.25);
+  color: #ffd2ca;
+  border: 1px solid rgba(255, 145, 145, 0.2);
+}
+
+/* ─── Responsive ──────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .agent-settings {
+    padding: 12px;
+    gap: 16px;
+  }
+
+  .agent-settings-tool-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .agent-settings-rule-form-row {
+    grid-template-columns: 1fr;
+  }
+}

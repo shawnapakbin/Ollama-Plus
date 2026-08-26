@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.2
+ * v5.0.3
  */
 const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 
@@ -30,6 +30,52 @@ export function extractMetrics(payload) {
     evalCount: normalizeMetricField(payload?.eval_count),
     evalDuration: normalizeMetricField(payload?.eval_duration),
   };
+}
+
+/**
+ * Returns the optional tool catalog from a chat input only when it is a
+ * non-empty array. Returns null otherwise so callers can omit the `tools`
+ * field entirely and keep the outgoing /api/chat body byte-for-byte identical
+ * to a tool-less request.
+ */
+function resolveToolCatalog(input) {
+  const tools = input?.tools;
+  if (Array.isArray(tools) && tools.length > 0) {
+    return tools;
+  }
+  return null;
+}
+
+/**
+ * Builds the JSON body for an /api/chat request. Includes a `tools` array only
+ * when a non-empty catalog is provided; otherwise the body is exactly
+ * { model, stream, messages }.
+ */
+function buildChatBody({ model, stream, messages, tools }) {
+  const body = {
+    model,
+    stream,
+    messages: messages.map((message) => ({
+      role: message.role,
+      content: message.content
+    }))
+  };
+  if (tools) {
+    body.tools = tools;
+  }
+  return body;
+}
+
+/**
+ * Normalizes the `message.tool_calls` array returned by a tool-capable model
+ * into a plain array. Returns an empty array when no tool calls are present.
+ */
+function normalizeToolCalls(message) {
+  const toolCalls = message?.tool_calls;
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
+    return [];
+  }
+  return toolCalls.filter((call) => call && typeof call === 'object');
 }
 
 function ensureProtocol(value) {
@@ -96,24 +142,27 @@ export async function requestOllamaChat(fetchImpl, input) {
     throw new Error('Select an Ollama model before sending a chat message.');
   }
 
+  const tools = resolveToolCatalog(input);
+
   const response = await fetchImpl(`${endpoint}/api/chat`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json'
     },
-    body: JSON.stringify({
+    body: JSON.stringify(buildChatBody({
       model,
       stream: false,
-      messages: input.messages.map((message) => ({
-        role: message.role,
-        content: message.content
-      }))
-    })
+      messages: input.messages,
+      tools
+    }))
   });
 
   const payload = await readJson(response);
   const content = typeof payload?.message?.content === 'string' ? payload.message.content : '';
-  if (!content.trim()) {
+  const toolCalls = normalizeToolCalls(payload?.message);
+  // A tool-call turn legitimately has no text; only error on empty content when
+  // the model returned neither content nor a tool call.
+  if (!content.trim() && toolCalls.length === 0) {
     throw new Error('Ollama returned an empty assistant message.');
   }
 
@@ -123,6 +172,7 @@ export async function requestOllamaChat(fetchImpl, input) {
     endpoint,
     model,
     content,
+    toolCalls,
     done: Boolean(payload?.done),
     totalDuration: metrics.totalDuration,
     loadDuration: metrics.loadDuration,
@@ -141,19 +191,19 @@ export async function requestOllamaChatStream(fetchImpl, input, callbacks = {}) 
     throw new Error('Select an Ollama model before sending a chat message.');
   }
 
+  const tools = resolveToolCatalog(input);
+
   const response = await fetchImpl(`${endpoint}/api/chat`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json'
     },
-    body: JSON.stringify({
+    body: JSON.stringify(buildChatBody({
       model,
       stream: true,
-      messages: input.messages.map((message) => ({
-        role: message.role,
-        content: message.content
-      }))
-    })
+      messages: input.messages,
+      tools
+    }))
   });
 
   if (!response.ok) {
@@ -171,6 +221,7 @@ export async function requestOllamaChatStream(fetchImpl, input, callbacks = {}) 
   let buffer = '';
   let content = '';
   let metrics = null;
+  const toolCalls = [];
 
   const consumeLine = (line) => {
     if (!line.trim()) return;
@@ -179,6 +230,12 @@ export async function requestOllamaChatStream(fetchImpl, input, callbacks = {}) 
     if (delta) {
       content += delta;
       callbacks.onToken?.(delta);
+    }
+
+    // Accumulate any tool calls emitted across streamed chunks (including the
+    // final `done` chunk). A tool-call turn may carry no text content.
+    for (const call of normalizeToolCalls(payload?.message)) {
+      toolCalls.push(call);
     }
 
     if (payload?.done) {
@@ -202,7 +259,9 @@ export async function requestOllamaChatStream(fetchImpl, input, callbacks = {}) 
     consumeLine(buffer);
   }
 
-  if (!content.trim()) {
+  // A tool-call turn legitimately produces no text; only error on empty content
+  // when the model returned neither content nor a tool call.
+  if (!content.trim() && toolCalls.length === 0) {
     throw new Error('Ollama returned an empty assistant stream.');
   }
 
@@ -210,6 +269,7 @@ export async function requestOllamaChatStream(fetchImpl, input, callbacks = {}) 
     endpoint,
     model,
     content,
+    toolCalls,
     done: true,
     totalDuration: metrics?.totalDuration ?? null,
     loadDuration: metrics?.loadDuration ?? null,

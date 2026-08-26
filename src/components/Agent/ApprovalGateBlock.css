@@ -1,0 +1,293 @@
+/**
+ * ApprovalGateBlock Styles
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ *
+ * Elevated amber-tinted glassmorphic surface for inline approval gates.
+ * Uses 250ms transition animations for approved/denied state changes.
+ * Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 9.6
+ */
+
+/* ─── Container ───────────────────────────────────────────────────────────── */
+
+.approval-gate-block {
+  border-radius: 18px;
+  border: 1px solid rgba(240, 200, 60, 0.28);
+  background: rgba(240, 200, 60, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow:
+    0 8px 32px rgba(240, 200, 60, 0.08),
+    0 2px 12px rgba(0, 0, 0, 0.3);
+  transition:
+    border-color 250ms ease,
+    background 250ms ease,
+    box-shadow 250ms ease;
+}
+
+/* ─── State: Approved ─────────────────────────────────────────────────────── */
+
+.approval-gate-block--approved {
+  border-color: rgba(100, 210, 140, 0.45);
+  background: rgba(100, 210, 140, 0.08);
+  box-shadow:
+    0 4px 20px rgba(100, 210, 140, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* ─── State: Denied ───────────────────────────────────────────────────────── */
+
+.approval-gate-block--denied {
+  border-color: rgba(220, 80, 80, 0.45);
+  background: rgba(220, 80, 80, 0.08);
+  box-shadow:
+    0 4px 20px rgba(220, 80, 80, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* ─── Zone 1: Header ──────────────────────────────────────────────────────── */
+
+.approval-gate-block__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.approval-gate-block__shield {
+  font-size: 1.1rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.approval-gate-block__title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #ffefc4;
+  letter-spacing: 0.01em;
+}
+
+.approval-gate-block--approved .approval-gate-block__title {
+  color: #c8f5d4;
+}
+
+.approval-gate-block--denied .approval-gate-block__title {
+  color: #ffd3d3;
+}
+
+.approval-gate-block__status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-left: auto;
+}
+
+.approval-gate-block__status-badge--approved {
+  background: rgba(100, 210, 140, 0.2);
+  color: #64d28c;
+  border: 1px solid rgba(100, 210, 140, 0.4);
+}
+
+.approval-gate-block__status-badge--denied {
+  background: rgba(220, 80, 80, 0.2);
+  color: #dc5050;
+  border: 1px solid rgba(220, 80, 80, 0.4);
+}
+
+/* ─── Zone 2: Action Summary ──────────────────────────────────────────────── */
+
+.approval-gate-block__action-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.approval-gate-block__tool-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.approval-gate-block__action-desc {
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+/* ─── Zone 3: Risk Explanation ────────────────────────────────────────────── */
+
+.approval-gate-block__risk {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(240, 200, 60, 0.06);
+  border: 1px solid rgba(240, 200, 60, 0.16);
+}
+
+.approval-gate-block__risk-icon {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.approval-gate-block__risk-text {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #ffe6a8;
+}
+
+.approval-gate-block--approved .approval-gate-block__risk {
+  opacity: 0.6;
+}
+
+.approval-gate-block--denied .approval-gate-block__risk {
+  opacity: 0.6;
+}
+
+/* ─── Collapsible Parameters ──────────────────────────────────────────────── */
+
+.approval-gate-block__params-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.approval-gate-block__params-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.76rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 150ms ease;
+  width: fit-content;
+}
+
+.approval-gate-block__params-toggle:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.approval-gate-block__params-chevron {
+  display: inline-block;
+  font-size: 0.6rem;
+  transition: transform 200ms ease;
+}
+
+.approval-gate-block__params-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.approval-gate-block__params-code {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 12, 16, 0.6);
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: #e6f4eb;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+}
+
+/* ─── Zone 4: Action Buttons ──────────────────────────────────────────────── */
+
+.approval-gate-block__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.approval-gate-block__approve-btn {
+  border-radius: 999px;
+  padding: 8px 18px;
+  border: none;
+  background: linear-gradient(135deg, #8ed29f, #64d28c);
+  color: #0f1f16;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.approval-gate-block__approve-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.approval-gate-block__approve-btn:active {
+  transform: translateY(0);
+}
+
+.approval-gate-block__deny-btn {
+  border-radius: 999px;
+  padding: 8px 18px;
+  border: 1px solid rgba(220, 80, 80, 0.45);
+  background: rgba(220, 80, 80, 0.12);
+  color: #ffd3d3;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.approval-gate-block__deny-btn:hover {
+  border-color: rgba(220, 80, 80, 0.7);
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.approval-gate-block__deny-btn:active {
+  transform: translateY(0);
+}
+
+/* ─── Responsive ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .approval-gate-block {
+    padding: 12px;
+    border-radius: 14px;
+    gap: 10px;
+  }
+
+  .approval-gate-block__params-code {
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .approval-gate-block__actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .approval-gate-block__approve-btn,
+  .approval-gate-block__deny-btn {
+    width: 100%;
+    text-align: center;
+  }
+}

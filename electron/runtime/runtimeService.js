@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.2
+ * v5.0.3
  */
 import { randomUUID } from 'node:crypto';
 import { buildRunBlueprint, getGraphCatalog } from './graphCatalog.js';
@@ -198,10 +198,11 @@ export function createRuntimeService(config) {
       const title = pickTitleCandidate(response.content) || session.title;
       const renamed = renameStoredSession(statePath, session.id, title);
 
-      updateChatConfig(statePath, {
+      updateChatConfig(statePath, (current) => ({
+        ...current,
         endpoint: response.endpoint,
         model: response.model
-      });
+      }));
 
       return {
         session: renamed,
@@ -288,7 +289,8 @@ export function createRuntimeService(config) {
       return updateChatConfig(statePath, (current) => ({
         ...current,
         endpoint: input.endpoint ?? current.endpoint ?? defaultOllamaEndpoint,
-        model: input.model ?? current.model ?? ''
+        model: input.model ?? current.model ?? '',
+        systemPrompt: input.systemPrompt ?? current.systemPrompt ?? ''
       }));
     },
 
@@ -300,10 +302,11 @@ export function createRuntimeService(config) {
         ? currentConfig.model
         : result.models[0]?.name ?? '';
 
-      const nextConfig = updateChatConfig(statePath, {
+      const nextConfig = updateChatConfig(statePath, (current) => ({
+        ...current,
         endpoint: result.endpoint,
         model: selectedModel
-      });
+      }));
 
       return {
         ...nextConfig,
@@ -367,10 +370,11 @@ export function createRuntimeService(config) {
         metrics: response.metrics
       });
 
-      updateChatConfig(statePath, {
+      updateChatConfig(statePath, (current) => ({
+        ...current,
         endpoint: response.endpoint,
         model: response.model
-      });
+      }));
 
       return {
         sessionId: session.id,
@@ -456,10 +460,11 @@ export function createRuntimeService(config) {
           metrics: response.metrics
         });
 
-        updateChatConfig(statePath, {
+        updateChatConfig(statePath, (current) => ({
+          ...current,
           endpoint: response.endpoint,
           model: response.model
-        });
+        }));
 
         const result = {
           sessionId: session.id,

@@ -1,0 +1,97 @@
+/**
+ * CompletionSummary Styles
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ *
+ * Green-tinted glassmorphism card for task completion display.
+ * Shows checkmark icon, heading, stats row, and outcome text.
+ *
+ * Requirements: 3.6, 12.4
+ */
+
+/* ─── Container ───────────────────────────────────────────────────────────── */
+
+.completion-summary {
+  border-radius: 14px;
+  border: 1px solid rgba(134, 196, 162, 0.25);
+  background: rgba(134, 196, 162, 0.08);
+  backdrop-filter: blur(12px);
+  padding: 14px 16px;
+  margin: 4px 0;
+  display: grid;
+  gap: 10px;
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────────── */
+
+.completion-summary__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.completion-summary__icon {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(100, 210, 140, 0.18);
+  color: #64d28c;
+  font-size: 0.85rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  border: 1.5px solid rgba(100, 210, 140, 0.4);
+}
+
+.completion-summary__heading {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: #dff9e6;
+  letter-spacing: 0.01em;
+}
+
+/* ─── Stats Row ───────────────────────────────────────────────────────────── */
+
+.completion-summary__stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.completion-summary__stat {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.completion-summary__stat-value {
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: #c8f0d8;
+  font-variant-numeric: tabular-nums;
+}
+
+.completion-summary__stat-label {
+  font-size: 0.75rem;
+  font-weight: 450;
+  color: rgba(200, 240, 216, 0.6);
+}
+
+.completion-summary__stat-divider {
+  width: 1px;
+  height: 12px;
+  background: rgba(134, 196, 162, 0.25);
+  flex-shrink: 0;
+}
+
+/* ─── Outcome ─────────────────────────────────────────────────────────────── */
+
+.completion-summary__outcome {
+  margin: 0;
+  font-size: 0.8rem;
+  color: rgba(223, 249, 230, 0.82);
+  line-height: 1.45;
+}

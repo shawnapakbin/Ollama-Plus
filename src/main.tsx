@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.2
+ * v5.0.3
  */
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'

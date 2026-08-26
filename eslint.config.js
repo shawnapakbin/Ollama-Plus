@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.2
+ * v5.0.3
  */
 import js from '@eslint/js'
 import globals from 'globals'

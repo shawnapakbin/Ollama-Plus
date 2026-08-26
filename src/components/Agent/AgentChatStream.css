@@ -1,0 +1,83 @@
+/**
+ * AgentChatStream Styles
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ *
+ * Scrollable timeline container for the agent chat interface.
+ * - Flex column layout with overflow-y auto
+ * - Position relative for the absolute-positioned scroll button
+ * - Items max-width 800px, centered via margin auto
+ * - 16px padding, 12px gap between items
+ *
+ * Requirements: 1.1, 6.1, 6.5, 10.5, 12.2
+ */
+
+/* ─── Container ───────────────────────────────────────────────────────────── */
+
+.agent-chat-stream {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  min-height: 0; /* allow flex shrink in parent */
+
+  /* Smooth scrolling for programmatic scrolls */
+  scroll-behavior: smooth;
+
+  /* Custom scrollbar (thin, matches theme) */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(198, 223, 211, 0.2) transparent;
+}
+
+.agent-chat-stream::-webkit-scrollbar {
+  width: 6px;
+}
+
+.agent-chat-stream::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.agent-chat-stream::-webkit-scrollbar-thumb {
+  background: rgba(198, 223, 211, 0.2);
+  border-radius: 3px;
+}
+
+.agent-chat-stream::-webkit-scrollbar-thumb:hover {
+  background: rgba(198, 223, 211, 0.35);
+}
+
+/* ─── Content Area ────────────────────────────────────────────────────────── */
+
+.agent-chat-stream__content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding-bottom: 16px;
+}
+
+/* ─── Individual Timeline Items ───────────────────────────────────────────── */
+
+.agent-chat-stream__item {
+  width: 100%;
+  /* Prevent items from overflowing */
+  min-width: 0;
+}
+
+/* ─── Responsive ──────────────────────────────────────────────────────────── */
+
+/* On narrow viewports, reduce padding and let content use full width */
+@media (max-width: 640px) {
+  .agent-chat-stream {
+    padding: 12px 8px;
+  }
+
+  .agent-chat-stream__content {
+    max-width: 100%;
+    gap: 10px;
+  }
+}

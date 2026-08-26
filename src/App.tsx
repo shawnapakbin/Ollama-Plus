@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.2
+ * v5.0.3
  */
 import {
   Bot,
@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   GitBranchPlus,
+  History,
   Image as ImageIcon,
   MessageSquare,
   Network,
@@ -20,7 +21,6 @@ import {
   RefreshCw,
   Server,
   Settings,
-  SlidersHorizontal,
   Square,
   Trash,
   Trash2,
@@ -31,6 +31,7 @@ import {
 import './App.css';
 import {
   runtimeClient,
+  MAX_SYSTEM_PROMPT_LENGTH,
   type ApprovalDecision,
   type RuntimeBootstrapPlan,
   type RuntimeChatConfig,
@@ -47,8 +48,10 @@ import {
 } from './services/runtimeClient';
 import { evaluateRenameGuard } from './services/renameGuard';
 import { MessageContent } from './components/Chat/MessageContent';
+import { AgentPage } from './components/Agent/AgentPage';
+import { AgentSettings } from './components/Agent/AgentSettings';
 import { useChatStreamListener } from './hooks/useChatStreamListener';
-import { useMemo, useEffect, useRef, useState } from 'react';
+import { useCallback, useMemo, useEffect, useRef, useState } from 'react';
 
 const NAV_PREFERENCE_KEY = 'ollama-plus.nav-open';
 const INSPECTOR_PREFERENCE_KEY = 'ollama-plus.inspector-sections';
@@ -393,7 +396,9 @@ function App() {
   const navToggleRef = useRef<HTMLButtonElement | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const agentNewSessionRef = useRef<(() => void) | null>(null);
   const [activePage, setActivePage] = useState<AppPage>('chats');
+  const [agentTab, setAgentTab] = useState<'active' | 'history'>('active');
   const [isNavOpen, setIsNavOpen] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
 
@@ -434,7 +439,7 @@ function App() {
   const [runs, setRuns] = useState<RuntimeRunSummary[]>([]);
   const [memoryRecords, setMemoryRecords] = useState<RuntimeMemoryRecord[]>([]);
   const [messages, setMessages] = useState<RuntimeChatMessage[]>([]);
-  const [chatConfig, setChatConfig] = useState<RuntimeChatConfig>({ endpoint: 'http://127.0.0.1:11434', model: '', autoRenameEnabled: true });
+  const [chatConfig, setChatConfig] = useState<RuntimeChatConfig>({ endpoint: 'http://127.0.0.1:11434', model: '', autoRenameEnabled: true, systemPrompt: '' });
   const [availableModels, setAvailableModels] = useState<RuntimeOllamaModel[]>([]);
   const [ollamaServers, setOllamaServers] = useState<RuntimeOllamaServer[]>([]);
   const [ollamaServerHealth, setOllamaServerHealth] = useState<Record<string, RuntimeOllamaServerHealth>>({});
@@ -467,7 +472,6 @@ function App() {
   }, [bridgeHealth]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
-  const [isPlanningRun, setIsPlanningRun] = useState(false);
   const [isRefreshingModels, setIsRefreshingModels] = useState(false);
   const [isRefreshingMcpStatus, setIsRefreshingMcpStatus] = useState(false);
   const [isSavingServer, setIsSavingServer] = useState(false);
@@ -662,7 +666,12 @@ function App() {
         setPlan(nextPlan);
         setGraphs(nextGraphs);
         setSessions(nextSessions);
-        setChatConfig({ endpoint: modelCatalog.endpoint || nextConfig.endpoint, model: modelCatalog.model || nextConfig.model });
+        setChatConfig({
+          endpoint: modelCatalog.endpoint || nextConfig.endpoint,
+          model: modelCatalog.model || nextConfig.model,
+          autoRenameEnabled: nextConfig.autoRenameEnabled,
+          systemPrompt: nextConfig.systemPrompt ?? ''
+        });
         setAvailableModels(modelCatalog.availableModels);
         setOllamaServers(nextOllamaServers);
         setActiveSessionId(sessionId);
@@ -806,7 +815,7 @@ function App() {
     try {
       const catalog = await runtimeClient.listOllamaModels(chatConfig.endpoint);
       setAvailableModels(catalog.availableModels);
-      setChatConfig({ endpoint: catalog.endpoint, model: catalog.model });
+      setChatConfig((current) => ({ ...current, endpoint: catalog.endpoint, model: catalog.model }));
     } catch (modelError) {
       setError(modelError instanceof Error ? modelError.message : String(modelError));
     } finally {
@@ -914,7 +923,7 @@ function App() {
     try {
       const catalog = await runtimeClient.listOllamaModels(server.endpoint);
       setAvailableModels(catalog.availableModels);
-      setChatConfig({ endpoint: catalog.endpoint, model: catalog.model });
+      setChatConfig((current) => ({ ...current, endpoint: catalog.endpoint, model: catalog.model }));
       setOllamaServerHealth((current) => ({
         ...current,
         [server.id]: {
@@ -940,7 +949,9 @@ function App() {
     try {
       const saved = await runtimeClient.saveChatConfig({
         endpoint: nextConfig.endpoint ?? chatConfig.endpoint,
-        model: nextConfig.model ?? chatConfig.model
+        model: nextConfig.model ?? chatConfig.model,
+        ...(nextConfig.autoRenameEnabled !== undefined ? { autoRenameEnabled: nextConfig.autoRenameEnabled } : {}),
+        ...(nextConfig.systemPrompt !== undefined ? { systemPrompt: nextConfig.systemPrompt } : {})
       });
       setChatConfig(saved);
     } catch (configError) {
@@ -948,19 +959,33 @@ function App() {
     }
   }
 
-  async function handleStartRun(graphId: string) {
-    setIsPlanningRun(true);
-    setError('');
+  async function handleSaveSystemPrompt(value: string) {
+    // Empty-skip: do not overwrite an existing persisted value with '' (Req 2.6).
+    if (!value.trim()) {
+      return;
+    }
 
+    // Max-length block: refuse to save values over the configured maximum,
+    // even when that maximum is impractically short (Req 3.5, 3.6).
+    if (value.length > MAX_SYSTEM_PROMPT_LENGTH) {
+      setError(`System prompt exceeds the maximum of ${MAX_SYSTEM_PROMPT_LENGTH} characters.`);
+      return;
+    }
+
+    // The store normalizes with trim + slice; mirror it to detect a mismatch.
+    const normalized = value.trim().slice(0, MAX_SYSTEM_PROMPT_LENGTH);
+
+    setError('');
     try {
-      const preferredSessionId = activeSessionId || sessions[0]?.id;
-      const run = await runtimeClient.startRun(graphId, preferredSessionId);
-      setActiveGraphId(run.graphId);
-      await refreshSessionData(run.sessionId);
-    } catch (runError) {
-      setError(runError instanceof Error ? runError.message : String(runError));
-    } finally {
-      setIsPlanningRun(false);
+      const saved = await runtimeClient.saveChatConfig({ systemPrompt: normalized });
+      // Failure detection: the returned config must reflect the submitted value.
+      if (saved.systemPrompt !== normalized) {
+        setError('Failed to save the system prompt. Please try again.');
+        return;
+      }
+      setChatConfig(saved);
+    } catch (configError) {
+      setError(configError instanceof Error ? configError.message : String(configError));
     }
   }
 
@@ -1391,6 +1416,12 @@ function App() {
     }
   };
 
+  // Stable registration callback so AgentPage can expose its new-session handler
+  // to the sidebar without re-running its effect on every parent render.
+  const registerAgentNewSession = useCallback((handler: (() => void) | null) => {
+    agentNewSessionRef.current = handler;
+  }, []);
+
   const canSendMessage = Boolean(composer.trim()) || composerAttachments.length > 0;
 
   const handlePickAttachments = () => {
@@ -1472,17 +1503,54 @@ function App() {
           {appPages.filter((page) => page.id !== 'settings').map((page) => {
             const PageIcon = page.icon;
             return (
-              <button
-                key={page.id}
-                className={`sidebar-nav-item ${activePage === page.id ? 'active' : ''}`}
-                type="button"
-                onClick={() => handlePageChange(page.id)}
-                aria-current={activePage === page.id ? 'page' : undefined}
-                title={page.label}
-              >
-                <PageIcon size={18} />
-                <span className="sidebar-labels">{page.label}</span>
-              </button>
+              <div key={page.id} className="sidebar-nav-group">
+                <button
+                  className={`sidebar-nav-item ${activePage === page.id ? 'active' : ''}`}
+                  type="button"
+                  onClick={() => handlePageChange(page.id)}
+                  aria-current={activePage === page.id ? 'page' : undefined}
+                  title={page.label}
+                >
+                  <PageIcon size={18} />
+                  <span className="sidebar-labels">{page.label}</span>
+                </button>
+
+                {page.id === 'agent' && activePage === 'agent' ? (
+                  <div className="sidebar-subnav" role="tablist" aria-label="Agent views">
+                    <button
+                      className={`sidebar-subnav-item ${agentTab === 'active' ? 'active' : ''}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={agentTab === 'active'}
+                      onClick={() => setAgentTab('active')}
+                      title="Active session"
+                    >
+                      <MessageSquare size={15} />
+                      <span className="sidebar-labels">Active</span>
+                    </button>
+                    <button
+                      className={`sidebar-subnav-item ${agentTab === 'history' ? 'active' : ''}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={agentTab === 'history'}
+                      onClick={() => setAgentTab('history')}
+                      title="Session history"
+                    >
+                      <History size={15} />
+                      <span className="sidebar-labels">History</span>
+                    </button>
+                    <button
+                      className="sidebar-subnav-item sidebar-subnav-action"
+                      type="button"
+                      onClick={() => agentNewSessionRef.current?.()}
+                      title="Start new session"
+                    >
+                      <Plus size={15} />
+                      <span className="sidebar-labels">New session</span>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </nav>
@@ -1595,11 +1663,6 @@ function App() {
             {activePage === 'models' ? (
               <button className="ghost-action compact-action" type="button" onClick={() => void handleRefreshModels()} disabled={isRefreshingModels || isLoading}>
                 <RefreshCw size={16} /> {isRefreshingModels ? 'Refreshing...' : 'Refresh'}
-              </button>
-            ) : null}
-            {activePage === 'agent' ? (
-              <button className="primary-action compact-action" type="button" onClick={() => void handleStartRun(activeGraphId)} disabled={isPlanningRun || !activeSessionId}>
-                <SlidersHorizontal size={16} /> {isPlanningRun ? 'Planning...' : 'Plan run'}
               </button>
             ) : null}
           </div>
@@ -2239,7 +2302,28 @@ function App() {
                   }}
                 />
               </label>
+
+              <div className="system-prompt-field">
+                <label htmlFor="chat-system-prompt">System prompt</label>
+                <textarea
+                  id="chat-system-prompt"
+                  aria-describedby="chat-system-prompt-hint"
+                  rows={6}
+                  maxLength={MAX_SYSTEM_PROMPT_LENGTH}
+                  value={chatConfig.systemPrompt}
+                  onChange={(event) => setChatConfig((current) => ({ ...current, systemPrompt: event.target.value }))}
+                  onBlur={() => void handleSaveSystemPrompt(chatConfig.systemPrompt)}
+                  placeholder="Add instructions to steer the agent's behavior."
+                />
+                <small id="chat-system-prompt-hint">
+                  Guides the agent in Agent chat. {chatConfig.systemPrompt.length} / {MAX_SYSTEM_PROMPT_LENGTH} characters.
+                </small>
+              </div>
             </div>
+          </article>
+
+          <article className="surface">
+            <AgentSettings />
           </article>
 
           <article className="surface">
@@ -2375,68 +2459,11 @@ function App() {
       ) : null}
 
       {activePage === 'agent' ? (
-        <section className="page-grid two-up">
-          <article className="surface">
-            <div className="panel-head split-head">
-              <div>
-                <h2>Graphs</h2>
-                <p>Choose a graph before planning a run.</p>
-              </div>
-            </div>
-            <div className="graph-pills">
-              {graphs.map((graph) => (
-                <button
-                  key={graph.id}
-                  type="button"
-                  className={`graph-pill ${graph.id === activeGraphId ? 'active' : ''}`}
-                  onClick={() => setActiveGraphId(graph.id)}
-                >
-                  {graph.name}
-                </button>
-              ))}
-            </div>
-          </article>
-
-          <article className="surface">
-            <div className="panel-head">
-              <h2>Runs</h2>
-            </div>
-            {activeRuns.length === 0 ? <div className="empty-state">No runtime runs for this session.</div> : (
-              <div className="run-list compact">
-                {activeRuns.map((run) => (
-                  <article className="run-card" key={run.id}>
-                    <header className="run-header">
-                      <div>
-                        <h3>{run.graphName}</h3>
-                        <p>{run.summary}</p>
-                      </div>
-                      <span className={`status-pill ${getRunStatusTone(run.status)}`}>{run.status}</span>
-                    </header>
-                    <div className="run-actions">
-                      {(run.status === 'planned' || run.status === 'paused') ? <button className="secondary-action" type="button" onClick={() => void handleRunAction(run.id, 'resume')} disabled={actionRunId === run.id}>Start</button> : null}
-                      {(run.status === 'planned' || run.status === 'running' || run.status === 'paused') ? <button className="secondary-action" type="button" onClick={() => void handleRunAction(run.id, 'step')} disabled={actionRunId === run.id}>Step</button> : null}
-                      {(run.status === 'planned' || run.status === 'paused') ? <button className="secondary-action" type="button" onClick={() => void handleRunAction(run.id, 'execute')} disabled={actionRunId === run.id}>Run all</button> : null}
-                      {(run.status === 'planned' || run.status === 'running' || run.status === 'paused') ? (
-                        <button
-                          className="icon-action run-action-icon danger-icon"
-                          type="button"
-                          onClick={() => void handleRunAction(run.id, 'cancel')}
-                          disabled={actionRunId === run.id}
-                          title="Cancel run"
-                          aria-label={`Cancel ${run.graphName} run`}
-                          data-tooltip="Cancel run"
-                        >
-                          <X size={14} />
-                        </button>
-                      ) : null}
-                    </div>
-                    {run.pendingApproval ? <div className="approval-banner">Approval needed: {run.pendingApproval.checkpointTitle} | role {run.pendingApproval.requiredApproverRole}</div> : null}
-                  </article>
-                ))}
-              </div>
-            )}
-          </article>
-        </section>
+        <AgentPage
+          activeTab={agentTab}
+          onTabChange={setAgentTab}
+          registerNewSession={registerAgentNewSession}
+        />
       ) : null}
           </div>
         </div>

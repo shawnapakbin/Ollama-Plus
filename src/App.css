@@ -1,6 +1,6 @@
 /*
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.2
+ * v5.0.3
  */
 .app-shell {
   min-height: 100vh;
@@ -755,6 +755,34 @@
   min-height: 120px;
 }
 
+.system-prompt-field {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+}
+
+.system-prompt-field label {
+  font-size: 0.76rem;
+  color: #d6e9dd;
+}
+
+.system-prompt-field textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 120px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(11, 17, 21, 0.8);
+  color: #effff7;
+  padding: 10px;
+  font: inherit;
+}
+
+.system-prompt-field small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
 .composer-actions {
   justify-content: space-between;
   align-items: center;
@@ -1251,6 +1279,74 @@
   color: #efffe9;
 }
 
+.sidebar-nav-group {
+  display: grid;
+  gap: 3px;
+}
+
+.sidebar-subnav {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 2px 12px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(198, 223, 211, 0.16);
+}
+
+.sidebar-subnav-item {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #b9cabf;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-subnav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #dbece3;
+}
+
+.sidebar-subnav-item svg {
+  flex: 0 0 auto;
+}
+
+.sidebar-subnav-item.active {
+  border-color: rgba(212, 227, 159, 0.2);
+  background: rgba(144, 185, 165, 0.11);
+  color: #efffe9;
+}
+
+.sidebar-subnav-action {
+  margin-top: 2px;
+  color: #cbe3d3;
+  font-weight: 600;
+}
+
+.sidebar-subnav-action:hover {
+  background: rgba(144, 185, 165, 0.12);
+  color: #efffe9;
+}
+
+.sidebar-collapsed .sidebar-subnav {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+  justify-items: center;
+}
+
+.sidebar-collapsed .sidebar-subnav-item {
+  justify-content: center;
+  padding-inline: 0;
+}
+
 .sidebar-conversations {
   min-height: 0;
   flex: 1;
@@ -1371,6 +1467,7 @@
 .sidebar-footer {
   display: grid;
   gap: 5px;
+  margin-top: auto;
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
@@ -1552,9 +1649,14 @@
   padding: 18px;
 }
 
-.workspace-content.page-chats {
+.workspace-content.page-chats,
+.workspace-content.page-agent {
   overflow: hidden;
   padding: 0;
+}
+
+.page-agent .agent-page {
+  height: 100%;
 }
 
 .page-chats .chat-layout {
