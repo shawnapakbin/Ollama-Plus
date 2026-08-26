@@ -19,7 +19,7 @@ export interface UseAutoScrollReturn {
   containerRef: React.RefObject<HTMLDivElement>;
   /** Whether the user is currently within the bottom threshold */
   isAtBottom: boolean;
-  /** Smooth-scroll to the bottom (only scrolls if already near bottom) */
+  /** Smooth-scroll to the bottom and re-enable auto-scroll */
   scrollToBottom: () => void;
   /** Force scroll to bottom regardless of position (e.g., when user sends a message) */
   forceScrollToBottom: () => void;
