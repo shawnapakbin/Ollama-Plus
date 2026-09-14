@@ -1,7 +1,7 @@
 /**
  * Sandbox Path Enforcer
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Validates and constrains tool calls to authorized boundaries.
  * Resolves symbolic links and relative paths to canonical form, ensures all

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fc from 'fast-check';
 import { createRuntimeService } from '../electron/runtime/runtimeService.js';
 import { getChatConfig, updateChatConfig } from '../electron/runtime/runtimeStore.js';
@@ -807,5 +807,224 @@ describe('systemPrompt – Property 9: master prompt never reaches persisted sta
       ),
       { numRuns: 100 }
     );
+  });
+});
+
+// Feature: gpu-selection, Task 7.2: integration test for the derive-and-send path
+describe('runtimeService – GPU derive-and-send path (Requirements 4.1, 4.5, 4.6)', () => {
+  /**
+   * Exercises createRuntimeService's chat send path end to end with an injected
+   * fetchImpl that captures the outgoing /api/chat request body and an injected
+   * enumerateGpusImpl that reports a detected device set. Verifies that the
+   * reconciled GPU selection is derived into the request `options`, that an
+   * allow-all/default selection omits `options` entirely, and that a derivation
+   * failure falls back to server defaults (no `options`), logs the issue, and
+   * surfaces gpuSelectionApplied === false.
+   */
+
+  const CHAT_REPLY = {
+    ok: true,
+    json: async () => ({
+      message: { content: 'Assistant reply.' },
+      done: true,
+      total_duration: 10,
+      eval_count: 5
+    })
+  };
+
+  /** Builds a fetchImpl that records the parsed /api/chat body into `captured`. */
+  function createCapturingFetch(captured: Array<Record<string, unknown>>) {
+    return async (url: string, init?: { body?: string }) => {
+      if (url.endsWith('/api/chat')) {
+        captured.push(init?.body ? JSON.parse(init.body) : {});
+        return CHAT_REPLY;
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    };
+  }
+
+  /** enumerateGpusImpl returning a fixed detected set as a success result. */
+  function detectGpus(indices: number[]) {
+    return async () => ({
+      ok: true as const,
+      gpus: indices.map((index) => ({ index, name: `GPU ${index}` }))
+    });
+  }
+
+  it('derives main_gpu for a reconciled single-device subset selection', async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    const statePath = createTempStatePath();
+    const service = createService({
+      statePath,
+      fetchImpl: createCapturingFetch(captured),
+      enumerateGpusImpl: detectGpus([0, 1])
+    });
+
+    // Seed an explicit single-device selection; detected set is [0, 1] so this
+    // reconciles to mode 'subset' with the single available index 1.
+    const saved = await service.saveGpuSelection({ allowedIndices: [1] });
+    expect(saved.ok).toBe(true);
+
+    const session = service.createSession('GPU subset session');
+    await service.saveChatConfig({ endpoint: 'http://127.0.0.1:11434', model: 'llama3.1:8b' });
+
+    const result = await service.sendChatMessage({
+      sessionId: session.id,
+      content: 'Route to GPU 1',
+      endpoint: 'http://127.0.0.1:11434',
+      model: 'llama3.1:8b'
+    });
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].options).toEqual({ main_gpu: 1 });
+    expect(result.gpuSelectionApplied).toBe(true);
+  });
+
+  it('derives num_gpu 0 for a CPU-only selection and omits main_gpu', async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    const statePath = createTempStatePath();
+    const service = createService({
+      statePath,
+      fetchImpl: createCapturingFetch(captured),
+      enumerateGpusImpl: detectGpus([0, 1])
+    });
+
+    // An empty allowed set is recorded as intentional CPU-only mode.
+    const saved = await service.saveGpuSelection({ allowedIndices: [] });
+    expect(saved.ok).toBe(true);
+    expect(saved.ok && saved.cpuOnly).toBe(true);
+
+    const session = service.createSession('CPU only session');
+    await service.saveChatConfig({ endpoint: 'http://127.0.0.1:11434', model: 'llama3.1:8b' });
+
+    const result = await service.sendChatMessage({
+      sessionId: session.id,
+      content: 'Run on CPU',
+      endpoint: 'http://127.0.0.1:11434',
+      model: 'llama3.1:8b'
+    });
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].options).toEqual({ num_gpu: 0 });
+    expect((captured[0].options as Record<string, unknown>).main_gpu).toBeUndefined();
+    expect(result.gpuSelectionApplied).toBe(true);
+  });
+
+  it('omits options entirely for an allow-all default selection', async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    const statePath = createTempStatePath();
+    const service = createService({
+      statePath,
+      fetchImpl: createCapturingFetch(captured),
+      enumerateGpusImpl: detectGpus([0, 1])
+    });
+
+    // No GPU selection is persisted, so reconciliation defaults to allow-all
+    // and no GPU options are derived.
+    const session = service.createSession('Allow all session');
+    await service.saveChatConfig({ endpoint: 'http://127.0.0.1:11434', model: 'llama3.1:8b' });
+
+    const result = await service.sendChatMessage({
+      sessionId: session.id,
+      content: 'Use default devices',
+      endpoint: 'http://127.0.0.1:11434',
+      model: 'llama3.1:8b'
+    });
+
+    expect(captured).toHaveLength(1);
+    expect('options' in captured[0]).toBe(false);
+    expect(result.gpuSelectionApplied).toBe(true);
+  });
+
+  it('falls back to server defaults and logs the issue when derivation throws', async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    const statePath = createTempStatePath();
+
+    // Enumeration throws only during the chat request derivation. A flag lets
+    // the earlier saveGpuSelection succeed against a working enumeration so the
+    // failure is isolated to the derive-and-send path (Requirement 4.6).
+    let failEnumeration = false;
+    const enumerateGpusImpl = async () => {
+      if (failEnumeration) {
+        throw new Error('nvidia-smi exploded');
+      }
+      return { ok: true as const, gpus: [{ index: 0, name: 'GPU 0' }, { index: 1, name: 'GPU 1' }] };
+    };
+
+    const service = createService({
+      statePath,
+      fetchImpl: createCapturingFetch(captured),
+      enumerateGpusImpl
+    });
+
+    const saved = await service.saveGpuSelection({ allowedIndices: [1] });
+    expect(saved.ok).toBe(true);
+
+    const session = service.createSession('Derivation failure session');
+    await service.saveChatConfig({ endpoint: 'http://127.0.0.1:11434', model: 'llama3.1:8b' });
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    failEnumeration = true;
+
+    try {
+      const result = await service.sendChatMessage({
+        sessionId: session.id,
+        content: 'This should fall back to server defaults',
+        endpoint: 'http://127.0.0.1:11434',
+        model: 'llama3.1:8b'
+      });
+
+      expect(captured).toHaveLength(1);
+      expect('options' in captured[0]).toBe(false);
+      expect(result.gpuSelectionApplied).toBe(false);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('derives main_gpu on the streaming send path for a subset selection', async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    const encoder = new TextEncoder();
+    const statePath = createTempStatePath();
+    const streamFetch = async (url: string, init?: { body?: string }) => {
+      if (url.endsWith('/api/chat')) {
+        captured.push(init?.body ? JSON.parse(init.body) : {});
+        return {
+          ok: true,
+          body: new ReadableStream({
+            start(controller) {
+              controller.enqueue(encoder.encode('{"message":{"content":"Hi"},"done":true}\n'));
+              controller.close();
+            }
+          })
+        };
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    };
+
+    const service = createService({
+      statePath,
+      fetchImpl: streamFetch,
+      enumerateGpusImpl: detectGpus([0, 1])
+    });
+
+    const saved = await service.saveGpuSelection({ allowedIndices: [0] });
+    expect(saved.ok).toBe(true);
+
+    const session = service.createSession('Streaming GPU session');
+    await service.saveChatConfig({ endpoint: 'http://127.0.0.1:11434', model: 'llama3.1:8b' });
+
+    const result = await service.sendChatMessageStream({
+      sessionId: session.id,
+      content: 'Stream on GPU 0',
+      endpoint: 'http://127.0.0.1:11434',
+      model: 'llama3.1:8b',
+      requestId: 'gpu-stream-1'
+    }, () => {});
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].options).toEqual({ main_gpu: 0 });
+    expect(result.gpuSelectionApplied).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  */
 const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 
@@ -48,10 +48,12 @@ function resolveToolCatalog(input) {
 
 /**
  * Builds the JSON body for an /api/chat request. Includes a `tools` array only
- * when a non-empty catalog is provided; otherwise the body is exactly
- * { model, stream, messages }.
+ * when a non-empty catalog is provided, and an `options` object only when a
+ * non-null `gpuOptions` fragment is provided; otherwise those fields are
+ * omitted so a GPU-less / tool-less request body is exactly
+ * { model, stream, messages } — byte-for-byte identical to before this change.
  */
-function buildChatBody({ model, stream, messages, tools }) {
+function buildChatBody({ model, stream, messages, tools, gpuOptions }) {
   const body = {
     model,
     stream,
@@ -63,7 +65,61 @@ function buildChatBody({ model, stream, messages, tools }) {
   if (tools) {
     body.tools = tools;
   }
+  if (gpuOptions !== null && gpuOptions !== undefined) {
+    body.options = gpuOptions;
+  }
   return body;
+}
+
+/**
+ * Derives the Ollama `/api/chat` request `options` fragment from a reconciled
+ * GPU selection. Pure function — no I/O, no logging.
+ *
+ * @param {{ mode: 'all' | 'subset' | 'cpu-only', availableIndices?: number[], unavailableIndices?: number[] }} effectiveSelection
+ *   The reconciled EffectiveSelection produced by runtimeService.
+ * @param {number} detectedCount
+ *   The number of currently detected GPUs; bounds a valid `main_gpu` to
+ *   `0..detectedCount-1`.
+ * @returns {{ options: { num_gpu?: number, main_gpu?: number }, applied: boolean, reason?: string }}
+ *   `options` carries only the fields that apply; `applied` is false when a
+ *   non-CPU selection could not be translated into valid options.
+ *
+ * Semantics (Requirements 4.2–4.6):
+ * - `cpu-only`  → `{ num_gpu: 0 }`, no `main_gpu`, applied true.
+ * - `subset` with exactly one available index in `0..detectedCount-1`
+ *              → `{ main_gpu: index }`, applied true.
+ * - `all`      → `{}` (omit both), applied true (server default behavior).
+ * - anything else (invalid mode, subset with zero/multiple indices, or an
+ *   out-of-range index) and not CPU-only → `{}` (omit both), applied false.
+ */
+export function deriveInferenceOptions(effectiveSelection, detectedCount) {
+  const mode = effectiveSelection?.mode;
+
+  if (mode === 'cpu-only') {
+    return { options: { num_gpu: 0 }, applied: true };
+  }
+
+  if (mode === 'all') {
+    return { options: {}, applied: true };
+  }
+
+  if (mode === 'subset') {
+    const availableIndices = Array.isArray(effectiveSelection?.availableIndices)
+      ? effectiveSelection.availableIndices
+      : [];
+    const count = Number.isInteger(detectedCount) && detectedCount >= 0 ? detectedCount : 0;
+
+    if (availableIndices.length === 1) {
+      const index = availableIndices[0];
+      if (Number.isInteger(index) && index >= 0 && index < count) {
+        return { options: { main_gpu: index }, applied: true };
+      }
+    }
+
+    return { options: {}, applied: false, reason: 'invalid-selection' };
+  }
+
+  return { options: {}, applied: false, reason: 'invalid-selection' };
 }
 
 /**
@@ -143,6 +199,7 @@ export async function requestOllamaChat(fetchImpl, input) {
   }
 
   const tools = resolveToolCatalog(input);
+  const gpuOptions = input?.gpuOptions ?? null;
 
   const response = await fetchImpl(`${endpoint}/api/chat`, {
     method: 'POST',
@@ -153,7 +210,8 @@ export async function requestOllamaChat(fetchImpl, input) {
       model,
       stream: false,
       messages: input.messages,
-      tools
+      tools,
+      gpuOptions
     }))
   });
 
@@ -192,6 +250,7 @@ export async function requestOllamaChatStream(fetchImpl, input, callbacks = {}) 
   }
 
   const tools = resolveToolCatalog(input);
+  const gpuOptions = input?.gpuOptions ?? null;
 
   const response = await fetchImpl(`${endpoint}/api/chat`, {
     method: 'POST',
@@ -202,7 +261,8 @@ export async function requestOllamaChatStream(fetchImpl, input, callbacks = {}) 
       model,
       stream: true,
       messages: input.messages,
-      tools
+      tools,
+      gpuOptions
     }))
   });
 

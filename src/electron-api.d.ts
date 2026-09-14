@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  */
 export {};
 
@@ -207,6 +207,44 @@ type ApprovalDecision = {
   reason?: string;
 };
 
+// ─── GPU Selection Types ─────────────────────────────────────────────────────
+
+type DetectedGpu = {
+  index: number;
+  name: string;
+};
+
+type GpuConfig = {
+  allowedIndices: number[];
+  cpuOnly: boolean;
+};
+
+type EffectiveSelection = {
+  mode: 'all' | 'subset' | 'cpu-only';
+  availableIndices: number[];
+  unavailableIndices: number[];
+};
+
+type EnumerationResult =
+  | { ok: true; gpus: DetectedGpu[] }
+  | { ok: false; error: string; kind: 'timeout' | 'unavailable' };
+
+type GpuSelectionState = {
+  detection: EnumerationResult;
+  config: GpuConfig;
+  effective: EffectiveSelection;
+  appliedStateAvailable: boolean;
+};
+
+type GpuSaveResult =
+  | { ok: true; config: GpuConfig; cpuOnly: boolean }
+  | { ok: false; reason: 'unavailable-device' | 'persist-failed'; unavailableIndices?: number[] };
+
+type GpuSaveInput = {
+  allowedIndices: number[];
+  cpuOnly?: boolean;
+};
+
 // ─── Agent Client Types ──────────────────────────────────────────────────────
 
 type AgentTaskSubmission = import('./types/agent').TaskSubmission;
@@ -249,6 +287,9 @@ type ElectronAPI = {
   deleteRuntimeSession: (sessionId: string) => Promise<RuntimeSessionSummary>;
   getRuntimeChatConfig: () => Promise<RuntimeChatConfig>;
   saveRuntimeChatConfig: (input: Partial<RuntimeChatConfig>) => Promise<RuntimeChatConfig>;
+  listDetectedGpus: () => Promise<EnumerationResult>;
+  getGpuSelectionState: () => Promise<GpuSelectionState>;
+  saveGpuSelection: (input: GpuSaveInput) => Promise<GpuSaveResult>;
   listRuntimeOllamaModels: (endpoint?: string) => Promise<RuntimeOllamaCatalog>;
   listRuntimeOllamaServers: () => Promise<RuntimeOllamaServer[]>;
   saveRuntimeOllamaServer: (input: { id?: string; label?: string; endpoint: string }) => Promise<RuntimeOllamaServer>;

@@ -1,7 +1,7 @@
 /**
  * Property-Based Tests: Auto-Scroll Logic (Properties 2 and 3)
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Feature: agent-page-redesign, Property 2: Auto-scroll engages when near bottom
  * Feature: agent-page-redesign, Property 3: Auto-scroll disengages when scrolled up

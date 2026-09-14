@@ -1,7 +1,7 @@
 /**
  * Agent Runtime
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Top-level orchestrator for the autonomous agent client. Registers all IPC handlers,
  * coordinates task planning, execution loop, context management, memory management,

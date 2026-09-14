@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { MAX_SYSTEM_PROMPT_LENGTH, normalizeChatConfig } from '../electron/runtime/stateSchema.js';
+import { MAX_GPU_INDICES, MAX_SYSTEM_PROMPT_LENGTH, normalizeChatConfig, normalizeGpuConfig } from '../electron/runtime/stateSchema.js';
 
 // Feature: auto-session-naming, Property 1: Config Normalization Produces Valid Defaults
 describe('normalizeChatConfig – Property 1: Config Normalization Produces Valid Defaults', () => {
@@ -424,6 +424,82 @@ describe('normalizeChatConfig – Property 10: Existing chat-config fields are p
           );
         }
       ),
+      { numRuns: 100 }
+    );
+  });
+});
+
+// Feature: gpu-selection, Property 3: Persisted selection is bounded and deduplicated
+describe('normalizeGpuConfig – Property 3: Persisted selection is bounded and deduplicated', () => {
+  /**
+   * Validates: Requirements 3.1
+   *
+   * For any proposed allowed-index array (including arrays longer than 64 and
+   * arrays containing duplicates), the normalized GpuConfig.allowedIndices
+   * contains no duplicates and has length at most MAX_GPU_INDICES (64).
+   */
+
+  // Generates index-like values: mostly valid non-negative integers (to force
+  // duplicates and long lists), mixed with negatives, floats, and non-numbers
+  // that normalization must drop. Small integer range guarantees collisions.
+  const indexValueArb = fc.oneof(
+    { weight: 6, arbitrary: fc.integer({ min: 0, max: 30 }) },
+    { weight: 1, arbitrary: fc.integer({ min: -50, max: -1 }) },
+    { weight: 1, arbitrary: fc.double({ min: 0, max: 100, noInteger: true }) },
+    { weight: 1, arbitrary: fc.string() },
+    { weight: 1, arbitrary: fc.constantFrom(null, undefined, true, NaN) }
+  );
+
+  // Arrays that frequently exceed the 64 cap and repeat indices.
+  const allowedIndicesArb = fc.array(indexValueArb, { minLength: 0, maxLength: 300 });
+
+  it('produces no duplicate indices and length <= MAX_GPU_INDICES for any proposed array', () => {
+    fc.assert(
+      fc.property(allowedIndicesArb, fc.option(fc.boolean(), { nil: undefined }), (allowedIndices, cpuOnly) => {
+        const result = normalizeGpuConfig({ allowedIndices, cpuOnly });
+
+        // No duplicates: the set of indices has the same size as the array.
+        const unique = new Set(result.allowedIndices);
+        expect(unique.size).toBe(result.allowedIndices.length);
+
+        // Bounded: at most MAX_GPU_INDICES entries.
+        expect(result.allowedIndices.length).toBeLessThanOrEqual(MAX_GPU_INDICES);
+
+        // Every surviving index is a non-negative integer.
+        for (const index of result.allowedIndices) {
+          expect(Number.isInteger(index)).toBe(true);
+          expect(index).toBeGreaterThanOrEqual(0);
+        }
+      }),
+      { numRuns: 100 }
+    );
+  });
+
+  it('bounds and dedupes even when the input is a long run of a single repeated index', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 100 }), fc.integer({ min: 65, max: 500 }), (index, count) => {
+        const allowedIndices = Array.from({ length: count }, () => index);
+        const result = normalizeGpuConfig({ allowedIndices });
+
+        // A single repeated value collapses to exactly one entry.
+        expect(result.allowedIndices).toEqual([index]);
+        expect(result.allowedIndices.length).toBeLessThanOrEqual(MAX_GPU_INDICES);
+      }),
+      { numRuns: 100 }
+    );
+  });
+
+  it('caps a large set of distinct indices at MAX_GPU_INDICES', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: MAX_GPU_INDICES + 1, max: 500 }), (count) => {
+        // Distinct, in-range, non-negative integers: 0..count-1.
+        const allowedIndices = Array.from({ length: count }, (_, i) => i);
+        const result = normalizeGpuConfig({ allowedIndices });
+
+        expect(result.allowedIndices.length).toBe(MAX_GPU_INDICES);
+        const unique = new Set(result.allowedIndices);
+        expect(unique.size).toBe(result.allowedIndices.length);
+      }),
       { numRuns: 100 }
     );
   });

@@ -1,12 +1,13 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  */
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
   normalizeChatConfig,
+  normalizeGpuConfig,
   normalizeMemoryRecord,
   normalizeMessage,
   normalizeOllamaServer,
@@ -21,7 +22,8 @@ function emptyState() {
     messages: [],
     ollamaServers: [],
     memoryRecords: [],
-    chatConfig: normalizeChatConfig()
+    chatConfig: normalizeChatConfig(),
+    gpuConfig: normalizeGpuConfig()
   };
 }
 
@@ -43,7 +45,8 @@ function normalizeState(state) {
     memoryRecords: (Array.isArray(state.memoryRecords) ? state.memoryRecords : [])
       .map((record) => normalizeMemoryRecord(record, nowIso))
       .filter((record) => Boolean(record.id) && Boolean(record.sessionId) && Boolean(record.runId)),
-    chatConfig: normalizeChatConfig(state.chatConfig)
+    chatConfig: normalizeChatConfig(state.chatConfig),
+    gpuConfig: normalizeGpuConfig(state.gpuConfig)
   };
 }
 
@@ -69,7 +72,8 @@ export function readRuntimeState(statePath) {
       messages: Array.isArray(parsed?.messages) ? parsed.messages : [],
       ollamaServers: Array.isArray(parsed?.ollamaServers) ? parsed.ollamaServers : [],
       memoryRecords: Array.isArray(parsed?.memoryRecords) ? parsed.memoryRecords : [],
-      chatConfig: parsed?.chatConfig
+      chatConfig: parsed?.chatConfig,
+      gpuConfig: parsed?.gpuConfig
     });
   } catch {
     return emptyState();
@@ -124,6 +128,18 @@ export function updateChatConfig(statePath, updater) {
   state.chatConfig = normalizeChatConfig(nextCandidate);
   writeRuntimeState(statePath, state);
   return state.chatConfig;
+}
+
+export function getGpuConfig(statePath) {
+  return readRuntimeState(statePath).gpuConfig;
+}
+
+export function updateGpuConfig(statePath, updater) {
+  const state = readRuntimeState(statePath);
+  const nextCandidate = typeof updater === 'function' ? updater(state.gpuConfig) : updater;
+  state.gpuConfig = normalizeGpuConfig(nextCandidate);
+  writeRuntimeState(statePath, state);
+  return state.gpuConfig;
 }
 
 export function createSession(statePath, title, options = {}) {

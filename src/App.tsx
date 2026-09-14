@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  */
 import {
   Bot,
@@ -50,7 +50,14 @@ import { evaluateRenameGuard } from './services/renameGuard';
 import { MessageContent } from './components/Chat/MessageContent';
 import { AgentPage } from './components/Agent/AgentPage';
 import { AgentSettings } from './components/Agent/AgentSettings';
+import { GpuSelection } from './components/Settings/GpuSelection';
 import { useChatStreamListener } from './hooks/useChatStreamListener';
+import {
+  applyMcpGatewayStatusFailure,
+  buildMcpServerRows,
+  defaultMcpServerRows,
+  type McpServerStatusRow
+} from './lib/mcpServerRows';
 import { useCallback, useMemo, useEffect, useRef, useState } from 'react';
 
 const NAV_PREFERENCE_KEY = 'ollama-plus.nav-open';
@@ -62,14 +69,6 @@ const SHOW_THINKING_PREFERENCE_KEY = 'ollama-plus.show-thinking';
 
 type InspectorSectionKey = 'runtime' | 'graphs' | 'runs' | 'policies' | 'events' | 'milestones';
 type AppPage = 'chats' | 'settings' | 'models' | 'mcp' | 'agent';
-type McpServerStatusTone = 'ok' | 'warn' | 'danger' | 'neutral';
-type McpServerStatusRow = {
-  id: string;
-  label: string;
-  state: string;
-  tone: McpServerStatusTone;
-  detail: string;
-};
 type ComposerAttachment = {
   id: string;
   name: string;
@@ -116,96 +115,6 @@ const DEFAULT_INSPECTOR_OPEN: Record<InspectorSectionKey, boolean> = {
   events: false,
   milestones: false
 };
-
-const MCP_SERVER_CATALOG: Array<{ id: string; label: string; detail: string }> = [
-  { id: 'gateway', label: 'MCP Gateway', detail: 'Electron main-process dispatcher' },
-  { id: 'browser', label: 'Browser (Playwright)', detail: 'Browser automation runtime' },
-  { id: 'terminal', label: 'Terminal', detail: 'Guarded terminal runtime' },
-  { id: 'folder', label: 'Folder', detail: 'Rooted file operations runtime' },
-  { id: 'python', label: 'Python sandbox', detail: 'Docker-isolated Python runtime' },
-  { id: 'openscad', label: 'OpenSCAD', detail: 'OpenSCAD compile runtime' },
-  { id: 'blender_plate', label: 'Blender Plate', detail: 'Blender build runtime' }
-];
-
-function defaultMcpServerRows(): McpServerStatusRow[] {
-  return MCP_SERVER_CATALOG.map((entry) => ({
-    id: entry.id,
-    label: entry.label,
-    state: 'unknown',
-    tone: 'neutral',
-    detail: entry.detail
-  }));
-}
-
-function buildMcpServerRows(payload: unknown): McpServerStatusRow[] {
-  const rows = defaultMcpServerRows();
-  const rowById = new Map(rows.map((row) => [row.id, row]));
-
-  if (!(payload && typeof payload === 'object' && !Array.isArray(payload))) {
-    return rows;
-  }
-
-  const status = payload as {
-    checkedAt?: string;
-    gateway?: { ok?: unknown; note?: unknown };
-    services?: Record<string, unknown>;
-  };
-
-  const gatewayRow = rowById.get('gateway');
-  if (gatewayRow) {
-    const gatewayOk = Boolean(status.gateway?.ok);
-    gatewayRow.state = gatewayOk ? 'online' : 'offline';
-    gatewayRow.tone = gatewayOk ? 'ok' : 'danger';
-    if (typeof status.gateway?.note === 'string' && status.gateway.note.trim()) {
-      gatewayRow.detail = status.gateway.note;
-    }
-  }
-
-  const services = status.services && typeof status.services === 'object' ? status.services : {};
-  for (const [serviceId, serviceValue] of Object.entries(services)) {
-    const row = rowById.get(serviceId);
-    if (!row || !serviceValue || typeof serviceValue !== 'object') continue;
-
-    const service = serviceValue as {
-      ok?: unknown;
-      note?: unknown;
-      root?: unknown;
-      activeSessionCount?: unknown;
-      executable?: unknown;
-      docker?: unknown;
-    };
-
-    const ok = Boolean(service.ok);
-    row.state = ok ? 'online' : 'offline';
-    row.tone = ok ? 'ok' : 'danger';
-
-    if (serviceId === 'browser') {
-      const activeSessionCount = Number(service.activeSessionCount ?? 0);
-      row.state = activeSessionCount > 0 ? 'active' : (ok ? 'ready' : 'offline');
-      row.detail = `Active sessions: ${Number.isFinite(activeSessionCount) ? activeSessionCount : 0}`;
-      row.tone = ok ? 'ok' : 'danger';
-      continue;
-    }
-
-    if (typeof service.note === 'string' && service.note.trim()) {
-      row.detail = service.note;
-    } else if (typeof service.root === 'string' && service.root.trim()) {
-      row.detail = `Root: ${service.root}`;
-    }
-
-    if (serviceId === 'python' && typeof service.docker === 'string' && service.docker.trim()) {
-      row.detail = service.docker;
-      if (ok) row.tone = 'ok';
-      if (!ok) row.tone = 'warn';
-    }
-
-    if ((serviceId === 'openscad' || serviceId === 'blender_plate') && typeof service.executable === 'string' && service.executable.trim()) {
-      row.detail = `${row.detail} (${service.executable})`;
-    }
-  }
-
-  return rows;
-}
 
 function formatTimestamp(value: string | null): string {
   if (!value) return 'No timestamp';
@@ -840,11 +749,7 @@ function App() {
     } catch (statusError) {
       const message = statusError instanceof Error ? statusError.message : String(statusError);
       setMcpStatusError(message);
-      setMcpServerRows(defaultMcpServerRows().map((row) => (
-        row.id === 'gateway'
-          ? { ...row, state: 'offline', tone: 'danger', detail: message }
-          : row
-      )));
+      setMcpServerRows((previousRows) => applyMcpGatewayStatusFailure(previousRows, message));
       if (!silent) {
         setError(message);
       }
@@ -2324,6 +2229,10 @@ function App() {
 
           <article className="surface">
             <AgentSettings />
+          </article>
+
+          <article className="surface">
+            <GpuSelection />
           </article>
 
           <article className="surface">

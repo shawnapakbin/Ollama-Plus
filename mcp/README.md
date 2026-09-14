@@ -1,5 +1,7 @@
 # MCP Servers: Central Gateway + Browser + Terminal + Python Sandbox
 
+**Version: 5.1.0**
+
 This folder contains three local MCP servers plus in-process OpenSCAD and Blender Plate MCP capabilities:
 
 - `mcp/folder-server.mjs`: workspace-rooted folder operations with path guards.

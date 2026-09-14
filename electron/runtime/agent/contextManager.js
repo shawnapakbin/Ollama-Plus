@@ -8,7 +8,7 @@
  * Requirements: 3.5, 8.1, 8.2, 8.6
  *
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  */
 
 /**

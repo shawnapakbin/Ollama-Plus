@@ -1,0 +1,363 @@
+/**
+ * GpuSelection Styles
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ */
+
+.gpu-selection {
+  display: grid;
+  gap: 20px;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(184, 216, 200, 0.2);
+  background: rgba(8, 14, 17, 0.96);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+  max-width: 720px;
+}
+
+.gpu-selection-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gpu-selection-title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #effff7;
+  font-weight: 650;
+}
+
+.gpu-selection-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  border: 1px solid rgba(161, 201, 182, 0.35);
+  background: rgba(144, 185, 165, 0.16);
+  color: #defff1;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.gpu-selection-refresh:hover:not(:disabled) {
+  background: rgba(144, 185, 165, 0.28);
+}
+
+.gpu-selection-refresh:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ─── Section Groups ──────────────────────────────────────────────────── */
+
+.gpu-selection-section {
+  display: grid;
+  gap: 12px;
+}
+
+.gpu-selection-section-title {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #d6e9dd;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Notices / Messages ──────────────────────────────────────────────── */
+
+.gpu-selection-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.gpu-selection-notice svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.gpu-selection-notice.info {
+  background: rgba(134, 196, 162, 0.12);
+  color: #cdeedb;
+  border: 1px solid rgba(134, 196, 162, 0.22);
+}
+
+.gpu-selection-notice.warning {
+  background: rgba(222, 179, 92, 0.12);
+  color: #f2dcae;
+  border: 1px solid rgba(222, 179, 92, 0.28);
+}
+
+.gpu-selection-notice.error {
+  background: rgba(101, 22, 22, 0.25);
+  color: #ffd2ca;
+  border: 1px solid rgba(255, 145, 145, 0.2);
+}
+
+.gpu-selection-notice.muted {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted, rgba(200, 220, 210, 0.55));
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.gpu-selection-notice-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gpu-selection-notice-title {
+  font-weight: 600;
+}
+
+/* ─── Device List ─────────────────────────────────────────────────────── */
+
+.gpu-selection-device-list {
+  display: grid;
+  gap: 8px;
+}
+
+.gpu-selection-device {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.gpu-selection-device.allowed {
+  border-color: rgba(134, 196, 162, 0.3);
+  background: rgba(134, 196, 162, 0.07);
+}
+
+.gpu-selection-device.unavailable {
+  border-color: rgba(255, 145, 145, 0.3);
+  background: rgba(101, 22, 22, 0.12);
+}
+
+.gpu-selection-device-index {
+  display: inline-grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: rgba(212, 227, 159, 0.12);
+  color: #dbf0b4;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.gpu-selection-device-info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gpu-selection-device-name {
+  font-size: 0.84rem;
+  color: #effff7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gpu-selection-device-status {
+  display: flex;
+  gap: 8px;
+  font-size: 0.68rem;
+  color: var(--text-muted, rgba(200, 220, 210, 0.55));
+}
+
+.gpu-selection-device-badge {
+  border-radius: 4px;
+  padding: 1px 6px;
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.gpu-selection-device-badge.allowed {
+  background: rgba(134, 196, 162, 0.18);
+  color: #c4f0d4;
+}
+
+.gpu-selection-device-badge.disallowed {
+  background: rgba(255, 255, 255, 0.06);
+  color: #cdd9d1;
+}
+
+.gpu-selection-device-badge.unavailable {
+  background: rgba(255, 145, 145, 0.18);
+  color: #ffd2ca;
+}
+
+/* ─── Toggle ──────────────────────────────────────────────────────────── */
+
+.gpu-selection-toggle {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.gpu-selection-toggle-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.gpu-selection-toggle-track.active {
+  background: rgba(134, 196, 162, 0.35);
+  border-color: rgba(134, 196, 162, 0.5);
+}
+
+.gpu-selection-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #b8d8c8;
+  transition: transform 160ms ease;
+}
+
+.gpu-selection-toggle-track.active .gpu-selection-toggle-thumb {
+  transform: translateX(16px);
+  background: #d4e39f;
+}
+
+/* ─── CPU-only affordance ─────────────────────────────────────────────── */
+
+.gpu-selection-cpu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 4px 0;
+}
+
+.gpu-selection-cpu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: #d6e9dd;
+  font: inherit;
+  font-size: 0.74rem;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.gpu-selection-cpu-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gpu-selection-cpu-btn.active {
+  border-color: rgba(212, 227, 159, 0.5);
+  background: rgba(212, 227, 159, 0.14);
+  color: #e8f9c2;
+}
+
+.gpu-selection-cpu-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ─── Save Area ───────────────────────────────────────────────────────── */
+
+.gpu-selection-save-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-wrap: wrap;
+}
+
+.gpu-selection-save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  padding: 9px 18px;
+  border: none;
+  background: linear-gradient(135deg, #d4e39f, #86c4a2);
+  color: #0f1f16;
+  font: inherit;
+  font-weight: 650;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: opacity 160ms ease, transform 80ms ease;
+}
+
+.gpu-selection-save-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.gpu-selection-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gpu-selection-save-feedback {
+  font-size: 0.76rem;
+  padding: 5px 10px;
+  border-radius: 8px;
+}
+
+.gpu-selection-save-feedback.success {
+  background: rgba(134, 196, 162, 0.15);
+  color: #c4f0d4;
+  border: 1px solid rgba(134, 196, 162, 0.25);
+}
+
+.gpu-selection-save-feedback.info {
+  background: rgba(134, 196, 162, 0.12);
+  color: #cdeedb;
+  border: 1px solid rgba(134, 196, 162, 0.22);
+}
+
+.gpu-selection-save-feedback.error {
+  background: rgba(101, 22, 22, 0.25);
+  color: #ffd2ca;
+  border: 1px solid rgba(255, 145, 145, 0.2);
+}
+
+/* ─── Responsive ──────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .gpu-selection {
+    padding: 12px;
+    gap: 16px;
+  }
+
+  .gpu-selection-device {
+    grid-template-columns: auto 1fr auto;
+  }
+}

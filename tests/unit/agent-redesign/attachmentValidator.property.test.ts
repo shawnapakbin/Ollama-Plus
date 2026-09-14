@@ -1,7 +1,7 @@
 /**
  * Property-Based Tests: Attachment Validator (Property 12)
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Feature: agent-page-redesign, Property 12: Attachment validation constraints
  *
