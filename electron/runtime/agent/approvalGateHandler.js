@@ -1,7 +1,7 @@
 /**
  * Approval Gate Handler
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Manages human-in-the-loop approval gates for high-risk operations.
  * Creates gates, processes approvals/denials, tracks denied actions for

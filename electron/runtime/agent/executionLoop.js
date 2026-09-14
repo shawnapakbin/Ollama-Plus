@@ -1,7 +1,7 @@
 /**
  * Execution Loop
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Processes plan steps sequentially (or in parallel when safe), observes outcomes,
  * and decides next actions. Supports pause/resume/cancel, step and task timeouts,

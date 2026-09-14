@@ -88,10 +88,12 @@ function selectBlenderExecutable() {
     : [...BLENDER_CANDIDATES, ...collectWindowsBlenderCandidates()];
 
   for (const candidate of candidates) {
+    // Bound each --version probe (per-check bounding) so the status probe stays responsive.
     const probe = spawnSync(candidate, ['--version'], {
       encoding: 'utf8',
       windowsHide: true,
-      env: sanitizeEnv(process.env)
+      env: sanitizeEnv(process.env),
+      timeout: 1_500
     });
     if (probe.error || probe.status !== 0) continue;
     const version = trimText(String(probe.stdout || probe.stderr || '').trim(), 500);

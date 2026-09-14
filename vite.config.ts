@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  */
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'

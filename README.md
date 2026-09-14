@@ -1,5 +1,7 @@
 # Ollama +
 
+**Version: 5.1.0**
+
 Ollama + is a native desktop workspace for local LLM workflows with agent tooling, structured task tracking, and an evolving 3D workflow foundation.
 
 Built with Electron, React, Vite, and TypeScript.

@@ -1,7 +1,7 @@
 /**
  * Ollama Connectivity Handler
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Manages connectivity checks to the local Ollama endpoint with retry logic
  * and exponential backoff. Produces diagnostic messages when the endpoint

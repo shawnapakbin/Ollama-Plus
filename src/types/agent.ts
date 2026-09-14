@@ -27,7 +27,7 @@ export type StepOutcome =
 export interface ToolReference {
   name: string;
   server: string;
-  category: 'terminal' | 'folder' | 'browser' | 'python' | 'http';
+  category: 'terminal' | 'folder' | 'browser' | 'python' | 'http' | 'openscad' | 'blender_plate';
 }
 
 export interface ExecutionError {
@@ -64,6 +64,8 @@ export interface ToolTimeouts {
   browser: number;
   python: number;
   http: number;
+  openscad?: number;
+  blender_plate?: number;
 }
 
 export interface TaskSubmission {
