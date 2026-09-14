@@ -237,7 +237,7 @@ export type EffectiveSelection = {
 /** Discriminated enumeration result. */
 export type EnumerationResult =
   | { ok: true; gpus: DetectedGpu[] }
-  | { ok: false; error: string; kind: 'timeout' | 'unavailable' };
+  | { ok: false; error: string; kind: 'timeout' | 'unavailable' | 'failed' };
 
 /** State delivered to the UI. */
 export type GpuSelectionState = {

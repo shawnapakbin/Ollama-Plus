@@ -227,7 +227,7 @@ type EffectiveSelection = {
 
 type EnumerationResult =
   | { ok: true; gpus: DetectedGpu[] }
-  | { ok: false; error: string; kind: 'timeout' | 'unavailable' };
+  | { ok: false; error: string; kind: 'timeout' | 'unavailable' | 'failed' };
 
 type GpuSelectionState = {
   detection: EnumerationResult;

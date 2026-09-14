@@ -105,10 +105,10 @@ function stateEmptySuccess(): GpuSelectionState {
   };
 }
 
-/** Detection failed. */
+/** Detection failed (hard failure — a strategy ran but malfunctioned). */
 function stateDetectionError(): GpuSelectionState {
   return {
-    detection: { ok: false, error: 'nvidia-smi not found', kind: 'unavailable' },
+    detection: { ok: false, error: 'nvidia-smi not found', kind: 'failed' },
     config: { allowedIndices: [], cpuOnly: false },
     effective: { mode: 'all', availableIndices: [], unavailableIndices: [] },
     appliedStateAvailable: true

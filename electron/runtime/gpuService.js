@@ -6,16 +6,47 @@
  * renderer through the preload bridge. This module owns Requirement 1
  * (enumeration) only: it performs no persistence and no reconciliation.
  *
+ * Enumeration attempts an ordered, platform-selected set of probe strategies
+ * covering multiple GPU vendors plus a generic OS-level fallback that lists
+ * devices by name without any vendor CLI. The ordered set, filtered to what
+ * applies on each platform, is:
+ *
+ *   NVIDIA (`nvidia-smi`, cross-platform, first)
+ *     → AMD (`rocm-smi`)
+ *     → Intel (platform-applicable Intel GPU query)
+ *     → Apple/macOS (`system_profiler`, on darwin)
+ *     → generic OS-level fallback (no vendor CLI):
+ *         • Windows: WMI/CIM `Win32_VideoController` via PowerShell
+ *         • Linux:   `lspci`
+ *         • macOS:   `system_profiler` (also the generic fallback)
+ *
+ * The first strategy that yields one or more devices short-circuits and
+ * provides the aggregated list; later strategies are not needed once devices
+ * are found. Every probe's stdout is treated as untrusted text.
+ *
  * Enumeration returns a discriminated `EnumerationResult`. Exactly one shape is
  * ever returned; never a hybrid:
  *
- *   { ok: true,  gpus: DetectedGpu[] }                             // success (may be empty)
- *   { ok: false, error: string, kind: 'timeout' | 'unavailable' } // error, NO `gpus` field
+ *   { ok: true,  gpus: DetectedGpu[] }                                        // success (may be empty)
+ *   { ok: false, error: string, kind: 'timeout' | 'unavailable' | 'failed' } // error, NO `gpus` field
  *
  * A completed probe that finds zero devices is an empty *success*
- * (`{ ok: true, gpus: [] }`, Requirement 1.3), never an error. Only
- * infrastructure/driver failures or a timeout produce `{ ok: false, ... }`
- * (Requirement 1.4), and such a result never carries a `gpus` list.
+ * (`{ ok: true, gpus: [] }`, Requirement 1.3), never an error.
+ *
+ * There are three distinct `ok: false` kinds:
+ *   - `timeout`     — the whole multi-strategy pipeline did not finish within
+ *                     the 5-second bound (Requirement 3.3). Hard failure.
+ *   - `unavailable` — NO strategy (vendor or generic OS-level) could be spawned
+ *                     to produce a device list (Requirement 2.5). This is a
+ *                     *non-failure* degraded state: the OS simply exposes no
+ *                     detection tool the app knows how to run, and the GPU
+ *                     Selection screen stays usable.
+ *   - `failed`      — at least one strategy spawned but malfunctioned (ran yet
+ *                     could not produce a valid device list, e.g. a non-zero
+ *                     exit with garbage stdout, Requirement 3.4). Hard failure,
+ *                     kept distinct from the graceful `unavailable`.
+ *
+ * An `ok: false` result never carries a `gpus` list.
  *
  * A DetectedGpu is the normalized device shape (Requirement 1.2):
  *   { index: number,  // non-negative integer, unique within the list
@@ -88,6 +119,77 @@ export function parseNvidiaSmiCsv(stdout) {
   }
 
   return rows;
+}
+
+/**
+ * Parses the stdout of the AMD `rocm-smi` probe into loose `RawGpuRow` objects.
+ *
+ * `rocm-smi` reports one device per line, tagged with a bracketed GPU ordinal
+ * and a labelled field carrying the device/card name, e.g.:
+ *
+ *   GPU[0]		: Card series: AMD Instinct MI210
+ *   GPU[1]		: Card series: AMD Radeon RX 7900 XTX
+ *
+ * The device index is the number inside `GPU[n]`; the name is the text after
+ * the last `:` on the line (the label — "Card series", "Card model", etc. — is
+ * discarded, leaving the human-readable name). Lines without a `GPU[n]` prefix
+ * are skipped. All input is treated as untrusted text: strict extraction, no
+ * `eval`. `normalizeDetectedGpus` re-validates and caps every row.
+ *
+ * @param {string} stdout Raw stdout from the rocm-smi probe (untrusted).
+ * @returns {{ index: string, name: string }[]} Extracted raw rows.
+ */
+export function parseRocmSmi(stdout) {
+  if (typeof stdout !== 'string' || stdout.length === 0) {
+    return [];
+  }
+
+  const rows = [];
+  const lines = stdout.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+    if (trimmedLine.length === 0) {
+      continue;
+    }
+    // Require a bracketed GPU ordinal so unrelated banner/summary lines are
+    // ignored. The ordinal supplies the device index.
+    const match = /^GPU\[(\d+)\]\s*:?\s*(.*)$/i.exec(trimmedLine);
+    if (!match) {
+      continue;
+    }
+    const index = match[1];
+    let remainder = match[2];
+    // The name is the text after the last colon (drop the "Card series:" /
+    // "Card model:" style label). If there is no further colon, the remainder
+    // itself is the name.
+    const lastColon = remainder.lastIndexOf(':');
+    if (lastColon !== -1) {
+      remainder = remainder.slice(lastColon + 1);
+    }
+    const name = remainder.trim();
+    if (name.length === 0) {
+      continue;
+    }
+    rows.push({ index, name });
+  }
+
+  return rows;
+}
+
+/**
+ * Parses the stdout of an Intel GPU query into loose `RawGpuRow` objects. The
+ * query lists one adapter description per line (Intel tooling / OS Intel-GPU
+ * listings print the device name per line, sometimes with a leading ordinal or
+ * label). Blank lines and an optional `Name` header are skipped, and indices
+ * are synthesized positionally in listing order.
+ *
+ * All input is treated as untrusted text: strict line extraction, no `eval`.
+ *
+ * @param {string} stdout Raw stdout from the Intel GPU probe (untrusted).
+ * @returns {{ index: string, name: string }[]} Extracted raw rows.
+ */
+export function parseIntelGpu(stdout) {
+  return parsePositionalNameList(stdout, (line) => line.toLowerCase() === 'name');
 }
 
 /**
@@ -208,6 +310,33 @@ export function parseWmicVideoControllers(stdout) {
 }
 
 /**
+ * Parses the stdout of the Windows generic OS-level fallback — a WMI/CIM
+ * `Win32_VideoController` query run via PowerShell
+ * (`Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name`) —
+ * into loose `RawGpuRow` objects. The query prints one adapter name per line
+ * (no device-index column), so indices are synthesized positionally
+ * (0, 1, 2, ...) in listing order. This is the strategy that must list all
+ * five AMD cards on the primary Windows repro.
+ *
+ * `Select-Object -ExpandProperty Name` emits no header, but a `Name` header
+ * line (as `Format-Table`/`Get-CimInstance ... | Select Name` would print) is
+ * tolerated and skipped so the parser is robust to either invocation form. All
+ * input is treated as untrusted text: strict line extraction, no `eval`.
+ * `normalizeDetectedGpus` re-validates and caps every row.
+ *
+ * @param {string} stdout Raw stdout from the PowerShell Win32_VideoController probe (untrusted).
+ * @returns {{ index: string, name: string }[]} Extracted raw rows.
+ */
+export function parseWin32VideoControllers(stdout) {
+  // Skip a `Name` column header and the `----` separator PowerShell table
+  // output may include; `Select-Object -ExpandProperty Name` produces neither.
+  return parsePositionalNameList(
+    stdout,
+    (line) => line.toLowerCase() === 'name' || /^-+$/.test(line)
+  );
+}
+
+/**
  * Parses the stdout of the macOS `system_profiler SPDisplaysDataType` fallback
  * into loose `RawGpuRow` objects. The relevant lines are the graphics/display
  * chipset entries, printed as `Chipset Model: <name>`. Indices are synthesized
@@ -270,17 +399,16 @@ export function parseLspciControllers(stdout) {
     if (trimmedLine.length === 0) {
       continue;
     }
-    // Keep only graphics controllers (VGA / 3D / Display) to avoid enumerating
-    // unrelated PCI devices.
-    if (!/\b(vga compatible controller|3d controller|display controller)\b/i.test(trimmedLine)) {
+    // Keep only graphics controllers (VGA / 3D / Display) and capture the name
+    // as the text immediately following the controller-class label's colon. The
+    // name itself may legitimately contain colons (e.g. a trailing revision), so
+    // we anchor on the class keyword rather than the last colon on the line.
+    const match =
+      /\b(?:vga compatible controller|3d controller|display controller)\s*:\s*(.*)$/i.exec(trimmedLine);
+    if (!match) {
       continue;
     }
-    // The device name is the text after the last colon on the line.
-    const lastColon = trimmedLine.lastIndexOf(':');
-    if (lastColon === -1) {
-      continue;
-    }
-    const name = trimmedLine.slice(lastColon + 1).trim();
+    const name = match[1].trim();
     if (name.length === 0) {
       continue;
     }
@@ -323,37 +451,86 @@ function parsePositionalNameList(stdout, isHeader) {
 }
 
 /**
- * Ordered list of probe strategies for a given platform. The NVIDIA `nvidia-smi`
- * probe is always attempted first (it is the most reliable device source and is
- * cross-platform), followed by the OS-native fallback. Each strategy names the
- * command, its argument vector, and the pure parser that turns its stdout into
- * `RawGpuRow[]`.
+ * Ordered, platform-selected list of probe strategies. The pipeline tries them
+ * in a fixed vendor-first order, filtered to what applies on each platform:
+ *
+ *   NVIDIA (`nvidia-smi`, cross-platform, first)
+ *     → AMD (`rocm-smi`)
+ *     → Intel (platform-applicable Intel GPU query)
+ *     → Apple/macOS (`system_profiler`, on darwin)
+ *     → generic OS-level fallback (no vendor CLI):
+ *         • Windows: WMI/CIM `Win32_VideoController` via PowerShell
+ *         • Linux:   `lspci`
+ *         • macOS:   `system_profiler` (also the generic fallback)
+ *
+ * Each strategy names the command, its argument vector, and the pure parser
+ * that turns its stdout into `RawGpuRow[]`. Strategies that do not apply to a
+ * platform are omitted from its list. The command strings intentionally carry
+ * the vendor/tool name so the caller-injected `spawnImpl` can be matched in
+ * tests and so the OS resolves the right executable at runtime.
  *
  * @param {NodeJS.Platform | string} platform The `process.platform` value.
  * @returns {{ command: string, args: string[], parse: (stdout: string) => Array<{ index: string, name: string }> }[]}
  */
 function probeStrategiesForPlatform(platform) {
+  // NVIDIA — cross-platform, most reliable, always first.
   const nvidia = {
     command: 'nvidia-smi',
     args: ['--query-gpu=index,name', '--format=csv,noheader,nounits'],
     parse: parseNvidiaSmiCsv
   };
 
+  // AMD — cross-platform vendor CLI.
+  const amd = {
+    command: 'rocm-smi',
+    args: ['--showproductname'],
+    parse: parseRocmSmi
+  };
+
   if (platform === 'win32') {
     return [
       nvidia,
-      { command: 'wmic', args: ['path', 'win32_VideoController', 'get', 'Name'], parse: parseWmicVideoControllers }
+      amd,
+      // Intel: query the Intel adapter name via WMI/CIM filtered to Intel.
+      {
+        command: 'powershell',
+        args: [
+          '-NoProfile',
+          '-Command',
+          "Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match 'Intel' } | Select-Object -ExpandProperty Name"
+        ],
+        parse: parseIntelGpu
+      },
+      // Generic OS-level fallback: WMI/CIM Win32_VideoController via PowerShell.
+      {
+        command: 'powershell',
+        args: [
+          '-NoProfile',
+          '-Command',
+          'Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name'
+        ],
+        parse: parseWin32VideoControllers
+      }
     ];
   }
+
   if (platform === 'darwin') {
     return [
       nvidia,
+      amd,
+      // Apple Silicon / macOS + generic fallback: system_profiler names every
+      // display adapter, including the integrated Apple GPU.
       { command: 'system_profiler', args: ['SPDisplaysDataType'], parse: parseSystemProfilerDisplays }
     ];
   }
-  // Linux and any other POSIX-like platform fall back to lspci.
+
+  // Linux and any other POSIX-like platform.
   return [
     nvidia,
+    amd,
+    // Intel: the Intel GPU top query (`intel_gpu_top -L` lists adapters).
+    { command: 'intel_gpu_top', args: ['-L'], parse: parseIntelGpu },
+    // Generic OS-level fallback: lspci enumerates graphics controllers by name.
     { command: 'lspci', args: [], parse: parseLspciControllers }
   ];
 }
@@ -362,25 +539,30 @@ function probeStrategiesForPlatform(platform) {
  * Enumerates the system's GPUs under a hard time bound, returning the
  * discriminated `EnumerationResult` documented at the top of this module.
  *
- * Strategy selection (Requirement 1.1): the NVIDIA `nvidia-smi` probe is tried
- * first; if it yields no usable devices, the OS-native fallback for `platform`
- * (`wmic` on Windows, `system_profiler` on macOS, `lspci` elsewhere) is tried.
- * Each probe's stdout is parsed with a pure parser and normalized with
+ * Strategy selection (Requirement 2.1, 2.2): the ordered, platform-selected set
+ * from `probeStrategiesForPlatform` is tried in turn — NVIDIA → AMD → Intel →
+ * Apple/macOS → generic OS-level fallback. The first strategy that normalizes
+ * to one or more devices short-circuits and yields the list. Each probe's
+ * stdout is parsed with a pure parser and normalized with
  * `normalizeDetectedGpus`, so all output is treated as untrusted text.
  *
  * Result classification:
- *   - The whole enumeration is raced against a `timeoutMs` (default 5000 ms)
- *     timer. If the timer wins, the result is
- *     `{ ok: false, kind: 'timeout' }` with NO `gpus` field (Requirement 1.4).
+ *   - The whole multi-strategy pipeline is raced against a `timeoutMs`
+ *     (default 5000 ms) timer. If the timer wins, the result is
+ *     `{ ok: false, kind: 'timeout' }` with NO `gpus` field (Requirement 3.3).
  *   - If any strategy completes and normalizes to one or more devices, the
- *     result is `{ ok: true, gpus }` (Requirement 1.1, 1.2).
- *   - If every strategy completes but none yields a device, enumeration is a
- *     successful empty result `{ ok: true, gpus: [] }` (Requirement 1.3) — an
- *     empty success, never an error.
- *   - If every strategy fails to run (the injected `spawnImpl` throws or
- *     rejects for all of them) so that enumeration cannot complete at all, the
- *     result is `{ ok: false, kind: 'unavailable' }` with NO `gpus` field
- *     (Requirement 1.4).
+ *     result is `{ ok: true, gpus }` (Requirement 2.4, 3.1).
+ *   - If every strategy that ran clean-exited (`status === 0`, no error) but
+ *     none yielded a device, enumeration is a successful empty result
+ *     `{ ok: true, gpus: [] }` (Requirement 3.2) — an empty success.
+ *   - If at least one strategy spawned but every run malfunctioned (non-zero
+ *     exit / error, no valid device list), the result is
+ *     `{ ok: false, kind: 'failed' }` — a hard failure (Requirement 3.4).
+ *   - If NO strategy could be spawned at all (the injected `spawnImpl` throws
+ *     or rejects for every one), the result is
+ *     `{ ok: false, kind: 'unavailable' }` — the graceful, non-failure signal
+ *     that no detection tool the app knows how to run is available
+ *     (Requirement 2.5).
  *
  * All external dependencies are injected so the service is testable without
  * real hardware or a real clock:
@@ -399,7 +581,7 @@ function probeStrategiesForPlatform(platform) {
  *   timeoutMs?: number,
  *   now?: () => number
  * }} deps Injected dependencies.
- * @returns {Promise<{ ok: true, gpus: { index: number, name: string }[] } | { ok: false, error: string, kind: 'timeout' | 'unavailable' }>}
+ * @returns {Promise<{ ok: true, gpus: { index: number, name: string }[] } | { ok: false, error: string, kind: 'timeout' | 'unavailable' | 'failed' }>}
  */
 export async function enumerateGpus({
   spawnImpl,
@@ -418,28 +600,46 @@ export async function enumerateGpus({
 
   const strategies = probeStrategiesForPlatform(platform);
 
-  // The probe pipeline: try each strategy in order, return the first that
-  // yields devices, and remember whether every strategy failed to run so we can
-  // distinguish "completed with zero devices" (empty success) from "could not
-  // enumerate at all" (unavailable error).
+  // The probe pipeline: try each strategy in order and short-circuit to the
+  // first that yields devices. Two flags drive the three-way terminal split:
+  //   - anyProbeCompleted: a probe spawned AND clean-exited (status 0, no error)
+  //     reporting zero devices → empty-success candidate.
+  //   - anyProbeSpawned:    a probe spawned at all (regardless of exit status).
+  //     Distinguishes a strategy that ran-but-malfunctioned (`failed`) from the
+  //     graceful "no strategy could be spawned at all" case (`unavailable`).
   const runProbes = async () => {
     let anyProbeCompleted = false;
+    let anyProbeSpawned = false;
 
     for (const strategy of strategies) {
       let probeResult;
       try {
         probeResult = await spawnImpl(strategy.command, strategy.args);
       } catch {
-        // This strategy could not run at all; try the next one.
+        // This strategy could not be spawned at all; try the next one. It does
+        // NOT count as a run, so it never promotes the terminal outcome above
+        // `unavailable`.
         continue;
       }
+
+      // A spawn that resolved (even to a non-zero status) means the tool ran.
+      anyProbeSpawned = true;
 
       const result = probeResult || {};
       const failed = Boolean(result.error) || (typeof result.status === 'number' && result.status !== 0);
       const stdout = typeof result.stdout === 'string' ? result.stdout : '';
 
-      // Parse opportunistically even on a non-zero exit: some tools print usable
-      // output alongside a non-zero status. Normalization drops anything invalid.
+      // A failed run (non-zero exit / error) is a malfunctioning tool: its
+      // stdout is not trusted as a device list. Only a clean run contributes
+      // devices or promotes the empty-success outcome, so a probe that spawns
+      // but exits non-zero with garbage is classified `failed`, distinct from
+      // the graceful `unavailable` no-strategy case (Requirement 3.4).
+      if (failed) {
+        continue;
+      }
+
+      // Normalization treats the parsed rows as untrusted and drops anything
+      // invalid, so a clean but empty/garbled listing yields zero devices.
       const gpus = normalizeDetectedGpus(strategy.parse(stdout));
 
       if (gpus.length > 0) {
@@ -447,19 +647,30 @@ export async function enumerateGpus({
       }
 
       // A clean exit with zero devices counts as a completed probe (empty
-      // success candidate). A failed run does not.
-      if (!failed) {
-        anyProbeCompleted = true;
-      }
+      // success candidate).
+      anyProbeCompleted = true;
     }
 
     if (anyProbeCompleted) {
-      // Every strategy that ran completed cleanly but none found a device.
+      // At least one strategy ran cleanly and every run reported zero devices:
+      // an empty success, never an error (Requirement 3.2).
       return { ok: true, gpus: [] };
     }
 
-    // No strategy could run to completion — enumeration infrastructure is
-    // absent or malfunctioning (Requirement 1.4).
+    if (anyProbeSpawned) {
+      // At least one strategy spawned but every run malfunctioned (non-zero
+      // exit / error, no valid device list): a hard failure, kept distinct from
+      // the graceful no-strategy case (Requirement 3.4).
+      return {
+        ok: false,
+        error: 'GPU enumeration failed: a detection tool ran but did not report a valid device list.',
+        kind: 'failed'
+      };
+    }
+
+    // No strategy — vendor or generic OS-level — could be spawned at all. This
+    // is the graceful, non-failure degraded state: the OS exposes no detection
+    // tool the app knows how to run (Requirement 2.5).
     return {
       ok: false,
       error: 'GPU enumeration could not complete: no detection tool was available.',

@@ -153,7 +153,13 @@ export function GpuSelection() {
   // ── Derived view data ──────────────────────────────────────────────────────
   const detection = state?.detection ?? null;
   const gpus = useMemo<DetectedGpu[]>(() => (detection?.ok ? detection.gpus : []), [detection]);
-  const detectionFailed = detection ? detection.ok === false : false;
+  // `unavailable` is the neutral, non-failure degraded state: no strategy could
+  // run at all. It must NOT surface the hard "GPU detection failed" alert and
+  // must keep the feature usable (Requirement 2.5).
+  const detectionUnavailable = detection?.ok === false && detection.kind === 'unavailable';
+  // Hard failures are only `timeout` and `failed` — these keep the role="alert"
+  // block (Requirements 3.3, 3.4).
+  const detectionFailed = detection?.ok === false && detection.kind !== 'unavailable';
   const emptySuccess = detection?.ok === true && gpus.length === 0;
 
   const unavailableIndices = state?.effective.unavailableIndices ?? [];
@@ -322,6 +328,21 @@ export function GpuSelection() {
         </div>
       )}
 
+      {/* ─── Detection unavailable — neutral, usable state (R2.5) ────────────── */}
+      {detectionUnavailable && (
+        <div className="gpu-selection-notice muted" role="status">
+          <Info size={15} />
+          <div className="gpu-selection-notice-body">
+            <span className="gpu-selection-notice-title">GPU detection unavailable</span>
+            <span>
+              No GPU detection tool was available on this system, so devices could not be listed
+              automatically. GPU selection changes affect only the request options this app sends, so
+              you can still continue — run on CPU below, and detection will retry on the next re-detect.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* ─── Empty-success CPU message (R1.6) ────────────────────────────────── */}
       {emptySuccess && (
         <div className="gpu-selection-notice muted" role="status">
@@ -355,6 +376,42 @@ export function GpuSelection() {
             <span>Inference is currently running in CPU-only mode.</span>
           </div>
         </div>
+      )}
+
+      {/* ─── Usable path for the unavailable state (R2.5) ────────────────────── */}
+      {detectionUnavailable && (
+        <section className="gpu-selection-section">
+          <div className="gpu-selection-cpu-row">
+            <button
+              className="gpu-selection-cpu-btn active"
+              onClick={chooseCpuOnly}
+              type="button"
+              aria-pressed={selected.size === 0}
+            >
+              <Cpu size={13} />
+              CPU only (deselect all)
+            </button>
+            <span className="gpu-selection-device-status">
+              <MonitorCog size={12} /> No GPU allowed — inference will run on CPU.
+            </span>
+          </div>
+          <div className="gpu-selection-save-area">
+            <button
+              className="gpu-selection-save-btn"
+              onClick={handleSave}
+              disabled={saving}
+              type="button"
+            >
+              <Save size={14} />
+              {saving ? 'Saving…' : 'Save Selection'}
+            </button>
+            {feedback && (
+              <span className={`gpu-selection-save-feedback ${feedback.type}`} role="status">
+                {feedback.message}
+              </span>
+            )}
+          </div>
+        </section>
       )}
 
       {/* ─── Device list (R1.5, R2.1–2.4, R6.1) ──────────────────────────────── */}
