@@ -1,6 +1,7 @@
 // Feature: mcp-tools-wiring, Property 17: Path confinement
 import os from 'node:os';
 import path from 'node:path';
+const isWindows = process.platform === 'win32';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import {
@@ -125,7 +126,14 @@ describe('Property 17: Path confinement across terminal, folder, and python root
       ['folder', getFileRoot()],
       ['python', getSandboxRoot()]
     ];
-    const escapes = ['../outside.txt', '../../etc/passwd', '/etc/passwd', 'C:\\Windows\\system32'];
+    // POSIX-style traversal and absolute paths escape on every platform.
+    // Windows drive-letter paths only carry absolute semantics on Windows;
+    // on POSIX their backslashes are ordinary filename characters, so they
+    // resolve *inside* the root rather than escaping it.
+    const escapes = ['../outside.txt', '../../etc/passwd', '/etc/passwd'];
+    if (isWindows) {
+      escapes.push('C:\\Windows\\system32');
+    }
 
     for (const [, root] of roots) {
       for (const candidate of escapes) {
