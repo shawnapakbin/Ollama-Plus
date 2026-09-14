@@ -196,7 +196,7 @@ export function AgentPage({ activeTab: controlledTab, onTabChange, registerNewSe
       await agentChat.loadSession(sessionId);
       setActiveTab('active');
     },
-    [agentChat]
+    [agentChat, setActiveTab]
   );
 
   // ─── New Session ─────────────────────────────────────────────────────────
