@@ -128,6 +128,14 @@ function createService(overrides: Record<string, unknown> = {}) {
       node: '24.0.0'
     },
     langsmithConfigured: false,
+    // Stub GPU enumeration so chat operations never spawn real GPU-detection
+    // subprocesses (nvidia-smi / rocm-smi / PowerShell WMI query). Those real
+    // spawnSync probes are the true cause of the ~1.3s-per-run slowness here
+    // and make the test depend on host GPU tooling. Injecting a deterministic
+    // detected set (mirrors runtimeService.test.ts and
+    // gpuSelectionPersistFailure.test.ts) keeps the chat/GPU-derivation path
+    // exercised without spawning any process.
+    enumerateGpusImpl: async () => ({ ok: true, gpus: [] }),
     ...overrides
   });
 }
@@ -302,9 +310,13 @@ describe('chat-config-field-reset — Property 1: Bug Condition (field preservat
           }
         }
       ),
-      { numRuns: 25 }
+      { numRuns: 100 }
     );
-  }, 60000);
+    // ~2.2s in isolation (4 services x 4 chat ops per run, real temp-file I/O);
+    // this headroom absorbs CPU/disk contention when the full worker pool runs
+    // in parallel. Not a mask -- the pathological cause (real GPU subprocess
+    // spawns) is fixed by the injected enumerateGpusImpl stub in createService.
+  }, 20000);
 });
 
 /**
@@ -563,5 +575,7 @@ describe('chat-config-field-reset — Property 2: Preservation (defaults + endpo
       ),
       { numRuns: 100 }
     );
-  });
+    // ~1.3s in isolation; headroom for parallel-load contention (see note on
+    // the Property 1 test above). Not a mask.
+  }, 20000);
 });
