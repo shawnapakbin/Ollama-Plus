@@ -19,6 +19,10 @@ Plans/
 .continue/
 graphify-out/
 
+# Local build output and scratch artifacts, not shipped with the repo
+Setup/
+.sandbox/
+
 # Editor directories and files
 .vs/
 .github/

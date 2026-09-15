@@ -1,7 +1,7 @@
 /**
  * Project Detector
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Detects the project's language, build system, test runner, and provides
  * relevant commands (test, lint, build) to the execution loop by examining

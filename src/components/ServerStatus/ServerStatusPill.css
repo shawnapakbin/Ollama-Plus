@@ -1,0 +1,184 @@
+/**
+ * ServerStatusPill Styles
+ * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
+ *
+ * Centered header indicator (the Status_Pill) plus its dismissible popup
+ * (the Status_Popup). The pill communicates the current server reachability
+ * state (checking / starting / online / offline) and, when activated, opens a
+ * small anchored panel describing that state and — only for an offline local
+ * endpoint — offering a Start action.
+ */
+
+/* ─── Anchor wrapper (holds the pill + popover) ───────────────────────── */
+
+.server-status {
+  position: relative;
+  display: inline-flex;
+  justify-self: center;
+  align-items: center;
+}
+
+/* ─── Pill ────────────────────────────────────────────────────────────── */
+
+.server-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #d6e9dd;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+  white-space: nowrap;
+}
+
+.server-status-pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.server-status-pill:focus-visible {
+  outline: 2px solid rgba(134, 196, 162, 0.6);
+  outline-offset: 2px;
+}
+
+.server-status-pill svg {
+  flex-shrink: 0;
+}
+
+.server-status-pill .server-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* State tones */
+.server-status-pill.checking,
+.server-status-pill.starting {
+  border-color: rgba(222, 179, 92, 0.32);
+  background: rgba(222, 179, 92, 0.12);
+  color: #f2dcae;
+}
+
+.server-status-pill.online {
+  border-color: rgba(134, 196, 162, 0.4);
+  background: rgba(134, 196, 162, 0.14);
+  color: #c4f0d4;
+}
+
+.server-status-pill.offline {
+  border-color: rgba(255, 145, 145, 0.32);
+  background: rgba(101, 22, 22, 0.24);
+  color: #ffd2ca;
+}
+
+.server-status-pill .spinning {
+  animation: server-status-spin 1s linear infinite;
+}
+
+@keyframes server-status-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── Popup ───────────────────────────────────────────────────────────── */
+
+.server-status-popup {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  width: 280px;
+  max-width: 90vw;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(184, 216, 200, 0.22);
+  background: rgba(8, 14, 17, 0.98);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.44);
+  text-align: left;
+}
+
+.server-status-popup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.server-status-popup-title {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 650;
+  color: #effff7;
+}
+
+.server-status-popup-close {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, rgba(200, 220, 210, 0.6));
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.server-status-popup-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #effff7;
+}
+
+.server-status-popup-body {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #cdeedb;
+}
+
+.server-status-popup-endpoint {
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted, rgba(200, 220, 210, 0.6));
+  word-break: break-all;
+}
+
+.server-status-popup-start {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 999px;
+  padding: 8px 16px;
+  border: none;
+  background: linear-gradient(135deg, #d4e39f, #86c4a2);
+  color: #0f1f16;
+  font: inherit;
+  font-weight: 650;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: opacity 160ms ease, transform 80ms ease;
+}
+
+.server-status-popup-start:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.server-status-popup-start:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

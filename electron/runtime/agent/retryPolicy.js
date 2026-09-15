@@ -1,7 +1,7 @@
 /**
  * Retry Policy Engine
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Classifies tool errors as transient or permanent and determines retry
  * decisions with exponential backoff. Only transient errors are retried;

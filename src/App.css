@@ -1,6 +1,6 @@
 /*
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  */
 .app-shell {
   min-height: 100vh;
@@ -1559,6 +1559,24 @@
   background: rgba(7, 12, 15, 0.74);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
+  position: relative;
+}
+
+/* Center the Ollama server Status_Pill in the header (Requirement 5.1),
+   independent of the differing widths of the title row and action cluster. */
+.workspace-status-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.workspace-status-center > * {
+  pointer-events: auto;
 }
 
 .workspace-title-row {

@@ -1,7 +1,7 @@
 /**
  * Property-Based Tests: Tool Category Utils (Property 4)
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Feature: agent-page-redesign, Property 4: Tool use blocks display correct category accent color
  *

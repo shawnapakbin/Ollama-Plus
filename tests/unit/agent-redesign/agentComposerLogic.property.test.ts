@@ -1,7 +1,7 @@
 /**
  * Property-Based Tests: Agent Composer Logic (Property 1)
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Feature: agent-page-redesign, Property 1: Message submission rejects whitespace-only input
  *

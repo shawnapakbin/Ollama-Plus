@@ -1,7 +1,7 @@
 /**
  * Task Submission Validator
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Validates task submissions before they are accepted by the Agent Runtime.
  * Checks instruction content, attachment constraints, and working directory accessibility.

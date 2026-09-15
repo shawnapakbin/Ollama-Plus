@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  */
 export type RuntimeStatus = {
   appVersion: string;
@@ -213,6 +213,51 @@ export type ApprovalDecision = {
   reason?: string;
 };
 
+// ─── GPU Selection Types ─────────────────────────────────────────────────────
+
+/** A single detected device (normalized). */
+export type DetectedGpu = {
+  index: number; // non-negative integer, unique within the list
+  name: string; // non-empty, <= 128 chars
+};
+
+/** Persisted selection, normalized like chatConfig. */
+export type GpuConfig = {
+  allowedIndices: number[];
+  cpuOnly: boolean;
+};
+
+/** Effective, reconciled selection used for display and inference derivation. */
+export type EffectiveSelection = {
+  mode: 'all' | 'subset' | 'cpu-only';
+  availableIndices: number[]; // stored ∩ detected
+  unavailableIndices: number[]; // stored \ detected
+};
+
+/** Discriminated enumeration result. */
+export type EnumerationResult =
+  | { ok: true; gpus: DetectedGpu[] }
+  | { ok: false; error: string; kind: 'timeout' | 'unavailable' | 'failed' };
+
+/** State delivered to the UI. */
+export type GpuSelectionState = {
+  detection: EnumerationResult;
+  config: GpuConfig; // persisted, unchanged by reconciliation
+  effective: EffectiveSelection;
+  appliedStateAvailable: boolean; // false => UI retains last state
+};
+
+/** Discriminated save result. */
+export type GpuSaveResult =
+  | { ok: true; config: GpuConfig; cpuOnly: boolean }
+  | { ok: false; reason: 'unavailable-device' | 'persist-failed'; unavailableIndices?: number[] };
+
+/** Input accepted by saveGpuSelection. */
+export type GpuSaveInput = {
+  allowedIndices: number[];
+  cpuOnly?: boolean;
+};
+
 export type RuntimeBridgeHealth = {
   ok: boolean;
   missingMethods: string[];
@@ -234,6 +279,12 @@ const REQUIRED_RUNTIME_BRIDGE_METHODS = [
 
   'saveRuntimeChatConfig',
 
+  'listDetectedGpus',
+
+  'getGpuSelectionState',
+
+  'saveGpuSelection',
+
   'listRuntimeOllamaModels',
 
   'listRuntimeOllamaServers',
@@ -243,6 +294,10 @@ const REQUIRED_RUNTIME_BRIDGE_METHODS = [
   'removeRuntimeOllamaServer',
 
   'checkRuntimeOllamaServer',
+
+  'probeOllamaReachability',
+
+  'startOllamaServer',
 
   'listRuntimeMessages',
   'updateRuntimeMessage',
@@ -341,6 +396,30 @@ export const runtimeClient = {
   saveChatConfig(input: Partial<RuntimeChatConfig>) {
     return getElectronApi().saveRuntimeChatConfig(input);
   },
+  getDetectedGpus(): Promise<EnumerationResult> {
+    const api = getElectronApi();
+    if (typeof api.listDetectedGpus !== 'function') {
+      throw new Error('GPU enumeration bridge is unavailable in the active Electron preload API. Fully restart the desktop app to load the latest preload API.');
+    }
+
+    return api.listDetectedGpus();
+  },
+  getGpuSelectionState(): Promise<GpuSelectionState> {
+    const api = getElectronApi();
+    if (typeof api.getGpuSelectionState !== 'function') {
+      throw new Error('GPU selection-state bridge is unavailable in the active Electron preload API. Fully restart the desktop app to load the latest preload API.');
+    }
+
+    return api.getGpuSelectionState();
+  },
+  saveGpuSelection(input: GpuSaveInput): Promise<GpuSaveResult> {
+    const api = getElectronApi();
+    if (typeof api.saveGpuSelection !== 'function') {
+      throw new Error('GPU save-selection bridge is unavailable in the active Electron preload API. Fully restart the desktop app to load the latest preload API.');
+    }
+
+    return api.saveGpuSelection(input);
+  },
   listOllamaModels(endpoint?: string) {
     return getElectronApi().listRuntimeOllamaModels(endpoint);
   },
@@ -355,6 +434,12 @@ export const runtimeClient = {
   },
   checkOllamaServer(serverId: string) {
     return getElectronApi().checkRuntimeOllamaServer(serverId);
+  },
+  probeOllamaReachability(endpoint?: string) {
+    return getElectronApi().probeOllamaReachability(endpoint);
+  },
+  startOllamaServer(endpoint?: string) {
+    return getElectronApi().startOllamaServer(endpoint);
   },
   listMessages(sessionId?: string) {
     return getElectronApi().listRuntimeMessages(sessionId);

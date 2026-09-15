@@ -44,7 +44,7 @@ export interface StreamingMessage {
 
 // ─── Tool Use ────────────────────────────────────────────────────────────────
 
-export type ToolCategory = 'file' | 'terminal' | 'browser' | 'http' | 'python';
+export type ToolCategory = 'file' | 'terminal' | 'browser' | 'http' | 'python' | 'openscad' | 'blender_plate';
 
 export interface ToolUseError {
   message: string;

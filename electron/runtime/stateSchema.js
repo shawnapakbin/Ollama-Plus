@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  */
 export const SESSION_STATUSES = new Set(['draft', 'queued', 'running', 'paused', 'waiting_approval', 'completed', 'failed', 'canceled']);
 export const RUN_STATUSES = new Set(['planned', 'running', 'paused', 'waiting_approval', 'completed', 'failed', 'canceled']);
@@ -169,6 +169,26 @@ export function normalizeChatConfig(config) {
       ? config.autoRenameEnabled
       : true,
     systemPrompt
+  };
+}
+
+export const MAX_GPU_INDICES = 64;
+
+export function normalizeGpuConfig(config) {
+  const rawIndices = Array.isArray(config?.allowedIndices) ? config.allowedIndices : [];
+  const allowedIndices = [];
+  const seen = new Set();
+  for (const value of rawIndices) {
+    const index = Number(value);
+    if (!Number.isInteger(index) || index < 0) continue;
+    if (seen.has(index)) continue;
+    seen.add(index);
+    allowedIndices.push(index);
+    if (allowedIndices.length >= MAX_GPU_INDICES) break;
+  }
+  return {
+    allowedIndices,
+    cpuOnly: typeof config?.cpuOnly === 'boolean' ? config.cpuOnly : false
   };
 }
 

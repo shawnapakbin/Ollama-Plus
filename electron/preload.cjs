@@ -1,6 +1,6 @@
 /**
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  */
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -15,11 +15,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteRuntimeSession: (sessionId) => ipcRenderer.invoke('lang-runtime:delete-session', sessionId),
   getRuntimeChatConfig: () => ipcRenderer.invoke('lang-runtime:get-chat-config'),
   saveRuntimeChatConfig: (input) => ipcRenderer.invoke('lang-runtime:save-chat-config', input),
+  listDetectedGpus: () => ipcRenderer.invoke('gpu:list-detected'),
+  getGpuSelectionState: () => ipcRenderer.invoke('gpu:get-selection-state'),
+  saveGpuSelection: (input) => ipcRenderer.invoke('gpu:save-selection', input),
   listRuntimeOllamaModels: (endpoint) => ipcRenderer.invoke('lang-runtime:list-ollama-models', endpoint),
   listRuntimeOllamaServers: () => ipcRenderer.invoke('lang-runtime:list-ollama-servers'),
   saveRuntimeOllamaServer: (input) => ipcRenderer.invoke('lang-runtime:save-ollama-server', input),
   removeRuntimeOllamaServer: (serverId) => ipcRenderer.invoke('lang-runtime:remove-ollama-server', serverId),
   checkRuntimeOllamaServer: (serverId) => ipcRenderer.invoke('lang-runtime:check-ollama-server', serverId),
+  probeOllamaReachability: (endpoint) => ipcRenderer.invoke('ollama-lifecycle:probe', endpoint),
+  startOllamaServer: (endpoint) => ipcRenderer.invoke('ollama-lifecycle:start', endpoint),
   listRuntimeMessages: (sessionId) => ipcRenderer.invoke('lang-runtime:list-messages', sessionId),
   updateRuntimeMessage: (messageId, input) => ipcRenderer.invoke('lang-runtime:update-message', messageId, input),
   deleteRuntimeMessage: (messageId) => ipcRenderer.invoke('lang-runtime:delete-message', messageId),
@@ -69,8 +74,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('agent-chat:stream', subscription);
   },
   stopAgentGeneration: (sessionId) => ipcRenderer.invoke('agent-chat:stop', sessionId),
-  listAgentChatSessions: () => ipcRenderer.invoke('agent-chat:list-sessions'),
-  getAgentChatSession: (sessionId) => ipcRenderer.invoke('agent-chat:get-session', sessionId),
+  listAgentChatSessions: () => ipcRenderer.invoke('agent-chat:list-sessions'),
+
+  getAgentChatSession: (sessionId) => ipcRenderer.invoke('agent-chat:get-session', sessionId),
+
   getLastActiveAgentSession: () => ipcRenderer.invoke('agent-chat:get-last-active-session'),
   deleteAgentSession: (sessionId) => ipcRenderer.invoke('agent-chat:delete-session', sessionId),
   // Auto-updater event listeners (main → renderer)

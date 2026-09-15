@@ -1,7 +1,7 @@
 /**
  * Tool Dispatcher
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Constructs MCP-conformant requests, validates tool calls through the sandbox
  * enforcer, dispatches to the MCP gateway with per-tool timeouts, and truncates
@@ -24,7 +24,9 @@ export const DEFAULT_TOOL_TIMEOUTS = {
   folder: 30_000,
   browser: 120_000,
   python: 60_000,
-  http: 30_000
+  http: 30_000,
+  openscad: 120_000,
+  blender_plate: 180_000
 };
 
 /**
@@ -37,7 +39,9 @@ export const TOOL_SERVER_MAP = {
   file: 'folder',
   browser: 'browser',
   python: 'python',
-  http: 'http'
+  http: 'http',
+  openscad: 'openscad',
+  blender_plate: 'blender_plate'
 };
 
 // ─── Tool Dispatcher ─────────────────────────────────────────────────────────
@@ -233,7 +237,7 @@ export function createToolDispatcher({ mcpGateway, sandboxEnforcer, config } = {
       });
     } catch (err) {
       const duration = Date.now() - startTime;
-      const isTimeout = err.code === 'TIMEOUT';
+      const isTimeout = err && err.code === 'TIMEOUT';
 
       return buildRecord({
         id: callId,
@@ -241,9 +245,9 @@ export function createToolDispatcher({ mcpGateway, sandboxEnforcer, config } = {
         server: toolCall.server || TOOL_SERVER_MAP[toolCall.tool] || 'unknown',
         action: toolCall.action || '',
         params: toolCall.params || {},
-        output: truncateOutput(err.partialOutput || '', MAX_OUTPUT_LENGTH),
+        output: truncateOutput((err && err.partialOutput) || '', MAX_OUTPUT_LENGTH),
         status: isTimeout ? 'timeout' : 'error',
-        error: err.message || String(err),
+        error: sanitizeError(err),
         duration,
         startedAt,
         completedAt: new Date().toISOString()
@@ -299,6 +303,62 @@ function extractOutput(result) {
   }
 
   return String(result);
+}
+
+/**
+ * Produces a sanitized, human-readable error message from a thrown value.
+ *
+ * Per Requirements 8.3 / 8.5 / 9.3, error strings surfaced on a tool call
+ * record MUST exclude stack-trace frames and internal absolute file paths so
+ * that internal implementation detail never leaks into the chat timeline.
+ *
+ * The returned value is always a non-null, non-empty string.
+ *
+ * @param {unknown} err - The thrown error or rejection value
+ * @returns {string} Sanitized error message free of stack frames and absolute paths
+ */
+function sanitizeError(err) {
+  const raw = err && typeof err.message === 'string' && err.message.length > 0
+    ? err.message
+    : String(err === undefined || err === null ? '' : err);
+
+  const sanitized = scrubErrorText(raw);
+  return sanitized.length > 0 ? sanitized : 'Tool call failed.';
+}
+
+/**
+ * Strips stack-trace frames and internal absolute file paths from a string.
+ *
+ * - Drops any line that is a stack frame (a line whose first non-space token
+ *   is `at ` — e.g. `    at fn (C:\a\b.js:1:2)`).
+ * - Redacts POSIX absolute paths (`/usr/...`) and Windows absolute paths
+ *   (`C:\Users\...` or `C:/Users/...`) with a `[path]` placeholder.
+ *
+ * @param {string} text - The raw error text
+ * @returns {string} The scrubbed text, trimmed
+ */
+function scrubErrorText(text) {
+  if (typeof text !== 'string' || text.length === 0) {
+    return '';
+  }
+
+  // 1. Remove stack-trace frame lines (those starting with "at " after
+  //    optional leading whitespace). This also removes multi-frame stacks.
+  const withoutFrames = text
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*at\s+/.test(line))
+    .join('\n');
+
+  // 2. Redact absolute file paths so internal locations never leak.
+  const withoutPaths = withoutFrames
+    // Windows drive-letter paths: C:\Users\... or C:/Users/...
+    .replace(/[A-Za-z]:[\\/][^\s"')]*/g, '[path]')
+    // UNC paths: \\server\share\...
+    .replace(/\\\\[^\s"')]+/g, '[path]')
+    // POSIX absolute paths: /usr/local/... (at least one segment).
+    .replace(/(?<![\w.])\/[^\s"')]+/g, '[path]');
+
+  return withoutPaths.trim();
 }
 
 /**

@@ -1,7 +1,7 @@
 /**
  * Risk Classifier
  * (Developed by Shawna Pakbin | revDigit Studio | revDigit.link)
- * v5.0.3
+ * v5.1.0
  *
  * Classifies operations as low, medium, or high risk based on default criteria
  * and user-configured custom approval rules. Custom rules take precedence over
