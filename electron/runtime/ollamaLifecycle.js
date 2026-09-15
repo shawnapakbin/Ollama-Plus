@@ -16,7 +16,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import path from 'node:path';
 import { classifyEndpoint, classifyFetchFailure } from './ollamaClient.js';
 
 /**
@@ -265,7 +265,11 @@ export function createOllamaLifecycle(deps = {}) {
       if (typeof localAppData !== 'string' || !localAppData.trim()) {
         return [];
       }
-      return [join(localAppData, 'Programs', 'Ollama', 'ollama.exe')];
+      // Build with the Windows-specific join so the path always uses
+      // backslashes regardless of the host OS. The host may be Linux (e.g. CI)
+      // while `platform` is injected as `win32`; the platform-agnostic `join`
+      // would otherwise emit forward slashes and mismatch the Windows layout.
+      return [path.win32.join(localAppData, 'Programs', 'Ollama', 'ollama.exe')];
     }
     return DEFAULT_BINARY_LOCATIONS[platform] ?? [];
   }
