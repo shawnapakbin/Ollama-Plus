@@ -259,6 +259,8 @@ describe('runtimeClient getBridgeHealth – GPU bridge methods', () => {
     'saveRuntimeOllamaServer',
     'removeRuntimeOllamaServer',
     'checkRuntimeOllamaServer',
+    'probeOllamaReachability',
+    'startOllamaServer',
     'listRuntimeMessages',
     'updateRuntimeMessage',
     'deleteRuntimeMessage',
@@ -312,6 +314,214 @@ describe('runtimeClient getBridgeHealth – GPU bridge methods', () => {
   });
 
   it.each(NEW_GPU_METHODS)('reports %s in missingMethods when the bridge omits that GPU method', (missing) => {
+    makeBridge(REQUIRED_METHODS.filter((name) => name !== missing));
+
+    const health = runtimeClient.getBridgeHealth();
+
+    expect(health.ok).toBe(false);
+    expect(health.missingMethods).toContain(missing);
+  });
+});
+
+// Feature: ollama-lifecycle-management, Task 5.4: IPC round-trip and bridge-health tests
+//
+// These tests verify the Ollama lifecycle IPC transport wiring (Requirements
+// 1.5, 4.1), not the pure lifecycle logic (which is covered by the
+// ollamaLifecycle property and unit tests). They exercise the renderer
+// `runtimeClient` methods end-to-end against a real `createOllamaLifecycle`
+// instance, simulating the preload bridge by pointing
+// `window.electronAPI.probeOllamaReachability` / `.startOllamaServer` at
+// handlers that delegate to the service the same way the Main-process IPC
+// handlers in `main.js` do (defaulting the endpoint when none is passed).
+
+import { createOllamaLifecycle } from '../electron/runtime/ollamaLifecycle.js';
+
+describe('runtimeClient Ollama lifecycle IPC round-trip', () => {
+  const originalWindow = globalThis.window;
+
+  // The default endpoint the Main-process handlers fall back to when the
+  // renderer passes none (mirrors chatConfig.endpoint in main.js).
+  const DEFAULT_ENDPOINT = 'http://127.0.0.1:11434';
+
+  /**
+   * Wire `window.electronAPI.probeOllamaReachability` and `.startOllamaServer`
+   * to delegate to a real lifecycle service exactly as the preload bridge +
+   * Main-process IPC handlers do: each renderer channel calls the matching
+   * service method, defaulting the endpoint to DEFAULT_ENDPOINT when the
+   * renderer passes none.
+   */
+  function wireBridge(lifecycle: ReturnType<typeof createOllamaLifecycle>) {
+    (globalThis as typeof globalThis & { window?: Window }).window = {
+      electronAPI: {
+        probeOllamaReachability: (endpoint?: string) =>
+          lifecycle.probeReachability({ endpoint: endpoint ?? DEFAULT_ENDPOINT }),
+        startOllamaServer: (endpoint?: string) =>
+          lifecycle.startLocalServer({ endpoint: endpoint ?? DEFAULT_ENDPOINT })
+      }
+    } as unknown as Window;
+  }
+
+  afterEach(() => {
+    if (typeof originalWindow === 'undefined') {
+      delete (globalThis as typeof globalThis & { window?: Window }).window;
+    } else {
+      (globalThis as typeof globalThis & { window?: Window }).window = originalWindow;
+    }
+  });
+
+  it('returns a well-formed reachable ReachabilityResult when the server responds', async () => {
+    // fetchImpl resolves with an HTTP response -> reachable (any status).
+    const lifecycle = createOllamaLifecycle({
+      fetchImpl: async () => ({ status: 200 }) as unknown as Response
+    });
+    wireBridge(lifecycle);
+
+    const result = await runtimeClient.probeOllamaReachability(DEFAULT_ENDPOINT);
+
+    // Well-formed ReachabilityResult for a reachable local endpoint.
+    expect(result.reachable).toBe(true);
+    expect(result.kind).toBe('local');
+    expect(typeof result.normalizedEndpoint).toBe('string');
+    expect(result.normalizedEndpoint.length).toBeGreaterThan(0);
+    // status is present when reachable; reason is absent.
+    expect(result.status).toBe(200);
+    expect(result.reason).toBeUndefined();
+  });
+
+  it('returns a well-formed unreachable ReachabilityResult when the fetch is refused', async () => {
+    // fetchImpl rejects with a connection-refused transport error (the shape
+    // Node's fetch surfaces: a TypeError whose cause.code is ECONNREFUSED).
+    const lifecycle = createOllamaLifecycle({
+      fetchImpl: async () => {
+        const error = new TypeError('fetch failed');
+        (error as { cause?: unknown }).cause = { code: 'ECONNREFUSED' };
+        throw error;
+      }
+    });
+    wireBridge(lifecycle);
+
+    const result = await runtimeClient.probeOllamaReachability(DEFAULT_ENDPOINT);
+
+    // Well-formed ReachabilityResult for an unreachable local endpoint.
+    expect(result.reachable).toBe(false);
+    expect(result.kind).toBe('local');
+    expect(typeof result.normalizedEndpoint).toBe('string');
+    expect(result.normalizedEndpoint.length).toBeGreaterThan(0);
+    // reason is present when unreachable; status is absent.
+    expect(result.reason).toBe('refused');
+    expect(result.status).toBeUndefined();
+  });
+
+  it('defaults the endpoint like the Main-process handler when none is passed', async () => {
+    const lifecycle = createOllamaLifecycle({
+      fetchImpl: async () => ({ status: 200 }) as unknown as Response
+    });
+    wireBridge(lifecycle);
+
+    // No endpoint argument -> the bridge falls back to the default endpoint.
+    const result = await runtimeClient.probeOllamaReachability();
+
+    expect(result.reachable).toBe(true);
+    expect(result.kind).toBe('local');
+    expect(result.normalizedEndpoint).toContain('127.0.0.1');
+  });
+
+  it('returns a well-formed StartResult refusing a remote endpoint without spawning', async () => {
+    // A remote endpoint yields a clean, deterministic StartResult
+    // ({ ok: false, reason: 'remote' }) without ever invoking spawn.
+    const spawnImpl = vi.fn();
+    const lifecycle = createOllamaLifecycle({
+      spawnImpl: spawnImpl as unknown as typeof import('node:child_process').spawn
+    });
+    wireBridge(lifecycle);
+
+    const result = await runtimeClient.startOllamaServer('http://192.168.1.50:11434');
+
+    // Well-formed failing StartResult; no process was spawned.
+    expect(result).toEqual({ ok: false, reason: 'remote' });
+    expect(spawnImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe('runtimeClient getBridgeHealth – Ollama lifecycle bridge methods', () => {
+  const originalWindow = globalThis.window;
+
+  // The full set of methods the required-bridge check expects to be present.
+  // Mirrors REQUIRED_RUNTIME_BRIDGE_METHODS in runtimeClient.ts.
+  const REQUIRED_METHODS = [
+    'getRuntimeStatus',
+    'getRuntimeBootstrapPlan',
+    'getGraphCatalog',
+    'listRuntimeSessions',
+    'createRuntimeSession',
+    'renameRuntimeSession',
+    'renameRuntimeSessionWithAi',
+    'deleteRuntimeSession',
+    'getRuntimeChatConfig',
+    'saveRuntimeChatConfig',
+    'listDetectedGpus',
+    'getGpuSelectionState',
+    'saveGpuSelection',
+    'listRuntimeOllamaModels',
+    'listRuntimeOllamaServers',
+    'saveRuntimeOllamaServer',
+    'removeRuntimeOllamaServer',
+    'checkRuntimeOllamaServer',
+    'probeOllamaReachability',
+    'startOllamaServer',
+    'listRuntimeMessages',
+    'updateRuntimeMessage',
+    'deleteRuntimeMessage',
+    'sendRuntimeChatMessage',
+    'sendRuntimeChatMessageStream',
+    'onRuntimeChatStream',
+    'listRuntimeRuns',
+    'listRuntimeMemoryRecords',
+    'startRuntimeRun',
+    'executeRuntimeRun',
+    'resumeRuntimeRun',
+    'stepRuntimeRun',
+    'cancelRuntimeRun',
+    'approveRuntimeRun',
+    'denyRuntimeRun',
+    'mcpGatewayCall',
+    'mcpGatewayStatus'
+  ] as const;
+
+  const NEW_LIFECYCLE_METHODS = ['probeOllamaReachability', 'startOllamaServer'] as const;
+
+  function makeBridge(methodNames: readonly string[]) {
+    const api: Record<string, unknown> = {};
+    for (const name of methodNames) {
+      api[name] = vi.fn();
+    }
+    (globalThis as typeof globalThis & { window?: Window }).window = {
+      electronAPI: api
+    } as unknown as Window;
+  }
+
+  afterEach(() => {
+    if (typeof originalWindow === 'undefined') {
+      delete (globalThis as typeof globalThis & { window?: Window }).window;
+    } else {
+      (globalThis as typeof globalThis & { window?: Window }).window = originalWindow;
+    }
+  });
+
+  it('treats the new lifecycle methods as required and reports ok when all required methods are present', () => {
+    makeBridge(REQUIRED_METHODS);
+
+    const health = runtimeClient.getBridgeHealth();
+
+    expect(health.ok).toBe(true);
+    expect(health.missingMethods).toEqual([]);
+    // The new lifecycle methods are among the available bridge methods.
+    for (const method of NEW_LIFECYCLE_METHODS) {
+      expect(health.availableMethods).toContain(method);
+    }
+  });
+
+  it.each(NEW_LIFECYCLE_METHODS)('reports %s in missingMethods when the bridge omits that lifecycle method', (missing) => {
     makeBridge(REQUIRED_METHODS.filter((name) => name !== missing));
 
     const health = runtimeClient.getBridgeHealth();

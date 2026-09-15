@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveRuntimeOllamaServer: (input) => ipcRenderer.invoke('lang-runtime:save-ollama-server', input),
   removeRuntimeOllamaServer: (serverId) => ipcRenderer.invoke('lang-runtime:remove-ollama-server', serverId),
   checkRuntimeOllamaServer: (serverId) => ipcRenderer.invoke('lang-runtime:check-ollama-server', serverId),
+  probeOllamaReachability: (endpoint) => ipcRenderer.invoke('ollama-lifecycle:probe', endpoint),
+  startOllamaServer: (endpoint) => ipcRenderer.invoke('ollama-lifecycle:start', endpoint),
   listRuntimeMessages: (sessionId) => ipcRenderer.invoke('lang-runtime:list-messages', sessionId),
   updateRuntimeMessage: (messageId, input) => ipcRenderer.invoke('lang-runtime:update-message', messageId, input),
   deleteRuntimeMessage: (messageId) => ipcRenderer.invoke('lang-runtime:delete-message', messageId),

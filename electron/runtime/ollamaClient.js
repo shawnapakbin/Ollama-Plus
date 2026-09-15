@@ -153,6 +153,144 @@ export function normalizeOllamaBaseUrl(value) {
   return url.toString().replace(/\/$/, '');
 }
 
+/**
+ * Host names that identify the local machine. An endpoint whose normalized URL
+ * host matches one of these classifies as a Local_Endpoint; every other host is
+ * a Remote_Endpoint. The IPv6 loopback `::1` appears here in the bracket-less
+ * form; `classifyEndpoint` strips the surrounding brackets that `URL.hostname`
+ * yields for an IPv6 authority (e.g. `[::1]`) before comparing.
+ */
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+
+/**
+ * Node system error codes that mean the fetch never obtained an HTTP response
+ * because the transport could not be established. Mapped to a coarse `reason`
+ * so callers can craft an actionable message without leaking low-level detail.
+ * DNS-class codes are separated out; everything else connection-related is
+ * treated as `other`.
+ */
+const DNS_ERROR_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN']);
+const CONNECTION_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ECONNABORTED',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ETIMEDOUT',
+  'EPIPE'
+]);
+
+/**
+ * Classifies a Configured_Endpoint as `local` or `remote` after normalizing it.
+ * Pure and total: any input (including non-strings, garbage, or values that
+ * would make `normalizeOllamaBaseUrl` throw) is coerced to a classification
+ * rather than throwing. When normalization fails, the value falls back to the
+ * default local base URL, so an unusable endpoint is treated as `local`.
+ *
+ * @param {unknown} endpoint
+ * @returns {{ kind: 'local' | 'remote', normalizedEndpoint: string }}
+ */
+export function classifyEndpoint(endpoint) {
+  let normalizedEndpoint;
+  try {
+    normalizedEndpoint = normalizeOllamaBaseUrl(endpoint);
+  } catch {
+    normalizedEndpoint = normalizeOllamaBaseUrl(DEFAULT_OLLAMA_BASE_URL);
+  }
+
+  let host = '';
+  try {
+    host = new URL(normalizedEndpoint).hostname.toLowerCase();
+  } catch {
+    host = '';
+  }
+
+  // `URL.hostname` returns an IPv6 authority in bracketed form (e.g. `[::1]`);
+  // strip the brackets so the loopback address matches LOCAL_HOSTS.
+  if (host.startsWith('[') && host.endsWith(']')) {
+    host = host.slice(1, -1);
+  }
+
+  const kind = LOCAL_HOSTS.has(host) ? 'local' : 'remote';
+  return { kind, normalizedEndpoint };
+}
+
+/**
+ * Classifies a rejected/aborted `fetch` error as a transport-level
+ * unreachability failure or something else. Pure and total: never throws for
+ * any input (including null, non-objects, or exotic error shapes).
+ *
+ * `unreachable: true` when the error is an `AbortError` (a probe/request that
+ * did not complete in time -> `timeout`) or when `error.cause.code` is a
+ * connection-class code (`ECONNREFUSED` -> `refused`; `ENOTFOUND`/`EAI_AGAIN`
+ * -> `dns`; other connection codes -> `other`). Every other error (including a
+ * resolved HTTP error status, which never reaches here) is `unreachable: false`.
+ *
+ * @param {unknown} error
+ * @returns {{ unreachable: boolean, reason?: 'refused' | 'dns' | 'timeout' | 'other' }}
+ */
+export function classifyFetchFailure(error) {
+  if (!error || typeof error !== 'object') {
+    return { unreachable: false };
+  }
+
+  if (error.name === 'AbortError') {
+    return { unreachable: true, reason: 'timeout' };
+  }
+
+  const code = error.cause && typeof error.cause === 'object' ? error.cause.code : undefined;
+  if (typeof code === 'string' && code) {
+    if (code === 'ECONNREFUSED') {
+      return { unreachable: true, reason: 'refused' };
+    }
+    if (DNS_ERROR_CODES.has(code)) {
+      return { unreachable: true, reason: 'dns' };
+    }
+    if (CONNECTION_ERROR_CODES.has(code)) {
+      return { unreachable: true, reason: 'other' };
+    }
+  }
+
+  return { unreachable: false };
+}
+
+/**
+ * Wraps a `fetchImpl` call so a transport-level rejection (the server is not
+ * reachable) becomes an actionable Error instead of the raw
+ * `TypeError: fetch failed`. A resolved HTTP response — including an error
+ * status — is returned untouched so the existing `readJson` path continues to
+ * own HTTP-error-status messaging (Requirement 7.3).
+ *
+ * When `classifyFetchFailure` reports `unreachable`, the thrown message names
+ * the unreachable endpoint and states the Ollama server is not running; for a
+ * Local_Endpoint it also references the option to start the local server
+ * (Requirements 7.1, 7.2). Any error that is not classified as unreachable is
+ * rethrown unchanged.
+ *
+ * @param {(url: string, options?: object) => Promise<any>} fetchImpl
+ * @param {string} normalizedBaseUrl A normalized Ollama base URL.
+ * @param {string} url The full request URL passed to `fetchImpl`.
+ * @param {object} [options] The fetch options passed to `fetchImpl`.
+ * @returns {Promise<any>} The resolved HTTP response.
+ */
+async function fetchOrThrowUnreachable(fetchImpl, normalizedBaseUrl, url, options) {
+  try {
+    return await fetchImpl(url, options);
+  } catch (error) {
+    const { unreachable } = classifyFetchFailure(error);
+    if (!unreachable) {
+      throw error;
+    }
+
+    const { kind } = classifyEndpoint(normalizedBaseUrl);
+    const message =
+      kind === 'local'
+        ? `Ollama server is not running at ${normalizedBaseUrl}. Start the local Ollama server and try again.`
+        : `Ollama server is not reachable at ${normalizedBaseUrl}.`;
+    throw new Error(message);
+  }
+}
+
 async function readJson(response) {
   let payload = null;
   try {
@@ -171,7 +309,7 @@ async function readJson(response) {
 
 export async function listOllamaModels(fetchImpl, baseUrl) {
   const normalizedBaseUrl = normalizeOllamaBaseUrl(baseUrl);
-  const response = await fetchImpl(`${normalizedBaseUrl}/api/tags`, {
+  const response = await fetchOrThrowUnreachable(fetchImpl, normalizedBaseUrl, `${normalizedBaseUrl}/api/tags`, {
     method: 'GET'
   });
   const payload = await readJson(response);
@@ -201,7 +339,7 @@ export async function requestOllamaChat(fetchImpl, input) {
   const tools = resolveToolCatalog(input);
   const gpuOptions = input?.gpuOptions ?? null;
 
-  const response = await fetchImpl(`${endpoint}/api/chat`, {
+  const response = await fetchOrThrowUnreachable(fetchImpl, endpoint, `${endpoint}/api/chat`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json'
@@ -252,7 +390,7 @@ export async function requestOllamaChatStream(fetchImpl, input, callbacks = {}) 
   const tools = resolveToolCatalog(input);
   const gpuOptions = input?.gpuOptions ?? null;
 
-  const response = await fetchImpl(`${endpoint}/api/chat`, {
+  const response = await fetchOrThrowUnreachable(fetchImpl, endpoint, `${endpoint}/api/chat`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json'

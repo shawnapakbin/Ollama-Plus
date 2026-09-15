@@ -87,4 +87,119 @@ describe('ollamaClient', () => {
       evalCount: 9
     });
   });
+
+  describe('actionable request errors (Requirements 7.1, 7.2, 7.3)', () => {
+    // A rejected fetch that mirrors Node's transport-level failure: a
+    // `TypeError: fetch failed` whose `cause.code` carries the connection code.
+    const connRefusedFetch = () => async () => {
+      const error = new TypeError('fetch failed');
+      (error as { cause?: unknown }).cause = { code: 'ECONNREFUSED' };
+      throw error;
+    };
+
+    // A resolved HTTP 500 response — a reachable server that returned an error
+    // status. It must flow through the existing readJson path, not the
+    // unreachable-attribution path.
+    const http500Fetch = () => async () => ({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      json: async () => ({ error: 'internal boom' })
+    });
+
+    const chatInput = (endpoint: string) => ({
+      endpoint,
+      model: 'llama3.1:8b',
+      messages: [{ role: 'user', content: 'Hi' }]
+    });
+
+    it('listOllamaModels: ECONNREFUSED on a local endpoint throws a "not running" error referencing start', async () => {
+      await expect(listOllamaModels(connRefusedFetch(), '127.0.0.1')).rejects.toThrow(
+        'Ollama server is not running at http://127.0.0.1:11434. Start the local Ollama server and try again.'
+      );
+    });
+
+    it('listOllamaModels: ECONNREFUSED on a remote endpoint throws a "not reachable" error without a local-start reference', async () => {
+      let caught: Error | undefined;
+      try {
+        await listOllamaModels(connRefusedFetch(), 'http://192.168.1.50:11434');
+      } catch (error) {
+        caught = error as Error;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      expect(caught?.message).toBe('Ollama server is not reachable at http://192.168.1.50:11434.');
+      expect(caught?.message).not.toContain('Start the local');
+      expect(caught?.message).not.toContain('not running');
+    });
+
+    it('listOllamaModels: reachable server returning HTTP 500 keeps the existing readJson error, not an unreachable attribution', async () => {
+      let caught: Error | undefined;
+      try {
+        await listOllamaModels(http500Fetch(), '127.0.0.1');
+      } catch (error) {
+        caught = error as Error;
+      }
+      expect(caught?.message).toBe('Ollama request failed: internal boom');
+      expect(caught?.message).not.toContain('not running');
+      expect(caught?.message).not.toContain('not reachable');
+    });
+
+    it('requestOllamaChat: ECONNREFUSED on a local endpoint throws a "not running" error referencing start', async () => {
+      await expect(requestOllamaChat(connRefusedFetch(), chatInput('localhost'))).rejects.toThrow(
+        'Ollama server is not running at http://localhost:11434. Start the local Ollama server and try again.'
+      );
+    });
+
+    it('requestOllamaChat: ECONNREFUSED on a remote endpoint throws a "not reachable" error without a local-start reference', async () => {
+      let caught: Error | undefined;
+      try {
+        await requestOllamaChat(connRefusedFetch(), chatInput('http://192.168.1.50:11434'));
+      } catch (error) {
+        caught = error as Error;
+      }
+      expect(caught?.message).toBe('Ollama server is not reachable at http://192.168.1.50:11434.');
+      expect(caught?.message).not.toContain('Start the local');
+    });
+
+    it('requestOllamaChat: reachable server returning HTTP 500 keeps the existing readJson error', async () => {
+      let caught: Error | undefined;
+      try {
+        await requestOllamaChat(http500Fetch(), chatInput('127.0.0.1'));
+      } catch (error) {
+        caught = error as Error;
+      }
+      expect(caught?.message).toBe('Ollama request failed: internal boom');
+      expect(caught?.message).not.toContain('not running');
+      expect(caught?.message).not.toContain('not reachable');
+    });
+
+    it('requestOllamaChatStream: ECONNREFUSED on a local endpoint throws a "not running" error referencing start', async () => {
+      await expect(requestOllamaChatStream(connRefusedFetch(), chatInput('127.0.0.1'))).rejects.toThrow(
+        'Ollama server is not running at http://127.0.0.1:11434. Start the local Ollama server and try again.'
+      );
+    });
+
+    it('requestOllamaChatStream: ECONNREFUSED on a remote endpoint throws a "not reachable" error without a local-start reference', async () => {
+      let caught: Error | undefined;
+      try {
+        await requestOllamaChatStream(connRefusedFetch(), chatInput('http://192.168.1.50:11434'));
+      } catch (error) {
+        caught = error as Error;
+      }
+      expect(caught?.message).toBe('Ollama server is not reachable at http://192.168.1.50:11434.');
+      expect(caught?.message).not.toContain('Start the local');
+    });
+
+    it('requestOllamaChatStream: reachable server returning HTTP 500 keeps the existing readJson error', async () => {
+      let caught: Error | undefined;
+      try {
+        await requestOllamaChatStream(http500Fetch(), chatInput('127.0.0.1'));
+      } catch (error) {
+        caught = error as Error;
+      }
+      expect(caught?.message).toBe('Ollama request failed: internal boom');
+      expect(caught?.message).not.toContain('not running');
+      expect(caught?.message).not.toContain('not reachable');
+    });
+  });
 });

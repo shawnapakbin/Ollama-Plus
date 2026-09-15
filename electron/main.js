@@ -8,6 +8,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRuntimeService } from './runtime/runtimeService.js';
+import { createOllamaLifecycle } from './runtime/ollamaLifecycle.js';
 import { initAgentRuntime } from './runtime/agent/agentRuntime.js';
 import { registerAgentChatHandlers } from './runtime/agent/agentChatHandlers.js';
 import { initAutoUpdater } from './updater.js';
@@ -66,6 +67,13 @@ const runtimeService = createRuntimeService({
   langsmithConfigured: Boolean(process.env.LANGSMITH_API_KEY || process.env.LANGCHAIN_API_KEY)
 });
 const mcpGateway = createGateway();
+
+// Lifecycle_Service (ollama-lifecycle-management). Constructed once at startup
+// with production defaults (real fetch, child_process.spawn, process.platform).
+// It probes reachability and starts a local `ollama serve` process; the IPC
+// handlers below delegate to it, defaulting the endpoint to the current
+// chatConfig.endpoint when the renderer passes none. Requirements: 1.5, 4.1.
+const ollamaLifecycle = createOllamaLifecycle();
 
 /** @type {ReturnType<typeof initAgentRuntime>|null} */
 let agentRuntime = null;
@@ -324,6 +332,17 @@ ipcMain.handle('gpu:get-selection-state', async () => runtimeService.getGpuSelec
 ipcMain.handle('gpu:save-selection', async (_event, input) => runtimeService.saveGpuSelection(input));
 ipcMain.handle('mcp-gateway-call', async (_event, request) => mcpGateway.dispatchSafe(request));
 ipcMain.handle('mcp-gateway-status', async () => mcpGateway.statusSafe());
+// Ollama lifecycle (ollama-lifecycle-management). Probe reachability / start a
+// local server, defaulting to the current chatConfig.endpoint when the renderer
+// passes no endpoint. Requirements: 1.5, 4.1.
+ipcMain.handle('ollama-lifecycle:probe', async (_event, endpoint) => {
+  const targetEndpoint = endpoint ?? runtimeService.getChatConfig()?.endpoint;
+  return ollamaLifecycle.probeReachability({ endpoint: targetEndpoint });
+});
+ipcMain.handle('ollama-lifecycle:start', async (_event, endpoint) => {
+  const targetEndpoint = endpoint ?? runtimeService.getChatConfig()?.endpoint;
+  return ollamaLifecycle.startLocalServer({ endpoint: targetEndpoint });
+});
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);

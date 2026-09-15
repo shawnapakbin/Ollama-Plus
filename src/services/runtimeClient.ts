@@ -295,6 +295,10 @@ const REQUIRED_RUNTIME_BRIDGE_METHODS = [
 
   'checkRuntimeOllamaServer',
 
+  'probeOllamaReachability',
+
+  'startOllamaServer',
+
   'listRuntimeMessages',
   'updateRuntimeMessage',
   'deleteRuntimeMessage',
@@ -430,6 +434,12 @@ export const runtimeClient = {
   },
   checkOllamaServer(serverId: string) {
     return getElectronApi().checkRuntimeOllamaServer(serverId);
+  },
+  probeOllamaReachability(endpoint?: string) {
+    return getElectronApi().probeOllamaReachability(endpoint);
+  },
+  startOllamaServer(endpoint?: string) {
+    return getElectronApi().startOllamaServer(endpoint);
   },
   listMessages(sessionId?: string) {
     return getElectronApi().listRuntimeMessages(sessionId);

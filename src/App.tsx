@@ -51,6 +51,7 @@ import { MessageContent } from './components/Chat/MessageContent';
 import { AgentPage } from './components/Agent/AgentPage';
 import { AgentSettings } from './components/Agent/AgentSettings';
 import { GpuSelection } from './components/Settings/GpuSelection';
+import { ServerStatusPill, StartPrompt, SendInterceptPrompt, type ServerStatus } from './components/ServerStatus';
 import { useChatStreamListener } from './hooks/useChatStreamListener';
 import {
   applyMcpGatewayStatusFailure,
@@ -349,6 +350,46 @@ function App() {
   const [memoryRecords, setMemoryRecords] = useState<RuntimeMemoryRecord[]>([]);
   const [messages, setMessages] = useState<RuntimeChatMessage[]>([]);
   const [chatConfig, setChatConfig] = useState<RuntimeChatConfig>({ endpoint: 'http://127.0.0.1:11434', model: '', autoRenameEnabled: true, systemPrompt: '' });
+  // ─── Ollama server lifecycle view state (feature: ollama-lifecycle-management) ──
+  // `serverStatus` is renderer-only view state derived from a reachability probe
+  // (task 6.2) and any in-flight start attempt (task 7.1). It drives the header
+  // Status_Pill. `serverEndpointKind` gates the popup's Start affordance (only an
+  // offline local endpoint gets one). Both default so the pill renders a benign
+  // 'checking' state before the first probe completes.
+  const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
+  const [serverEndpointKind, setServerEndpointKind] = useState<EndpointKind | null>(null);
+  const [serverStartError, setServerStartError] = useState<string | null>(null);
+  // Mirror of `serverStatus` for the reachability effect to read without adding
+  // `serverStatus` to its dependency list (which would re-probe on every status
+  // change). Lets the probe skip work while a start attempt is 'starting' so it
+  // never clobbers an in-progress start (task 6.2 / task 7.1).
+  const serverStatusRef = useRef<ServerStatus>('checking');
+  useEffect(() => {
+    serverStatusRef.current = serverStatus;
+  }, [serverStatus]);
+  // ─── Launch Start_Prompt state (task 7.1) ───────────────────────────────────
+  // `showStartPrompt` controls the launch-time Start_Prompt modal. It is opened
+  // by the launch/endpoint-change reachability probe only when the endpoint is
+  // classified offline AND local (R2.1); never when online (R2.2) and never for
+  // a Remote_Endpoint (R2.3). `startPromptDismissedRef` records that the user
+  // dismissed the prompt for the current offline episode so a re-probe of the
+  // same offline+local state does not immediately reopen it (avoid modal spam);
+  // it resets whenever the endpoint becomes reachable or the endpoint changes so
+  // a fresh offline episode presents the prompt again.
+  const [showStartPrompt, setShowStartPrompt] = useState(false);
+  const startPromptDismissedRef = useRef(false);
+
+  // ─── Send_Intercept_Prompt state (task 8.1) ─────────────────────────────────
+  // `showSendIntercept` controls the send-time intercept modal presented when
+  // the user attempts to send a message while the endpoint is offline (R6.1).
+  // The composer + attachments are intentionally NOT cleared while it is shown
+  // so the composed content is preserved (R6.2). `pendingSendPromptRef` holds
+  // the exact prompt (composer + attachments already composed) captured at
+  // intercept time so a successful start can dispatch precisely that content
+  // (R6.5), independent of any later composer edits.
+  const [showSendIntercept, setShowSendIntercept] = useState(false);
+  const pendingSendPromptRef = useRef<string | null>(null);
+
   const [availableModels, setAvailableModels] = useState<RuntimeOllamaModel[]>([]);
   const [ollamaServers, setOllamaServers] = useState<RuntimeOllamaServer[]>([]);
   const [ollamaServerHealth, setOllamaServerHealth] = useState<Record<string, RuntimeOllamaServerHealth>>({});
@@ -611,6 +652,74 @@ function App() {
     };
   }, []);
 
+  // ─── Launch / endpoint-change reachability probe (task 6.2) ──────────────────
+  // After the initial data load completes, probe the configured endpoint and
+  // derive the header Status_Pill state (R1.1). Re-probe whenever the endpoint
+  // changes so the classification tracks the current endpoint within the timing
+  // bound (R1.4 / R5.5). A `cancelled` flag guards against a slow probe for a
+  // stale endpoint overwriting a newer classification, and against setting state
+  // after unmount. The probe never throws — an unreachable endpoint resolves to
+  // `reachable: false`, which maps to the 'offline' pill state.
+  useEffect(() => {
+    // Wait for the initial load to settle so the endpoint is the resolved one.
+    if (isLoading) return;
+
+    const endpoint = chatConfig.endpoint;
+    let cancelled = false;
+
+    // A new endpoint (or the launch probe) begins a fresh offline episode: allow
+    // the Start_Prompt to appear again if this endpoint turns out offline+local.
+    startPromptDismissedRef.current = false;
+
+    async function probe() {
+      // Don't clobber an in-progress start; the start flow owns the pill until
+      // its outcome is known (task 7.1).
+      if (serverStatusRef.current !== 'starting') {
+        setServerStatus('checking');
+      }
+
+      let result: ReachabilityResult;
+      try {
+        result = await runtimeClient.probeOllamaReachability(endpoint);
+      } catch {
+        // The probe is designed to resolve rather than throw, but treat any
+        // unexpected transport/bridge failure as 'offline' so the pill degrades
+        // gracefully instead of hanging on 'checking'.
+        if (cancelled || serverStatusRef.current === 'starting') return;
+        setServerStatus('offline');
+        return;
+      }
+
+      // A newer endpoint took over, or the component unmounted, while this probe
+      // was in flight — drop the stale classification.
+      if (cancelled) return;
+      // A start attempt began mid-probe; let the start flow set the final state.
+      if (serverStatusRef.current === 'starting') return;
+
+      setServerEndpointKind(result.kind);
+      setServerStatus(result.reachable ? 'online' : 'offline');
+
+      // Launch Start_Prompt gating (task 7.1):
+      //  • offline + local  -> present the prompt, unless the user already
+      //    dismissed it for this offline episode (R2.1).
+      //  • online           -> never present; close any stale prompt (R2.2).
+      //  • offline + remote -> never present; the pill reflects offline (R2.3).
+      if (!result.reachable && result.kind === 'local') {
+        if (!startPromptDismissedRef.current) {
+          setShowStartPrompt(true);
+        }
+      } else {
+        setShowStartPrompt(false);
+      }
+    }
+
+    void probe();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatConfig.endpoint, isLoading]);
+
   useEffect(() => {
     if (activePage !== 'mcp') return;
     void refreshMcpServerStatus(true);
@@ -731,6 +840,137 @@ function App() {
       setIsRefreshingModels(false);
     }
   }
+
+  // Start the local Ollama server. Shared by the Status_Popup Start action and
+  // the launch Start_Prompt affirmative. Drives the Status_Pill through
+  // 'starting' -> 'online'/'offline' (R4.3). On success it reflects the online
+  // state and refreshes the model catalog for the endpoint (R4.7). On failure
+  // (timeout / binary-not-found / spawn-failed / remote) it returns the pill to
+  // 'offline' and surfaces the reason through the Status_Popup (R4.5 / R4.6).
+  // Returns whether the server became reachable (true) so callers that must act
+  // only on a SUCCESSFUL start — e.g. the Send_Intercept_Prompt dispatching a
+  // preserved message (R6.5) — can gate on the outcome. On failure it returns
+  // false with the reason surfaced through `serverStartError` (R4.5 / R4.6 / R6.6).
+  const handleStartServer = useCallback(async (): Promise<boolean> => {
+    setServerStartError(null);
+    setServerStatus('starting');
+
+    try {
+      const result = await runtimeClient.startOllamaServer(chatConfig.endpoint);
+      if (result.ok) {
+        setServerStatus('online');
+        // R4.7 — refresh the model catalog for the now-reachable endpoint. A
+        // catalog refresh failure must not flip the pill back to offline (the
+        // server did become reachable); surface it through the existing error
+        // channel instead.
+        try {
+          const catalog = await runtimeClient.listOllamaModels(chatConfig.endpoint);
+          setAvailableModels(catalog.availableModels);
+          setChatConfig((current) => ({ ...current, endpoint: catalog.endpoint, model: catalog.model }));
+        } catch (refreshError) {
+          setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
+        }
+        return true;
+      }
+
+      setServerStatus('offline');
+      setServerStartError(
+        result.reason === 'binary-not-found'
+          ? 'The Ollama executable could not be found on this system.'
+          : result.reason === 'remote'
+            ? 'A remote Ollama server cannot be started by this app.'
+            : result.reason === 'timeout'
+              ? 'The Ollama server did not become reachable in time.'
+              : result.error || 'The Ollama server could not be started.',
+      );
+      return false;
+    } catch (startError) {
+      setServerStatus('offline');
+      setServerStartError(startError instanceof Error ? startError.message : String(startError));
+      return false;
+    }
+  }, [chatConfig.endpoint]);
+
+  // Launch Start_Prompt affirmative (R2.4): close the prompt and run the start
+  // flow. The pill reflects the in-progress 'starting' state via handleStartServer.
+  const handleConfirmStartPrompt = useCallback(() => {
+    setShowStartPrompt(false);
+    void handleStartServer();
+  }, [handleStartServer]);
+
+  // Launch Start_Prompt negative (R2.5): dismiss the prompt and leave the app
+  // usable. The pill continues to reflect offline. Mark this offline episode as
+  // dismissed so a re-probe of the same offline+local state does not reopen it.
+  const handleDismissStartPrompt = useCallback(() => {
+    startPromptDismissedRef.current = true;
+    setShowStartPrompt(false);
+  }, []);
+
+  // ─── Send_Intercept_Prompt handlers (task 8.1) ──────────────────────────────
+  // Start action from the intercept (Local_Endpoint only, R6.3): run the start
+  // flow and, only on a SUCCESSFUL start, dispatch the message that was
+  // preserved at intercept time (R6.5). On failure the composed content is
+  // retained (it was never cleared) and the failure is surfaced through the
+  // prompt via `serverStartError` (R6.6); the prompt stays open so the user can
+  // read the failure and decide what to do next. These are plain functions
+  // (not useCallback) mirroring `handleSendMessage` so they can reference the
+  // component-scoped `sendPromptWithStreaming` without stale-closure hazards.
+  async function handleStartFromIntercept() {
+    const started = await handleStartServer();
+    if (!started) {
+      // R6.6 — retain the unsent content; the prompt shows the failure. Leave
+      // `pendingSendPromptRef` intact so a subsequent successful start can still
+      // dispatch the same preserved message.
+      return;
+    }
+
+    // R6.5 — start succeeded; dispatch the preserved message and close the prompt.
+    const preserved = pendingSendPromptRef.current;
+    pendingSendPromptRef.current = null;
+    setShowSendIntercept(false);
+
+    if (!preserved) return;
+
+    if (isSendingMessage) {
+      // A stream is somehow already active; queue the preserved content rather
+      // than dropping it, consistent with the normal queue-while-streaming path.
+      if (queuedMessage === null) {
+        setQueuedMessage(preserved);
+        setComposer('');
+        setComposerAttachments([]);
+        if (attachmentInputRef.current) attachmentInputRef.current.value = '';
+      }
+      return;
+    }
+
+    setIsSendingMessage(true);
+    setError('');
+    try {
+      await sendPromptWithStreaming(preserved);
+    } catch (sendError) {
+      if (streamRequestIdRef.current) {
+        const failedRequestId = streamRequestIdRef.current;
+        setStreamDrafts((current) => {
+          const next = { ...current };
+          delete next[failedRequestId];
+          return next;
+        });
+      }
+      streamRequestIdRef.current = null;
+      setQueuedMessage(null);
+      setError(sendError instanceof Error ? sendError.message : String(sendError));
+    } finally {
+      setIsSendingMessage(false);
+    }
+  }
+
+  // Cancel action from the intercept (R6.7): dismiss the prompt, do NOT
+  // dispatch, and retain the composed content (never cleared). Drop the pending
+  // capture so a later start does not resurrect a cancelled send.
+  const handleCancelIntercept = useCallback(() => {
+    pendingSendPromptRef.current = null;
+    setShowSendIntercept(false);
+  }, []);
 
   async function refreshMcpServerStatus(silent = false) {
     setIsRefreshingMcpStatus(true);
@@ -1011,6 +1251,22 @@ function App() {
   }
 
   async function handleSendMessage() {
+    // Offline guard (task 8.1, R6.1/R6.2): when the endpoint is unreachable, do
+    // NOT dispatch. Capture the composed prompt (composer + attachments) for a
+    // possible start-then-dispatch (R6.5) and open the Send_Intercept_Prompt.
+    // The composer + attachments are intentionally left untouched so the
+    // composed content is preserved while the prompt is shown. This precedes
+    // the queue-while-streaming path so an offline send is always intercepted;
+    // when online, control falls through to the exact prior behavior.
+    if (serverStatus === 'offline') {
+      const hasContent = Boolean(composer.trim()) || composerAttachments.length > 0;
+      if (!hasContent) return;
+      pendingSendPromptRef.current = composePromptWithAttachments(composer, composerAttachments);
+      setServerStartError(null);
+      setShowSendIntercept(true);
+      return;
+    }
+
     // Queue the message if a stream is already active (only if no queuedMessage is pending)
     if (isSendingMessage) {
       const hasContent = Boolean(composer.trim()) || composerAttachments.length > 0;
@@ -1559,6 +1815,15 @@ function App() {
               <h1>{activePage === 'chats' ? activeSession?.title ?? 'New chat' : activePageDefinition.label}</h1>
               <p>{activePageDefinition.description}</p>
             </div>
+          </div>
+          <div className="workspace-status-center">
+            <ServerStatusPill
+              status={serverStatus}
+              endpointKind={serverEndpointKind}
+              endpoint={chatConfig.endpoint}
+              startError={serverStartError}
+              onStartServer={() => void handleStartServer()}
+            />
           </div>
           <div className="workspace-actions">
             <div className="model-chip" title={chatConfig.endpoint}>
@@ -2386,6 +2651,31 @@ function App() {
           aria-label="Close chat navigation"
         />
       ) : null}
+
+      {/* Launch-time Start_Prompt (task 7.1): presented only when the launch
+          probe classified the endpoint offline+local. Affirmative starts the
+          local server; negative dismisses and leaves the app usable. */}
+      <StartPrompt
+        open={showStartPrompt}
+        endpoint={chatConfig.endpoint}
+        busy={serverStatus === 'starting'}
+        onConfirm={handleConfirmStartPrompt}
+        onDismiss={handleDismissStartPrompt}
+      />
+
+      {/* Send-time Send_Intercept_Prompt (task 8.1): presented when the user
+          attempts to send while the endpoint is offline. Local offers Start +
+          Cancel (R6.3); remote offers Cancel only with an unreachable message
+          (R6.4). Composer content is preserved throughout (R6.2). */}
+      <SendInterceptPrompt
+        open={showSendIntercept}
+        endpointKind={serverEndpointKind}
+        endpoint={chatConfig.endpoint}
+        busy={serverStatus === 'starting'}
+        startError={serverStartError}
+        onStart={handleStartFromIntercept}
+        onCancel={handleCancelIntercept}
+      />
     </main>
   );
 }

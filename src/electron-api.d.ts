@@ -139,6 +139,22 @@ type RuntimeOllamaServerHealth = RuntimeOllamaServer & {
   error: string | null;
 };
 
+// ─── Ollama Lifecycle Types ──────────────────────────────────────────────────
+
+type EndpointKind = 'local' | 'remote';
+
+type ReachabilityResult = {
+  reachable: boolean;
+  kind: EndpointKind;
+  normalizedEndpoint: string;
+  status?: number;
+  reason?: 'refused' | 'dns' | 'timeout' | 'other';
+};
+
+type StartResult =
+  | { ok: true }
+  | { ok: false; reason: 'remote' | 'binary-not-found' | 'spawn-failed' | 'timeout'; error?: string };
+
 type RuntimeGraphSummary = {
   id: string;
   name: string;
@@ -295,6 +311,8 @@ type ElectronAPI = {
   saveRuntimeOllamaServer: (input: { id?: string; label?: string; endpoint: string }) => Promise<RuntimeOllamaServer>;
   removeRuntimeOllamaServer: (serverId: string) => Promise<RuntimeOllamaServer>;
   checkRuntimeOllamaServer: (serverId: string) => Promise<RuntimeOllamaServerHealth>;
+  probeOllamaReachability: (endpoint?: string) => Promise<ReachabilityResult>;
+  startOllamaServer: (endpoint?: string) => Promise<StartResult>;
   listRuntimeMessages: (sessionId?: string) => Promise<RuntimeChatMessage[]>;
   updateRuntimeMessage: (messageId: string, input: { content?: string }) => Promise<RuntimeChatMessage>;
   deleteRuntimeMessage: (messageId: string) => Promise<RuntimeChatMessage>;
